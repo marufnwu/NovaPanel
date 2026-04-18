@@ -1,0 +1,16 @@
+{
+  "name": "novadash",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:backend": "pnpm --filter @novadash/backend dev",
+    "dev:frontend": "pnpm --filter @novadash/frontend dev",
+    "build": "pnpm --filter @novadash/shared build && pnpm --filter @novadash/backend build && pnpm --filter @novadash/frontend build",
+    "db:migrate": "pnpm --filter @novadash/backend db:migrate",
+    "db:generate": "pnpm --filter @novadash/backend db:generate",
+    "db:push": "pnpm --filter @novadash/backend db:push"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
