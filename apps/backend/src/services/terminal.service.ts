@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server as HttpServer } from 'http';
 import { Client } from 'ssh2';
-import { verify } from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import { prisma } from '../lib/prisma.js';
 import { decrypt } from './crypto.service.js';
@@ -23,7 +23,7 @@ export function setupTerminalWSS(server: HttpServer) {
 
     let user: UserPayload;
     try {
-      user = verify(token, config.JWT_SECRET) as UserPayload;
+      user = jwt.verify(token, config.JWT_SECRET) as UserPayload;
     } catch {
       ws.close(4001, 'Invalid ticket');
       return;

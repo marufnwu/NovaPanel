@@ -1,4 +1,20 @@
 import { z } from 'zod';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// Load .env file manually (tsx doesn't auto-load it)
+try {
+  const envPath = resolve(import.meta.dirname, '../.env');
+  const envContent = readFileSync(envPath, 'utf-8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const [key, ...rest] = trimmed.split('=');
+    if (key && rest.length > 0 && !process.env[key.trim()]) {
+      process.env[key.trim()] = rest.join('=').trim();
+    }
+  }
+} catch {}
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
