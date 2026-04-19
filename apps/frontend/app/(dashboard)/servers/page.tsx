@@ -22,6 +22,7 @@ export default function ServersPage() {
   const [servers, setServers] = useState<Server[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
 
   async function loadServers() {
     try {
@@ -67,49 +68,56 @@ export default function ServersPage() {
 
       {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
 
-      {servers.length === 0 ? (
-        <div className="rounded-lg border bg-card p-12 text-center">
-          <p className="text-muted-foreground">No servers yet. Add your first server to get started.</p>
-        </div>
-      ) : (
-        <div className="grid gap-4">
-          {servers.map((server) => (
-            <div key={server.id} className="rounded-lg border bg-card p-4 flex items-center justify-between">
-              <div className="flex items-center gap-4 min-w-0">
-                <StatusBadge status={server.status} />
-                <div className="min-w-0">
-                  <Link href={`/servers/${server.id}`} className="font-medium hover:underline">
-                    {server.name}
-                  </Link>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {server.username}@{server.host}:{server.port}
-                  </p>
-                  {server.osInfo?.distro && (
-                    <p className="text-xs text-muted-foreground">{server.osInfo.distro}</p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {server.tags.length > 0 && (
-                  <div className="flex gap-1">
-                    {server.tags.map((tag) => (
-                      <span key={tag} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <button
-                  onClick={() => handleDelete(server.id)}
-                  className="text-xs text-muted-foreground hover:text-destructive px-2 py-1"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+      {servers.length > 0 && (
+        <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search servers..." className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
       )}
+
+      <ServerList servers={servers} search={search} onDelete={handleDelete} />
+    </div>
+  );
+}
+
+function ServerList({ servers, search, onDelete }: { servers: Server[]; search: string; onDelete: (id: string) => void }) {
+  const filtered = servers.filter((s) => !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.host.toLowerCase().includes(search.toLowerCase()));
+
+  if (filtered.length === 0) {
+    return (
+      <div className="rounded-lg border bg-card p-12 text-center">
+        <p className="text-muted-foreground">{search ? 'No servers match your search.' : 'No servers yet. Add your first server to get started.'}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4">
+      {filtered.map((server) => (
+        <div key={server.id} className="rounded-lg border bg-card p-4 flex items-center justify-between">
+          <div className="flex items-center gap-4 min-w-0">
+            <StatusBadge status={server.status} />
+            <div className="min-w-0">
+              <Link href={`/servers/${server.id}`} className="font-medium hover:underline">
+                {server.name}
+              </Link>
+              <p className="text-sm text-muted-foreground truncate">
+                {server.username}@{server.host}:{server.port}
+              </p>
+              {server.osInfo?.distro && (
+                <p className="text-xs text-muted-foreground">{server.osInfo.distro}</p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {server.tags.length > 0 && (
+              <div className="flex gap-1">
+                {server.tags.map((tag) => (
+                  <span key={tag} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{tag}</span>
+                ))}
+              </div>
+            )}
+            <button onClick={() => onDelete(server.id)} className="text-xs text-muted-foreground hover:text-destructive px-2 py-1">Remove</button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

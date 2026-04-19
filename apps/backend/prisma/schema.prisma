@@ -284,8 +284,9 @@ model Site {
   gitUrl      String?    @map("git_url")
   gitBranch   String?    @map("git_branch")
   status      SiteStatus @default(provisioning)
-  nginxConfig String?    @map("nginx_config")
-  teamId      String     @map("team_id")
+  nginxConfig        String?  @map("nginx_config")
+  deployWebhookToken String?  @map("deploy_webhook_token")
+  teamId             String   @map("team_id")
   createdAt   DateTime   @default(now()) @map("created_at")
   deletedAt   DateTime?  @map("deleted_at")
 

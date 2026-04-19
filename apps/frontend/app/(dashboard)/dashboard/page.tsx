@@ -185,6 +185,44 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Activity Feed */}
+      <div className="rounded-lg border bg-card p-4">
+        <h2 className="font-semibold mb-3">Recent Activity</h2>
+        <ActivityFeed />
+      </div>
+    </div>
+  );
+}
+
+function ActivityFeed() {
+  const [logs, setLogs] = useState<Array<{ action: string; targetType: string; targetId: string | null; createdAt: string; user: { email: string } | null }>>([]);
+
+  useEffect(() => {
+    api.get<{ ok: boolean; data: any[]; total?: number }>('/audit?page=1&limit=10').then((res) => setLogs(res.data)).catch(() => {});
+  }, []);
+
+  const actionIcons: Record<string, string> = { create: '+', update: '~', delete: 'x' };
+  const resourceLabels: Record<string, string> = { servers: 'Server', sites: 'Site', 'ssh-keys': 'SSH Key', tunnels: 'Tunnel', domains: 'Domain' };
+
+  if (logs.length === 0) return <p className="text-sm text-muted-foreground">No activity recorded yet.</p>;
+
+  return (
+    <div className="space-y-2 max-h-64 overflow-y-auto">
+      {logs.map((log) => (
+        <div key={log.targetId + log.createdAt} className="flex items-center gap-3 text-sm">
+          <span className={`rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold ${
+            log.action === 'create' ? 'bg-green-100 text-green-700' :
+            log.action === 'delete' ? 'bg-red-100 text-red-700' :
+            'bg-blue-100 text-blue-700'
+          }`}>{actionIcons[log.action] || '?'}</span>
+          <span className="flex-1">
+            <span className="font-medium">{log.user?.email || 'System'}</span>
+            <span className="text-muted-foreground"> {log.action}d {resourceLabels[log.targetType] || log.targetType}</span>
+          </span>
+          <span className="text-xs text-muted-foreground">{new Date(log.createdAt).toLocaleString()}</span>
+        </div>
+      ))}
     </div>
   );
 }

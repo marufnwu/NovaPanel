@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api, ApiError } from '@/lib/api-client';
+import { useToast } from '@/components/toast';
 
 interface Server {
   id: string;
@@ -37,6 +38,7 @@ export default function ServerDetailPage() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [serverTab, setServerTab] = useState<'overview' | 'processes' | 'logs' | 'databases' | 'exec'>('overview');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ connected: boolean; osInfo?: Record<string, string>; error?: string } | null>(null);
 
@@ -216,6 +218,23 @@ export default function ServerDetailPage() {
         <FirewallSection serverId={serverId} />
         <CronSection serverId={serverId} />
       </div>
+
+      {/* Server Tabs */}
+      <div className="flex gap-1 border-b">
+        {(['overview', 'processes', 'logs', 'databases', 'exec'] as const).map((t) => (
+          <button key={t} onClick={() => setServerTab(t)} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${serverTab === t ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            {{ overview: 'Overview', processes: 'Processes', logs: 'Logs', databases: 'Databases', exec: 'Command' }[t]}
+          </button>
+        ))}
+      </div>
+
+      {serverTab === 'overview' && (
+        <p className="text-sm text-muted-foreground">Metrics and info shown above.</p>
+      )}
+      {serverTab === 'processes' && <ProcessesTab serverId={serverId} />}
+      {serverTab === 'logs' && <ServerLogsTab serverId={serverId} />}
+      {serverTab === 'databases' && <DatabasesTab serverId={serverId} />}
+      {serverTab === 'exec' && <CommandExecTab serverId={serverId} />}
     </div>
   );
 }
@@ -442,6 +461,169 @@ function CronSection({ serverId }: { serverId: string }) {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Processes Tab ───
+
+function ProcessesTab({ serverId }: { serverId: string }) {
+  const [data, setData] = useState<{ pm2: any[]; supervisor: any[]; systemd: any[] } | null>(null);
+
+  useEffect(() => {
+    api.get<{ ok: boolean; data: any }>(`/servers/${serverId}/processes`).then((res) => setData(res.data)).catch(() => {});
+  }, [serverId]);
+
+  async function restartPm2(name: string) {
+    try { await api.post(`/servers/${serverId}/processes/pm2/${name}/restart`); } catch {}
+    const res = await api.get<{ ok: boolean; data: any }>(`/servers/${serverId}/processes`);
+    setData(res.data);
+  }
+
+  async function stopPm2(name: string) {
+    try { await api.post(`/servers/${serverId}/processes/pm2/${name}/stop`); } catch {}
+    const res = await api.get<{ ok: boolean; data: any }>(`/servers/${serverId}/processes`);
+    setData(res.data);
+  }
+
+  async function restartSupervisor(name: string) {
+    try { await api.post(`/servers/${serverId}/processes/supervisor/${name}/restart`); } catch {}
+    const res = await api.get<{ ok: boolean; data: any }>(`/servers/${serverId}/processes`);
+    setData(res.data);
+  }
+
+  if (!data) return <p className="text-sm text-muted-foreground">Loading...</p>;
+
+  return (
+    <div className="space-y-4">
+      {data.pm2.length > 0 && (
+        <div className="rounded-lg border bg-card overflow-hidden">
+          <div className="px-4 py-2 bg-muted/50 font-medium text-sm">PM2 Processes</div>
+          <table className="w-full text-sm">
+            <thead><tr className="border-b"><th className="text-left px-4 py-1.5 text-xs text-muted-foreground">Name</th><th className="text-left px-4 py-1.5 text-xs text-muted-foreground">Status</th><th className="text-left px-4 py-1.5 text-xs text-muted-foreground">CPU</th><th className="text-left px-4 py-1.5 text-xs text-muted-foreground">Mem</th><th></th></tr></thead>
+            <tbody>
+              {data.pm2.map((p: any) => (
+                <tr key={p.name} className="border-b">
+                  <td className="px-4 py-1.5 font-mono text-xs">{p.name}</td>
+                  <td className="px-4 py-1.5"><span className={`rounded-full px-2 py-0.5 text-xs ${p.pm2_env?.status === 'online' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{p.pm2_env?.status}</span></td>
+                  <td className="px-4 py-1.5 text-xs">{p.monit?.cpu?.toFixed(1)}%</td>
+                  <td className="px-4 py-1.5 text-xs">{p.monit?.memory ? `${(p.monit.memory / 1048576).toFixed(0)}MB` : '-'}</td>
+                  <td className="px-4 py-1.5 flex gap-1">
+                    <button onClick={() => restartPm2(p.name)} className="text-xs text-primary hover:underline">Restart</button>
+                    <button onClick={() => stopPm2(p.name)} className="text-xs text-destructive hover:underline">Stop</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {data.supervisor.length > 0 && (
+        <div className="rounded-lg border bg-card overflow-hidden">
+          <div className="px-4 py-2 bg-muted/50 font-medium text-sm">Supervisor</div>
+          <table className="w-full text-sm">
+            <thead><tr className="border-b"><th className="text-left px-4 py-1.5 text-xs text-muted-foreground">Name</th><th className="text-left px-4 py-1.5 text-xs text-muted-foreground">Status</th><th></th></tr></thead>
+            <tbody>
+              {data.supervisor.map((p: any) => (
+                <tr key={p.name} className="border-b">
+                  <td className="px-4 py-1.5 font-mono text-xs">{p.name}</td>
+                  <td className="px-4 py-1.5"><span className={`rounded-full px-2 py-0.5 text-xs ${p.status === 'RUNNING' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{p.status}</span></td>
+                  <td className="px-4 py-1.5"><button onClick={() => restartSupervisor(p.name)} className="text-xs text-primary hover:underline">Restart</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {data.pm2.length === 0 && data.supervisor.length === 0 && <p className="text-sm text-muted-foreground">No managed processes found.</p>}
+    </div>
+  );
+}
+
+// ─── Server Logs ───
+
+function ServerLogsTab({ serverId }: { serverId: string }) {
+  const [logs, setLogs] = useState('');
+  const [logType, setLogType] = useState('syslog');
+  useEffect(() => { loadLogs(); }, [logType]);
+  async function loadLogs() {
+    try { const res = await api.get<{ ok: boolean; data: { logs: string } }>(`/servers/${serverId}/logs?type=${logType}`); setLogs(res.data.logs); } catch { setLogs('Failed'); }
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2">
+        <select value={logType} onChange={(e) => setLogType(e.target.value)} className="rounded-md border border-input bg-background px-3 py-1.5 text-sm">
+          <option value="syslog">Syslog</option><option value="nginx_access">Nginx Access</option><option value="nginx_error">Nginx Error</option><option value="auth">Auth/SSH</option><option value="kernel">Kernel</option>
+        </select>
+        <button onClick={loadLogs} className="rounded-md border border-input px-3 py-1.5 text-sm hover:bg-muted">Refresh</button>
+      </div>
+      <pre className="rounded-lg border bg-black text-green-400 p-4 text-xs font-mono whitespace-pre-wrap max-h-96 overflow-y-auto">{logs || 'No logs'}</pre>
+    </div>
+  );
+}
+
+// ─── Databases ───
+
+function DatabasesTab({ serverId }: { serverId: string }) {
+  const { toast } = useToast();
+  const [databases, setDatabases] = useState<string[]>([]);
+  const [engine, setEngine] = useState('mysql');
+  const [dbName, setDbName] = useState('');
+  const [created, setCreated] = useState<any>(null);
+  useEffect(() => { loadDbs(); }, [engine]);
+  async function loadDbs() {
+    try { const res = await api.get<{ ok: boolean; data: { databases: string[] } }>(`/servers/${serverId}/databases?engine=${engine}`); setDatabases(res.data.databases); } catch {}
+  }
+  async function createDb(e: React.FormEvent) {
+    e.preventDefault();
+    try { const res = await api.post<{ ok: boolean; data: any }>(`/servers/${serverId}/databases`, { name: dbName, engine }); setCreated(res.data); toast(`${dbName} created`, 'success'); setDbName(''); loadDbs(); } catch (err) { if (err instanceof ApiError) toast(err.message, 'error'); }
+  }
+  async function deleteDb(name: string) {
+    if (!confirm(`Delete ${name}?`)) return;
+    try { await api.delete(`/servers/${serverId}/databases/${name}?engine=${engine}`); toast(`Deleted`, 'success'); loadDbs(); } catch (err) { if (err instanceof ApiError) toast(err.message, 'error'); }
+  }
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 items-center">
+        <select value={engine} onChange={(e) => setEngine(e.target.value)} className="rounded-md border border-input bg-background px-3 py-1.5 text-sm"><option value="mysql">MySQL</option><option value="postgres">PostgreSQL</option></select>
+      </div>
+      <form onSubmit={createDb} className="flex gap-2">
+        <input type="text" value={dbName} onChange={(e) => setDbName(e.target.value)} required placeholder="Database name" className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono" />
+        <button type="submit" className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground">Create</button>
+      </form>
+      {created && <div className="rounded-md bg-green-50 border border-green-200 p-3 text-xs font-medium text-green-700">Created! User: {created.user} | Password: {created.password}</div>}
+      {databases.map((db) => (
+        <div key={db} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+          <span className="font-mono text-xs">{db}</span>
+          <button onClick={() => deleteDb(db)} className="text-xs text-destructive hover:underline">Delete</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Command Exec ───
+
+function CommandExecTab({ serverId }: { serverId: string }) {
+  const [command, setCommand] = useState('');
+  const [output, setOutput] = useState('');
+  const [running, setRunning] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
+  async function execute(e: React.FormEvent) {
+    e.preventDefault(); if (!command.trim()) return;
+    setRunning(true); setOutput(''); setHistory((p) => [command, ...p].slice(0, 20));
+    try { const res = await api.post<{ ok: boolean; data: { output: string } }>(`/servers/${serverId}/exec`, { command }); setOutput(res.data.output); } catch (err) { if (err instanceof ApiError) setOutput(`Error: ${err.message}`); } finally { setRunning(false); }
+  }
+  return (
+    <div className="space-y-3">
+      <form onSubmit={execute} className="flex gap-2">
+        <input type="text" value={command} onChange={(e) => setCommand(e.target.value)} required placeholder="Enter command..." disabled={running} className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono" />
+        <button type="submit" disabled={running} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50">{running ? 'Running...' : 'Run'}</button>
+      </form>
+      {output && <pre className="rounded-lg border bg-black text-green-400 p-4 text-xs font-mono whitespace-pre-wrap max-h-80 overflow-y-auto">{output}</pre>}
+      {history.length > 0 && (
+        <div><p className="text-xs text-muted-foreground mb-1">Recent:</p>{history.map((c, i) => <button key={i} onClick={() => setCommand(c)} className="block w-full text-left text-xs font-mono text-muted-foreground hover:text-foreground truncate">{c}</button>)}</div>
       )}
     </div>
   );

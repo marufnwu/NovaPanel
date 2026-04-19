@@ -31,7 +31,7 @@ interface AlertRule {
 export default function MonitoringPage() {
   const [checks, setChecks] = useState<UptimeCheck[]>([]);
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
-  const [tab, setTab] = useState<'uptime' | 'alerts'>('uptime');
+  const [tab, setTab] = useState<'uptime' | 'alerts' | 'channels'>('uptime');
   const [showAlertForm, setShowAlertForm] = useState(false);
 
   // Alert form state
@@ -115,7 +115,7 @@ export default function MonitoringPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 border-b">
-        {(['uptime', 'alerts'] as const).map((t) => (
+        {(['uptime', 'alerts', 'channels'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -123,7 +123,7 @@ export default function MonitoringPage() {
               tab === t ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            {t === 'uptime' ? 'Uptime' : 'Alert Rules'}
+            {{ uptime: 'Uptime', alerts: 'Alert Rules', channels: 'Channels' }[t]}
           </button>
         ))}
       </div>
@@ -278,6 +278,93 @@ export default function MonitoringPage() {
           )}
         </div>
       )}
+
+      {tab === 'channels' && <ChannelsTab />}
+    </div>
+  );
+}
+
+function ChannelsTab() {
+  const [channels, setChannels] = useState<Array<{ id: string; type: string; active: boolean; createdAt: string }>>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [chType, setChType] = useState('webhook');
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [botToken, setBotToken] = useState('');
+  const [chatId, setChatId] = useState('');
+
+  useEffect(() => { loadChannels(); }, []);
+
+  async function loadChannels() {
+    try {
+      const res = await api.get<{ ok: boolean; data: any[] }>('/notifications/channels');
+      setChannels(res.data);
+    } catch {}
+  }
+
+  async function createChannel(e: React.FormEvent) {
+    e.preventDefault();
+    const config: Record<string, string> = {};
+    if (chType === 'webhook' || chType === 'slack') config.webhookUrl = webhookUrl;
+    if (chType === 'telegram') { config.botToken = botToken; config.chatId = chatId; }
+
+    try {
+      await api.post('/notifications/channels', { type: chType, config });
+      setShowForm(false);
+      setWebhookUrl('');
+      loadChannels();
+    } catch {}
+  }
+
+  async function deleteChannel(id: string) {
+    try { await api.delete(`/notifications/channels/${id}`); loadChannels(); } catch {}
+  }
+
+  async function testChannel(id: string) {
+    try { await api.post(`/notifications/channels/${id}/test`); } catch {}
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={() => setShowForm(!showForm)} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground">
+          {showForm ? 'Cancel' : '+ Add Channel'}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={createChannel} className="rounded-lg border bg-card p-4 space-y-3">
+          <select value={chType} onChange={(e) => setChType(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+            <option value="webhook">Webhook</option>
+            <option value="slack">Slack</option>
+            <option value="telegram">Telegram</option>
+          </select>
+          {(chType === 'webhook' || chType === 'slack') && (
+            <input type="url" value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} required placeholder="Webhook URL" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+          )}
+          {chType === 'telegram' && (
+            <div className="grid grid-cols-2 gap-2">
+              <input type="text" value={botToken} onChange={(e) => setBotToken(e.target.value)} required placeholder="Bot Token" className="rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              <input type="text" value={chatId} onChange={(e) => setChatId(e.target.value)} required placeholder="Chat ID" className="rounded-md border border-input bg-background px-3 py-2 text-sm" />
+            </div>
+          )}
+          <button type="submit" className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground">Create</button>
+        </form>
+      )}
+
+      {channels.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No notification channels configured.</p>
+      ) : channels.map((ch) => (
+        <div key={ch.id} className="flex items-center justify-between rounded-lg border bg-card p-3">
+          <div className="flex items-center gap-2">
+            <span className={`rounded-full px-2 py-0.5 text-xs ${ch.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{ch.active ? 'Active' : 'Inactive'}</span>
+            <span className="text-sm capitalize">{ch.type}</span>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => testChannel(ch.id)} className="text-xs text-primary hover:underline">Test</button>
+            <button onClick={() => deleteChannel(ch.id)} className="text-xs text-destructive hover:underline">Delete</button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -21,6 +21,7 @@ export default function SitesPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     api.get<Site[]>('/sites').then(setSites).catch((err) => {
@@ -29,6 +30,10 @@ export default function SitesPage() {
   }, []);
 
   if (loading) return <div className="p-6 text-muted-foreground">Loading...</div>;
+
+  const filtered = sites.filter((s) =>
+    !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.domain.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="p-6 space-y-6">
@@ -44,13 +49,17 @@ export default function SitesPage() {
 
       {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
 
-      {sites.length === 0 ? (
+      {sites.length > 0 && (
+        <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search sites..." className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+      )}
+
+      {filtered.length === 0 ? (
         <div className="rounded-lg border bg-card p-12 text-center">
-          <p className="text-muted-foreground">No sites yet. Create your first site to get started.</p>
+          <p className="text-muted-foreground">{search ? 'No sites match your search.' : 'No sites yet. Create your first site to get started.'}</p>
         </div>
       ) : (
         <div className="grid gap-4">
-          {sites.map((site) => (
+          {filtered.map((site) => (
             <Link key={site.id} href={`/sites/${site.id}`} className="rounded-lg border bg-card p-4 hover:border-primary transition-colors">
               <div className="flex items-center justify-between">
                 <div>

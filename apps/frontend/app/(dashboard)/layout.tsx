@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/lib/auth-context';
 import { Sidebar } from '@/components/sidebar';
+import { ToastProvider } from '@/components/toast';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { loading, user } = useAuth();
@@ -22,9 +23,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex min-h-screen">
+    <ToastProvider>
+      <div className="flex min-h-screen">
       <Sidebar />
       <main className="flex-1 overflow-auto">{children}</main>
     </div>
+    </ToastProvider>
   );
 }

@@ -21,6 +21,12 @@ import { auditRoutes } from './routes/audit.js';
 import { settingsRoutes } from './routes/settings.js';
 import { firewallRoutes } from './routes/firewall.js';
 import { cronRoutes } from './routes/cron.js';
+import { logsRoutes } from './routes/logs.js';
+import { processesRoutes } from './routes/processes.js';
+import { notificationRoutes } from './routes/notifications.js';
+import { databaseRoutes } from './routes/databases.js';
+import { backupRoutes } from './routes/backups.js';
+import { webhookRoutes } from './routes/webhooks.js';
 import { startMetricsJob } from './jobs/metrics.job.js';
 import { startMonitoringJob } from './jobs/monitoring.job.js';
 import { setupTerminalWSS } from './services/terminal.service.js';
@@ -64,6 +70,12 @@ await app.register(auditRoutes);
 await app.register(settingsRoutes);
 await app.register(firewallRoutes);
 await app.register(cronRoutes);
+await app.register(logsRoutes);
+await app.register(processesRoutes);
+await app.register(notificationRoutes);
+await app.register(databaseRoutes);
+await app.register(backupRoutes);
+await app.register(webhookRoutes);
 
 try {
   await app.listen({ port: config.BACKEND_PORT, host: '0.0.0.0' });
