@@ -229,8 +229,8 @@ phase_preflight() {
     # On servers without proper DNS setup, hostname -f returns just the hostname
     # which results in invalid emails like admin@maruf-server
     if [[ "$HOSTNAME_FQDN" != *.* ]]; then
-        HOSTNAME_FQDN="novapanel.local"
-        HOSTNAME_DOMAIN="novapanel.local"
+        HOSTNAME_FQDN="example.com"
+        HOSTNAME_DOMAIN="example.com"
     fi
 
     ADMIN_EMAIL="${ADMIN_EMAIL:-admin@${HOSTNAME_FQDN}}"
@@ -960,21 +960,28 @@ SUDOERS
         log "  pnpm path: $(which pnpm 2>/dev/null || echo 'not found')"
         log "  pnpm version: $(pnpm --version 2>/dev/null || echo 'unknown')"
         
-        # Run pnpm install as the panel user to ensure proper ownership
-        log "  Running pnpm install in ${PANEL_HOME}..."
-        if ! su - "$PANEL_USER" -c "cd ${PANEL_HOME} && pnpm install --frozen-lockfile" 2>&1 | tee /tmp/novapanel-pnpm-install.log; then
-            warn "frozen-lockfile failed, falling back to regular install..."
-            if ! su - "$PANEL_USER" -c "cd ${PANEL_HOME} && pnpm install" 2>&1 | tee -a /tmp/novapanel-pnpm-install.log; then
-                fail "pnpm install failed. Check /tmp/novapanel-pnpm-install.log for details"
-                exit 1
-            fi
-        fi
+        cd /opt/novapanel
 
-        log "Building NovaPanel..."
-        if ! su - "$PANEL_USER" -c "cd ${PANEL_HOME} && pnpm build" 2>&1 | tee -a /tmp/novapanel-pnpm-install.log; then
-            fail "pnpm build failed. Check /tmp/novapanel-pnpm-install.log for details"
+        # Source root's bashrc to get pnpm in PATH
+        source /root/.bashrc 2>/dev/null || true
+        export PNPM_HOME="/root/.local/share/pnpm"
+        export PATH="$PNPM_HOME:$PATH"
+
+        # Verify pnpm is available
+        if ! command -v pnpm &>/dev/null; then
+            echo "[✗] pnpm not found in PATH"
+            echo "    PATH: $PATH"
             exit 1
         fi
+
+        step "Installing dependencies (as root, will fix ownership after)..."
+        pnpm install 2>&1 | tee /tmp/novapanel-pnpm-install.log
+
+        step "Building panel..."
+        pnpm build 2>&1 | tee -a /tmp/novapanel-pnpm-install.log
+
+        # Fix ownership after build
+        chown -R novapanel:novapanel /opt/novapanel
 
         # Copy database migrations to dist (not handled by TypeScript compiler)
         cp -r apps/api/src/db/migrations apps/api/dist/db/migrations
