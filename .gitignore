@@ -9,4 +9,6 @@ dist/
 coverage/
 .vite/
 data/
+logs/
+!apps/web/src/pages/logs/
 .DS_Store
