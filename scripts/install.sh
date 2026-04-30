@@ -23,6 +23,10 @@
 # ╚══════════════════════════════════════════════════════════════════════╝
 set -euo pipefail
 
+# ─── Error trapping for visibility ─────────────────────────────────────────
+# This trap fires when any command fails due to 'set -e'
+trap 'echo ""; echo "[✗] INSTALL FAILED at line $LINENO"; echo "    Command that failed: $BASH_COMMAND"; echo "    Check /tmp/novapanel-install.log for details"; echo ""' ERR
+
 # ─── Constants ───────────────────────────────────────────────────────────
 readonly SCRIPT_VERSION="2.0.0"
 readonly NODE_MAJOR="20"
@@ -920,24 +924,57 @@ SUDOERS
     if [ -f "${PANEL_HOME}/package.json" ]; then
         cd "${PANEL_HOME}"
 
-        # FIX #12: pnpm install with explicit error handling
+        # FIX #12: pnpm install with proper PATH and user context
         log "Installing dependencies..."
         
-        # Ensure pnpm is available and using correct PATH
+        # Ensure the correct pnpm is in PATH
+        # pnpm could be in /root/.local/share/pnpm (if installed as root) 
+        # or in /home/novapanel/.local/share/pnpm (if installed as that user)
         export PNPM_HOME="$HOME/.local/share/pnpm"
         export PATH="$PNPM_HOME:$PATH"
+        
+        # Source bashrc to pick up any pnpm PATH modifications
         source ~/.bashrc 2>/dev/null || true
         
-        if ! pnpm install --frozen-lockfile 2>/dev/null; then
-            warn "frozen-lockfile failed, falling back to regular install (dependencies may differ)"
-            if ! pnpm install; then
-                fail "pnpm install failed"
+        # Fallback: also check if pnpm exists in common locations
+        if ! command -v pnpm &>/dev/null; then
+            for pnpm_path in \
+                "$HOME/.local/share/pnpm" \
+                "/home/novapanel/.local/share/pnpm" \
+                "/root/.local/share/pnpm" \
+                "/usr/local/bin/pnpm"; do
+                if [ -x "$pnpm_path/pnpm" ]; then
+                    export PNPM_HOME="$(dirname "$pnpm_path")"
+                    export PATH="$PNPM_HOME:$PATH"
+                    break
+                fi
+            done
+        fi
+        
+        # Verify pnpm is working
+        if ! command -v pnpm &>/dev/null; then
+            fail "pnpm not found in PATH. Installing pnpm..."
+            npm install -g pnpm
+        fi
+        
+        log "  pnpm path: $(which pnpm 2>/dev/null || echo 'not found')"
+        log "  pnpm version: $(pnpm --version 2>/dev/null || echo 'unknown')"
+        
+        # Run pnpm install as the panel user to ensure proper ownership
+        log "  Running pnpm install in ${PANEL_HOME}..."
+        if ! su - "$PANEL_USER" -c "cd ${PANEL_HOME} && pnpm install --frozen-lockfile" 2>&1 | tee /tmp/novapanel-pnpm-install.log; then
+            warn "frozen-lockfile failed, falling back to regular install..."
+            if ! su - "$PANEL_USER" -c "cd ${PANEL_HOME} && pnpm install" 2>&1 | tee -a /tmp/novapanel-pnpm-install.log; then
+                fail "pnpm install failed. Check /tmp/novapanel-pnpm-install.log for details"
                 exit 1
             fi
         fi
 
         log "Building NovaPanel..."
-        pnpm build
+        if ! su - "$PANEL_USER" -c "cd ${PANEL_HOME} && pnpm build" 2>&1 | tee -a /tmp/novapanel-pnpm-install.log; then
+            fail "pnpm build failed. Check /tmp/novapanel-pnpm-install.log for details"
+            exit 1
+        fi
 
         # Copy database migrations to dist (not handled by TypeScript compiler)
         cp -r apps/api/src/db/migrations apps/api/dist/db/migrations
