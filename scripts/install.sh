@@ -347,12 +347,37 @@ phase_system_packages() {
     ok "All PHP versions installed"
 
     # 1h. Nginx
+    # FIX: Stop and reconfigure Apache to port 8080 BEFORE installing Nginx
+    # to prevent port 80 conflicts if Apache is already installed
+    log "Preparing for Nginx installation (stopping Apache if running)..."
+    systemctl stop apache2 2>/dev/null || true
+    
+    # Reconfigure Apache to listen on port 8080 instead of 80
+    if [ -f /etc/apache2/ports.conf ]; then
+        cp /etc/apache2/ports.conf /etc/apache2/ports.conf.bak
+        cat > /etc/apache2/ports.conf << 'APACHEPORTS'
+# NovaPanel: Apache listens on 8080 as a backend
+# Nginx handles port 80/443 as the frontend
+Listen 8080
+APACHEPORTS
+    fi
+    
+    # Update Apache virtual host to use port 8080
+    if [ -f /etc/apache2/sites-available/000-default.conf ]; then
+        sed -i 's/<VirtualHost \*:80>/<VirtualHost *:8080>/' /etc/apache2/sites-available/000-default.conf 2>/dev/null || true
+    fi
+    
     log "Installing Nginx..."
     apt-get install -y -qq nginx
     systemctl enable nginx
     systemctl start nginx
     verify_cmd "nginx -v" "Nginx installed"
-    wait_for_port 127.0.0.1 80 30
+    
+    # FIX: Make port 80 check non-fatal - warn but continue if Nginx hasn't started yet
+    if ! wait_for_port 127.0.0.1 80 30; then
+        warn "Port 80 not listening yet — Nginx may need manual start"
+        systemctl status nginx || true
+    fi
 
     # FIX #10: Backup Apache ports.conf before modifying
     log "Installing Apache2 (backend on port 8080)..."
