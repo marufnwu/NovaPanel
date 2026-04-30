@@ -724,6 +724,42 @@ phase_service_config() {
         fi
     done
 
+    # BUG FIX: Create default PHP-FPM pool for each installed version
+    # The previous loop disabled www.conf but didn't create a replacement,
+    # causing PHP-FPM to fail with "No pool defined" error
+    for phpver in 8.1 8.2 8.3; do
+        pool_dir="/etc/php/${phpver}/fpm/pool.d"
+        if [ -d "$pool_dir" ]; then
+            # Remove any existing disabled/default pool configs
+            rm -f "${pool_dir}/www.conf" "${pool_dir}/www.conf.disabled" "${pool_dir}/www.conf.default" 2>/dev/null || true
+            
+            cat > "${pool_dir}/www.conf" << POOL
+[www]
+user = www-data
+group = www-data
+listen = /run/php/php${phpver}-fpm.sock
+listen.owner = www-data
+listen.group = www-data
+listen.mode = 0660
+pm = dynamic
+pm.max_children = 5
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 3
+POOL
+            log "Created PHP ${phpver} FPM default pool"
+        fi
+    done
+
+    # Restart PHP-FPM services to use new pools
+    for phpver in 8.1 8.2 8.3; do
+        if systemctl restart "php${phpver}-fpm" 2>/dev/null; then
+            ok "PHP ${phpver} FPM restarted with new pool"
+        else
+            warn "Failed to restart PHP ${phpver} FPM"
+        fi
+    done
+
     # 2d. Nginx frontend configuration
     log "Configuring Nginx as frontend proxy..."
     cat > /etc/nginx/sites-available/novapanel << 'NGINXCONF'
@@ -934,7 +970,11 @@ SUDOERS
         export PATH="$PNPM_HOME:$PATH"
         
         # Source bashrc to pick up any pnpm PATH modifications
-        source ~/.bashrc 2>/dev/null || true
+        # Note: Cannot source bashrc when set -u is active because bashrc references
+        # $PS1 which is unbound in non-interactive shells. Use a subshell instead.
+        if [ -f ~/.bashrc ]; then
+            export PATH="$(bash -c 'source ~/.bashrc 2>/dev/null; echo $PATH')"
+        fi
         
         # Fallback: also check if pnpm exists in common locations
         if ! command -v pnpm &>/dev/null; then
@@ -963,9 +1003,13 @@ SUDOERS
         cd /opt/novapanel
 
         # Source root's bashrc to get pnpm in PATH
-        source /root/.bashrc 2>/dev/null || true
+        # Cannot use direct source with set -u (PS1 is unbound in non-interactive)
+        # Instead, manually add known pnpm locations to PATH
         export PNPM_HOME="/root/.local/share/pnpm"
         export PATH="$PNPM_HOME:$PATH"
+        
+        # Also check /usr/local/bin and common npm global paths
+        export PATH="/usr/local/bin:/root/.local/share/pnpm:$PATH"
 
         # Verify pnpm is available
         if ! command -v pnpm &>/dev/null; then
@@ -974,10 +1018,10 @@ SUDOERS
             exit 1
         fi
 
-        step "Installing dependencies (as root, will fix ownership after)..."
+        log "Installing dependencies (as root, will fix ownership after)..."
         pnpm install 2>&1 | tee /tmp/novapanel-pnpm-install.log
 
-        step "Building panel..."
+        log "Building panel..."
         pnpm build 2>&1 | tee -a /tmp/novapanel-pnpm-install.log
 
         # Fix ownership after build
