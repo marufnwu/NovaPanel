@@ -23,6 +23,10 @@
 # ╚══════════════════════════════════════════════════════════════════════╝
 set -euo pipefail
 
+# ─── Fix Bug #1: Prevent interactive apt-get prompts ─────────────────────────
+# When running via `curl ... | sudo bash`, apt-get interactive dialogs would hang.
+export DEBIAN_FRONTEND=noninteractive
+
 # ─── Error trapping for visibility ─────────────────────────────────────────
 # This trap fires when any command fails due to 'set -e'
 trap 'echo ""; echo "[✗] INSTALL FAILED at line $LINENO"; echo "    Command that failed: $BASH_COMMAND"; echo "    Check /tmp/novapanel-install.log for details"; echo ""' ERR
@@ -298,21 +302,24 @@ phase_system_packages() {
 
     # 1e. MariaDB (official MariaDB repository)
     log "Adding MariaDB ${MARIADB_MAJOR} repository..."
-    if ! command -v mariadb &>/dev/null; then
+    # Fix Bug #2: Check for server package, not client binary
+    # (client may remain after uninstall while server is removed)
+    if ! dpkg -l mariadb-server &>/dev/null | grep -q "^ii"; then
         curl -fsSL "https://r.mariadb.com/downloads/mariadb_repo_setup" | bash -s -- --mariadb-server-version="mariadb-${MARIADB_MAJOR}" --skip-maxscale --skip-tools
-        apt-get update -qq
-        apt-get install -y -qq mariadb-server mariadb-client
+        DEBIAN_FRONTEND=noninteractive apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mariadb-server mariadb-client
     fi
     verify_cmd "mariadb --version" "MariaDB installed"
 
     # 1f. PostgreSQL (official PostgreSQL repository)
     log "Adding PostgreSQL ${PG_MAJOR} repository..."
-    if ! command -v psql &>/dev/null; then
+    # Fix Bug #2: Check for server package, not client binary
+    if ! dpkg -l "postgresql-${PG_MAJOR}" &>/dev/null | grep -q "^ii"; then
         curl -fsSL "https://www.postgresql.org/media/keys/ACCC4CF8.asc" | gpg --batch --yes --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
         echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
             > /etc/apt/sources.list.d/postgresql.list
-        apt-get update -qq
-        apt-get install -y -qq "postgresql-${PG_MAJOR}" "postgresql-contrib-${PG_MAJOR}"
+        DEBIAN_FRONTEND=noninteractive apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "postgresql-${PG_MAJOR}" "postgresql-contrib-${PG_MAJOR}"
     fi
     verify_cmd "psql --version" "PostgreSQL installed"
 
@@ -1096,8 +1103,9 @@ ENVEOF
     if [ -f "${PANEL_HOME}/apps/api/dist/db/migrate.js" ]; then
         log "Running database migrations..."
         cd "${PANEL_HOME}/apps/api"
-        # Source .env file explicitly before running node
-        su - "$PANEL_USER" -c "cd ${PANEL_HOME}/apps/api && export \$(grep -v '^#' ${PANEL_HOME}/.env | xargs) && NODE_ENV=production node dist/db/migrate.js" || \
+        # Fix Bug #3: Use sudo -u with set -a/source instead of su - with export $(grep|xargs)
+        # This handles special characters in .env values properly (e.g. PHP_FPM_POOL_DIR=/etc/php/{version}/fpm/pool.d)
+        sudo -u "$PANEL_USER" bash -c "cd ${PANEL_HOME}/apps/api && set -a && source ${PANEL_HOME}/.env && set +a && NODE_ENV=production node dist/db/migrate.js" || \
             warn "Migration failed — will retry on first start"
     fi
 
@@ -1125,8 +1133,8 @@ DOVECOTSQL
     if [ -f "${PANEL_HOME}/apps/api/dist/db/seed.js" ]; then
         log "Seeding database..."
         cd "${PANEL_HOME}/apps/api"
-        # Source .env file explicitly before running node
-        su - "$PANEL_USER" -c "cd ${PANEL_HOME}/apps/api && export \$(grep -v '^#' ${PANEL_HOME}/.env | xargs) && NODE_ENV=production node dist/db/seed.js" || \
+        # Fix Bug #3: Use sudo -u with set -a/source instead of su - with export $(grep|xargs)
+        sudo -u "$PANEL_USER" bash -c "cd ${PANEL_HOME}/apps/api && set -a && source ${PANEL_HOME}/.env && set +a && NODE_ENV=production node dist/db/seed.js" || \
             warn "Seeding failed — will retry on first start"
     fi
 
