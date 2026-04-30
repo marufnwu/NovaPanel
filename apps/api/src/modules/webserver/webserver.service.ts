@@ -7,6 +7,46 @@ import { PhpFpmService } from '../../services/php-fpm.service.js';
 import { auditService } from '../audit/audit.service.js';
 import { AppError } from '../../errors.js';
 import { logger } from '../../config/logger.js';
+import * as sudoFs from '../../services/sudo-fs.js';
+
+// Reserved ports that cannot be used in custom Nginx directives
+const RESERVED_PORTS: readonly number[] = [80, 443, 3000, 8080, 53, 21, 25, 110, 143, 993, 995];
+
+/**
+ * Validate custom Nginx directives for dangerous patterns.
+ * Rejects directives that could break the server or conflict with panel services.
+ */
+function validateCustomDirectives(directives: string): void {
+  const lines = directives.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    // Check for listen directives on reserved ports
+    const listenMatch = trimmed.match(/^listen\s+(\d+)/);
+    if (listenMatch) {
+      const port = parseInt(listenMatch[1], 10);
+      if (RESERVED_PORTS.includes(port)) {
+        throw new AppError(400, 'INVALID_DIRECTIVE', `Listen on reserved port ${port} is not allowed in custom directives`);
+      }
+    }
+
+    // Reject any upstream blocks (could create backdoor proxies)
+    if (trimmed.startsWith('upstream ')) {
+      throw new AppError(400, 'INVALID_DIRECTIVE', 'upstream blocks are not allowed in custom directives');
+    }
+
+    // Reject server_name directives that could override panel routing
+    if (trimmed.startsWith('server_name ') && trimmed.includes('novapanel')) {
+      throw new AppError(400, 'INVALID_DIRECTIVE', 'server_name cannot reference novapanel in custom directives');
+    }
+
+    // Reject include directives (path traversal risk)
+    if (trimmed.startsWith('include ')) {
+      throw new AppError(400, 'INVALID_DIRECTIVE', 'include directives are not allowed in custom directives');
+    }
+  }
+}
 
 export class WebServerService {
   // ---------------------------------------------------------------------------
@@ -134,9 +174,32 @@ export class WebServerService {
 
     // Append custom directives if provided
     if (data.customNginxDirectives) {
-      const { run } = await import('../../services/executor.js');
+      // Validate custom directives for dangerous patterns (ISSUE-01, ISSUE-03)
+      validateCustomDirectives(data.customNginxDirectives);
+
       const configPath = `/etc/nginx/sites-available/${domain.name}.conf`;
-      await run('bash', ['-c', `echo '${data.customNginxDirectives.replace(/'/g, "'\\''")}' >> ${configPath}`], { sudo: true });
+
+      // Read existing config to enable rollback
+      let existingConfig: string;
+      try {
+        existingConfig = await sudoFs.readFile(configPath);
+      } catch {
+        existingConfig = '';
+      }
+
+      // Safely append custom directives using sudoFs.appendFile
+      // Instead of bash -c with string interpolation (ISSUE-01 fix)
+      await sudoFs.appendFile(configPath, '\n# Custom directives\n' + data.customNginxDirectives);
+
+      // Validate the full config with nginx -t after appending custom directives
+      const test = await nginxService.testConfig();
+      if (!test.valid) {
+        // Rollback: restore original config
+        if (existingConfig !== '') {
+          await sudoFs.writeFile(configPath, existingConfig);
+        }
+        throw new AppError(422, 'NGINX_CONFIG_INVALID', `Custom directives caused nginx config test failure: ${test.output}`);
+      }
     }
 
     // Update DB if webServer changed

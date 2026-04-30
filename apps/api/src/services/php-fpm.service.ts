@@ -6,6 +6,7 @@ import * as sudoFs from './sudo-fs.js';
 import { db } from '../db/index.js';
 import { websites } from '../db/schema/websites.js';
 import { eq } from 'drizzle-orm';
+import { AppError } from '../errors.js';
 
 export class PhpFpmService implements SystemService {
   constructor(private version: string) {
@@ -105,19 +106,38 @@ listen = /run/php/php${website.phpVersion}-fpm-${poolName}.sock
 listen.owner = www-data
 listen.group = www-data
 pm = dynamic
-pm.max_children = 5
+pm.max_children = 10
 pm.start_servers = 2
 pm.min_spare_servers = 1
 pm.max_spare_servers = 3
+pm.max_requests = 500
+php_admin_value[memory_limit] = 256M
+php_admin_value[max_execution_time] = 300
+php_admin_value[upload_max_filesize] = 64M
+php_admin_value[post_max_size] = 64M
+php_value[session.save_path] = /var/lib/php/sessions/${poolName}
 php_admin_value[open_basedir] = ${website.documentRoot}:/tmp
 php_admin_value[upload_tmp_dir] = ${website.documentRoot}/../tmp
+request_terminate_timeout = 300
 `;
 
     await sudoFs.mkdir(poolDir);
-    await sudoFs.writeFile(poolPath, config);
+    // Use atomic write to ensure pool config is never partial (ISSUE-07)
+    await sudoFs.atomicWrite(poolPath, config);
 
-    // Reload this PHP-FPM version
-    await PhpFpmService.reloadPhpFpm(website.phpVersion).catch(() => {});
+    // Reload this PHP-FPM version and validate the reload succeeded (ISSUE-04)
+    try {
+      await PhpFpmService.reloadPhpFpm(website.phpVersion);
+    } catch (reloadError) {
+      // PHP-FPM reload failed — remove the bad pool config and re-throw
+      await sudoFs.unlink(poolPath).catch(() => {});
+      try {
+        await PhpFpmService.reloadPhpFpm(website.phpVersion);
+      } catch {
+        // Second reload also failed — PHP-FPM may be in a bad state
+      }
+      throw new AppError(422, 'PHP_FPM_RELOAD_FAILED', `PHP-FPM pool config rejected by PHP-FPM: ${reloadError instanceof Error ? reloadError.message : String(reloadError)}`);
+    }
     logger.info({ websiteId, phpVersion: website.phpVersion }, 'Website PHP-FPM pool generated');
   }
 
@@ -194,7 +214,8 @@ php_admin_value[upload_tmp_dir] = ${documentRoot}/../tmp
 `;
 
     await sudoFs.mkdir(poolDir);
-    await sudoFs.writeFile(poolPath, config);
+    // Use atomic write to ensure pool config is never partial (ISSUE-07)
+    await sudoFs.atomicWrite(poolPath, config);
 
     // Reload this PHP-FPM version
     await this.reload().catch(() => {});

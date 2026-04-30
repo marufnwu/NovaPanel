@@ -9,6 +9,36 @@ import { run } from './executor.js';
 import { logger } from '../config/logger.js';
 
 /**
+ * Write a file atomically using write-to-temp-then-rename pattern.
+ * This ensures the target file is either the old version or the new version,
+ * never a partial/corrupt file if the write is interrupted.
+ *
+ * 1. Writes content to a temp file (/tmp/novapanel-{random}.tmp)
+ * 2. Uses mv (rename) to atomically replace the target file
+ */
+export async function atomicWrite(path: string, content: string): Promise<void> {
+  try {
+    // Generate unique temp file path
+    const tempPath = `/tmp/novapanel-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`;
+
+    // Write content to temp file via tee
+    const result = await run('tee', [tempPath], { sudo: true, input: content });
+    if (!result.success) {
+      throw new Error(`Failed to write temp file ${tempPath}: ${result.stderr || result.stdout}`);
+    }
+
+    // Atomically move temp file to target (mv is atomic on same filesystem)
+    const mvResult = await run('mv', ['-f', tempPath, path], { sudo: true });
+    if (!mvResult.success) {
+      throw new Error(`Failed to move ${tempPath} to ${path}: ${mvResult.stderr || mvResult.stdout}`);
+    }
+  } catch (error: any) {
+    logger.error({ path, error: error.message }, 'sudo-fs atomicWrite failed');
+    throw new Error(`Failed to write file ${path}: ${error.message}`);
+  }
+}
+
+/**
  * Write a file using sudo (via tee).
  * Content is piped through stdin to avoid shell injection.
  */

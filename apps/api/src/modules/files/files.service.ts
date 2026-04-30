@@ -4,11 +4,7 @@ import path from 'node:path';
 import { run } from '../../services/executor.js';
 import { AppError } from '../../errors.js';
 import { logger } from '../../config/logger.js';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
 import { auditService } from '../audit/audit.service.js';
-
-const execAsync = promisify(exec);
 
 interface FileItem {
   name: string;
@@ -522,10 +518,15 @@ export class FilesService {
    */
   async getDirectorySize(homeDir: string, relativePath: string): Promise<{ path: string; size: number; sizeHuman: string }> {
     const targetPath = this.safePath(homeDir, relativePath);
-    
-    const { stdout } = await execAsync(`du -sb "${targetPath}"`, { maxBuffer: 1024 * 1024 * 10 });
-    const size = parseInt(stdout.trim().split('\t')[0], 10);
-    
+
+    // Use run() executor instead of execAsync to avoid shell injection (ISSUE-06)
+    const result = await run('du', ['-sb', targetPath], { sudo: true, timeout: 60_000 });
+    if (!result.success) {
+      throw new AppError(422, 'DIRSIZE_FAILED', `Failed to get directory size: ${result.stderr}`);
+    }
+
+    const size = parseInt(result.stdout.trim().split('\t')[0], 10);
+
     const formatSize = (bytes: number): string => {
       if (bytes === 0) return '0 B';
       const k = 1024;
@@ -543,20 +544,25 @@ export class FilesService {
   async getFileOwnership(homeDir: string, relativePath: string): Promise<{ path: string; uid: number; gid: number; user?: string; group?: string }> {
     const targetPath = this.safePath(homeDir, relativePath);
     const stats = await stat(targetPath);
-    
+
     let user: string | undefined;
     let group: string | undefined;
-    
+
+    // Use run() executor instead of execAsync to avoid shell injection (ISSUE-06)
     try {
-      const { stdout: userOutput } = await execAsync(`getent passwd ${stats.uid}`);
-      user = userOutput.split(':')[0];
+      const result = await run('getent', ['passwd', stats.uid.toString()], { sudo: true });
+      if (result.success && result.stdout.trim()) {
+        user = result.stdout.split(':')[0];
+      }
     } catch {
       // User not found, keep undefined
     }
-    
+
     try {
-      const { stdout: groupOutput } = await execAsync(`getent group ${stats.gid}`);
-      group = groupOutput.split(':')[0];
+      const result = await run('getent', ['group', stats.gid.toString()], { sudo: true });
+      if (result.success && result.stdout.trim()) {
+        group = result.stdout.split(':')[0];
+      }
     } catch {
       // Group not found, keep undefined
     }

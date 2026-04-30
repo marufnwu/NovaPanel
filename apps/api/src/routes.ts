@@ -50,7 +50,7 @@ export async function registerRoutes(fastify: FastifyInstance) {
   // Phase 15: Terminal + Logs
   const { registerTerminalWs } = await import('./modules/terminal/terminal.ws.js');
   await registerTerminalWs(fastify);
-  await fastify.register(import('./modules/logs/logs.routes.js'), { prefix: '/api/v1' });
+  // TODO: await fastify.register(import('./modules/logs/logs.routes.js'), { prefix: '/api/v1' });
 
   // Phase 16: Cron + Firewall
   await fastify.register(import('./modules/cron/cron.routes.js'), { prefix: '/api/v1' });

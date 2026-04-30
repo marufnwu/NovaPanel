@@ -13,12 +13,17 @@ import { nanoid } from 'nanoid';
 import { run } from '../../services/executor.js';
 import { auditService } from '../audit/audit.service.js';
 import { logger } from '../../config/logger.js';
+import { AppError } from '../../errors.js';
 
 const ALLOWED_SERVICES = [
   'nginx', 'apache2', 'bind9', 'mariadb', 'postgresql',
   'postfix', 'dovecot', 'proftpd', 'ufw', 'fail2ban', 'cloudflared',
   'php8.1-fpm', 'php8.2-fpm', 'php8.3-fpm', 'php8.4-fpm',
 ];
+
+/** Rate limiter for service restarts — tracks last restart time per service (ISSUE-14) */
+const restartRateLimitMs = 30_000; // 30 seconds cooldown
+const lastRestartTimes = new Map<string, number>();
 
 export class StatsService {
   /**
@@ -149,6 +154,15 @@ export class StatsService {
     if (!ALLOWED_SERVICES.includes(serviceName)) {
       throw new Error(`Service '${serviceName}' is not in the allowed list`);
     }
+
+    // ISSUE-14: Rate limit check — prevent rapid restarts within 30 seconds
+    const now = Date.now();
+    const lastRestart = lastRestartTimes.get(serviceName) || 0;
+    if (now - lastRestart < restartRateLimitMs) {
+      const waitMs = restartRateLimitMs - (now - lastRestart);
+      throw new AppError(429, 'SERVICE_RESTART_RATE_LIMITED', `Service restart rate limited. Please wait ${Math.ceil(waitMs / 1000)} seconds before restarting ${serviceName} again.`);
+    }
+    lastRestartTimes.set(serviceName, now);
 
     const result = await run('systemctl', ['restart', serviceName], { sudo: true });
 

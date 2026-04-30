@@ -465,9 +465,13 @@ DOVECOTCONF
 driver = sqlite
 connect = /var/lib/novapanel/novapanel.db
 
+# Look up mailboxes by username (ISSUE-10 fix)
 password_query = \
-  SELECT email as user, password_hash as password \
-  FROM users WHERE email = '%u' AND active = 1
+  SELECT username AS user, password_hash AS password \
+  FROM mailboxes WHERE username = '%u' AND is_active = 1 AND is_suspended = 0
+user_query = \
+  SELECT '/var/mail/vhosts' AS home, 5000 AS uid, 5000 AS gid, mailbox AS mail \
+  FROM mailboxes WHERE username = '%u'
 DOVECOTSQL
         chown root:dovecot /etc/dovecot/dovecot-sql.conf.ext
         chmod 640 /etc/dovecot/dovecot-sql.conf.ext
@@ -617,6 +621,11 @@ phase_service_config() {
     log "Configuring Nginx as frontend proxy..."
     cat > /etc/nginx/sites-available/novapanel << 'NGINXCONF'
 # NovaPanel — Nginx Frontend Reverse Proxy
+#
+# NOTE: The NovaPanel API is directly accessible on port 3000 as a FALLBACK
+# if Nginx is unavailable. This ensures admin access even when Nginx config
+# is broken. Access: http://your-server:3000
+
 upstream panel_api {
     server 127.0.0.1:3000;
     keepalive 64;
@@ -888,6 +897,7 @@ EnvironmentFile=${PANEL_HOME}/.env
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=false
+# NOTE: Panel API is directly accessible on port 3000 as fallback if Nginx fails
 ReadWritePaths=/var/www /var/log/novapanel /var/lib/novapanel /etc/novapanel /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/apache2/sites-available /etc/bind/zones /etc/php /etc/postfix /etc/dovecot /etc/proftpd /tmp
 PrivateTmp=true
 

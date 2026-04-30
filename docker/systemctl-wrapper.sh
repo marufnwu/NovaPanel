@@ -1,11 +1,11 @@
 #!/bin/bash
-# ╔══════════════════════════════════════════════════════════════════════╗
-# ║  Fake systemctl — Maps to supervisorctl inside Docker               ║
-# ║                                                                     ║
-# ║  This allows NovaPanel's service management code (which calls       ║
-# ║  systemctl) to work seamlessly inside a Docker container where      ║
-# ║  supervisord manages all processes instead of systemd.              ║
-# ╚══════════════════════════════════════════════════════════════════════╝
+# â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+# â•‘  Fake systemctl â€” Maps to supervisorctl inside Docker               â•‘
+# â•‘                                                                     â•‘
+# â•‘  This allows NovaPanel's service management code (which calls       â•‘
+# â•‘  systemctl) to work seamlessly inside a Docker container where      â•‘
+# â•‘  supervisord manages all processes instead of systemd.              â•‘
+# â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 ACTION="${1:-}"
 SERVICE="${2:-}"
@@ -49,7 +49,7 @@ check_process_running() {
     local svc="$1"
     case "$svc" in
         ufw|ufw.service)
-            # UFW is a firewall, not a daemon — check via iptables/ufw status
+            # UFW is a firewall, not a daemon â€” check via iptables/ufw status
             if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "active"; then
                 return 0
             fi
@@ -84,7 +84,7 @@ case "$ACTION" in
             echo "inactive"
             exit 3
         else
-            # Service not found in supervisord — try process check
+            # Service not found in supervisord â€” try process check
             if check_process_running "$SERVICE"; then
                 echo "active"
                 exit 0
@@ -142,6 +142,11 @@ case "$ACTION" in
         if [ -n "$SERVICE" ]; then
             case "$SERVICE" in
                 nginx)
+                    # Test config before reload (ISSUE-09)
+                    if ! nginx -t >/dev/null 2>&1; then
+                        echo "nginx: configuration test failed" >&2
+                        exit 1
+                    fi
                     # Use nginx -s reload to avoid dropping connections
                     nginx -s reload >/dev/null 2>&1
                     ;;
@@ -177,9 +182,9 @@ case "$ACTION" in
             PROG="$(map_service "$SERVICE")"
             RESULT=$(supervisorctl -c "$SUP_CONF" status "$PROG" 2>/dev/null)
             if echo "$RESULT" | grep -q "RUNNING"; then
-                echo "● ${SERVICE} is running"
+                echo "â— ${SERVICE} is running"
             else
-                echo "● ${SERVICE} is not running"
+                echo "â— ${SERVICE} is not running"
             fi
         else
             supervisorctl -c "$SUP_CONF" status
@@ -187,7 +192,7 @@ case "$ACTION" in
         ;;
 
     enable|disable)
-        # Silently ignore — supervisord doesn't have enable/disable
+        # Silently ignore â€” supervisord doesn't have enable/disable
         exit 0
         ;;
 

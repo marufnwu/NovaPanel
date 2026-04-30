@@ -22,6 +22,24 @@ const ftpService = new FtpService();
 const cronService = new CronService();
 const webServerService = new WebServerService();
 
+/**
+ * Check disk usage for a website's document root and warn if usage is high.
+ * ISSUE-12: Basic disk usage warning — full quota enforcement requires OS-level quotas.
+ */
+async function checkDiskUsageWarning(documentRoot: string, websiteId: string): Promise<void> {
+  try {
+    const result = await run('du', ['-sm', documentRoot], { sudo: true });
+    const usedMb = parseInt(result.stdout.split('\t')[0], 10) || 0;
+    // Warn if disk usage is above 1GB (configurable threshold)
+    const WARNING_THRESHOLD_MB = 1024;
+    if (usedMb > WARNING_THRESHOLD_MB) {
+      logger.warn({ websiteId, usedMb, thresholdMb: WARNING_THRESHOLD_MB }, 'Website disk usage exceeds threshold');
+    }
+  } catch {
+    // Disk usage check is best-effort — don't fail operations if du fails
+  }
+}
+
 /** Base directory for website home directories */
 const SITES_ROOT = '/var/www/sites';
 
@@ -163,6 +181,9 @@ export class WebsitesService {
       } catch (e) {
         logger.warn({ err: e, websiteId }, 'Website config apply failed — continuing');
       }
+
+      // Check disk usage and warn if high (ISSUE-12)
+      await checkDiskUsageWarning(documentRoot, websiteId);
 
       logger.info({ websiteId, name, documentRoot, systemUser }, 'Website created successfully');
 

@@ -106,7 +106,18 @@ export class NginxService implements SystemService {
     const enabledPath = `${env.NGINX_SITES_ENABLED}/website-${websiteId}.conf`;
 
     await sudoFs.mkdir(env.NGINX_SITES_AVAILABLE);
-    await sudoFs.writeFile(configPath, config);
+
+    // Backup existing config before overwriting (ISSUE-08)
+    const backupPath = `${env.NGINX_SITES_AVAILABLE}/website-${websiteId}.conf.bak`;
+    try {
+      const existing = await sudoFs.readFile(configPath);
+      await sudoFs.writeFile(backupPath, existing);
+    } catch {
+      // No existing config to backup — that's OK
+    }
+
+    // Use atomic write to ensure config is never partial (ISSUE-07)
+    await sudoFs.atomicWrite(configPath, config);
 
     // Symlink to sites-enabled
     try {
@@ -118,11 +129,23 @@ export class NginxService implements SystemService {
     // 5. Test nginx config
     const test = await this.testConfig();
     if (!test.valid) {
-      // Rollback
-      await sudoFs.unlink(enabledPath).catch(() => {});
-      await sudoFs.unlink(configPath).catch(() => {});
+      // Rollback — try to restore from backup
+      try {
+        const backup = await sudoFs.readFile(backupPath);
+        await sudoFs.atomicWrite(configPath, backup);
+      } catch (restoreError) {
+        // Rollback failed — system may be in inconsistent state
+        const originalError = `Nginx config test failed for website ${websiteId}: ${test.output}`;
+        const restoreFailedMsg = `Rollback also failed: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}. System may be in an inconsistent state.`;
+        throw new Error(`${originalError}; ${restoreFailedMsg}`);
+      }
+      // Clean up backup file after successful restore
+      await sudoFs.unlink(backupPath).catch(() => {});
       throw new Error(`Nginx config test failed for website ${websiteId}: ${test.output}`);
     }
+
+    // Clean up backup file after successful validation
+    await sudoFs.unlink(backupPath).catch(() => {});
 
     // 6. Reload nginx
     await this.reload();
