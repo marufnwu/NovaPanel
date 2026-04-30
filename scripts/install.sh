@@ -859,7 +859,7 @@ SUDOERS
         log "Deploying from local source: ${SOURCE_DIR}"
         rsync -a --exclude='node_modules' --exclude='.git' --exclude='data' \
             "${SOURCE_DIR}/" "${PANEL_HOME}/"
-    elif [ -d "${PANEL_HOME}/package.json" ]; then
+    elif [ -f "${PANEL_HOME}/package.json" ]; then
         ok "Panel code already deployed at ${PANEL_HOME}"
     else
         # Clone from GitHub
@@ -897,6 +897,12 @@ SUDOERS
 
         # FIX #12: pnpm install with explicit error handling
         log "Installing dependencies..."
+        
+        # Ensure pnpm is available and using correct PATH
+        export PNPM_HOME="$HOME/.local/share/pnpm"
+        export PATH="$PNPM_HOME:$PATH"
+        source ~/.bashrc 2>/dev/null || true
+        
         if ! pnpm install --frozen-lockfile 2>/dev/null; then
             warn "frozen-lockfile failed, falling back to regular install (dependencies may differ)"
             if ! pnpm install; then
@@ -907,6 +913,9 @@ SUDOERS
 
         log "Building NovaPanel..."
         pnpm build
+
+        # Copy database migrations to dist (not handled by TypeScript compiler)
+        cp -r apps/api/src/db/migrations apps/api/dist/db/migrations
 
         ok "Panel built successfully"
     fi
