@@ -121,6 +121,28 @@ cd NovaPanel
 docker compose up -d
 ```
 
+### Uninstall NovaPanel
+
+To safely remove NovaPanel from your server (preserves user data and databases):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/master/scripts/uninstall.sh | sudo bash -s -- --confirm
+```
+
+For full purge (removes all data including websites and databases):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/master/scripts/uninstall.sh | sudo bash -s -- --confirm --purge
+```
+
+To also remove system packages (nginx, php, mariadb, etc.):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/master/scripts/uninstall.sh | sudo bash -s -- --confirm --purge --remove-packages
+```
+
+> ⚠️ **Always back up your data before using `--purge`!** Website data in `/var/www/` and databases are preserved by default.
+
 ### Access the Panel
 
 After installation, access NovaPanel at: **`http://your-server-ip:8732`**
