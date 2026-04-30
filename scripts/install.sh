@@ -501,14 +501,16 @@ DOVECOTSQL
     # Configure ProFTPD
     if [ -f /etc/proftpd/proftpd.conf ]; then
         if ! grep -q "AuthUserFile" /etc/proftpd/proftpd.conf; then
-            cat >> /etc/proftpd/proftpd.conf << 'PROFTPDCONF'
+            local SERVER_IP
+            SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || echo '127.0.0.1')"
+            cat >> /etc/proftpd/proftpd.conf << PROFTPDCONF
 
 # NovaPanel FTP configuration
 AuthUserFile /etc/proftpd/ftpd.passwd
 AuthOrder mod_auth_file.c
 RequireValidShell off
 PassivePorts ${FTP_PASSIVE_MIN} ${FTP_PASSIVE_MAX}
-MasqueradeAddress $(hostname -I | awk '{print $1}')
+MasqueradeAddress ${SERVER_IP}
 PROFTPDCONF
         fi
     fi
@@ -727,18 +729,44 @@ phase_panel_deploy() {
     mkdir -p "${PANEL_HOME}"
     ok "Directories created"
 
-    # 3c. Deploy panel code
+    # 3c. Clone or deploy panel code
     local SOURCE_DIR
     SOURCE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
     if [ -f "${SOURCE_DIR}/package.json" ] && [ -f "${SOURCE_DIR}/pnpm-workspace.yaml" ]; then
-        log "Deploying from source: ${SOURCE_DIR}"
+        log "Deploying from local source: ${SOURCE_DIR}"
         rsync -a --exclude='node_modules' --exclude='.git' --exclude='data' \
             "${SOURCE_DIR}/" "${PANEL_HOME}/"
+    elif [ -d "${PANEL_HOME}/package.json" ]; then
+        ok "Panel code already deployed at ${PANEL_HOME}"
     else
-        warn "Source not found at ${SOURCE_DIR}"
-        warn "Please deploy the panel code manually to ${PANEL_HOME}"
-        warn "Then run: cd ${PANEL_HOME} && pnpm install && pnpm build"
+        # Clone from GitHub
+        log "Cloning NovaPanel from GitHub..."
+        if ! command -v git &>/dev/null; then
+            apt-get install -y -qq git
+        fi
+
+        local REPO_URL="https://github.com/marufnwu/NovaPanel.git"
+        local REPO_BRANCH="master"
+        local CLONE_DIR="${PANEL_HOME}-src"
+
+        if [ -d "${CLONE_DIR}/.git" ]; then
+            log "Updating existing clone at ${CLONE_DIR}..."
+            cd "${CLONE_DIR}" && git pull --ff-only || warn "Git pull failed, using existing code"
+        else
+            log "Cloning ${REPO_URL} (branch: ${REPO_BRANCH})..."
+            git clone --depth 1 --branch "${REPO_BRANCH}" "${REPO_URL}" "${CLONE_DIR}"
+        fi
+
+        if [ -f "${CLONE_DIR}/package.json" ]; then
+            rsync -a --exclude='node_modules' --exclude='.git' --exclude='data' \
+                "${CLONE_DIR}/" "${PANEL_HOME}/"
+            ok "Panel code cloned to ${PANEL_HOME}"
+        else
+            die "Failed to clone NovaPanel. Please install manually:
+  git clone ${REPO_URL} ${PANEL_HOME}
+  cd ${PANEL_HOME} && pnpm install && pnpm build"
+        fi
     fi
 
     # 3d. Install dependencies and build
