@@ -308,7 +308,7 @@ phase_system_packages() {
     # 1f. PostgreSQL (official PostgreSQL repository)
     log "Adding PostgreSQL ${PG_MAJOR} repository..."
     if ! command -v psql &>/dev/null; then
-        curl -fsSL "https://www.postgresql.org/media/keys/ACCC4CF8.asc" | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
+        curl -fsSL "https://www.postgresql.org/media/keys/ACCC4CF8.asc" | gpg --batch --yes --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
         echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
             > /etc/apt/sources.list.d/postgresql.list
         apt-get update -qq
@@ -322,7 +322,7 @@ phase_system_packages() {
         add-apt-repository -y ppa:ondrej/php
     else
         # Debian: use sury repo
-        curl -fsSL "https://packages.sury.org/php/apt.gpg" | gpg --dearmor -o /usr/share/keyrings/sury-php.gpg
+        curl -fsSL "https://packages.sury.org/php/apt.gpg" | gpg --batch --yes --dearmor -o /usr/share/keyrings/sury-php.gpg
         echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php $(lsb_release -cs) main" \
             > /etc/apt/sources.list.d/sury-php.list
     fi
@@ -574,7 +574,7 @@ MasqueradeAddress ${SERVER_IP}
 PROFTPDCONF
         fi
     fi
-    touch /etc/proftpd/ftpd.passwd
+    mkdir -p /etc/proftpd && touch /etc/proftpd/ftpd.passwd
     chmod 640 /etc/proftpd/ftpd.passwd
 
     systemctl enable proftpd
@@ -1096,7 +1096,8 @@ ENVEOF
     if [ -f "${PANEL_HOME}/apps/api/dist/db/migrate.js" ]; then
         log "Running database migrations..."
         cd "${PANEL_HOME}/apps/api"
-        su - "$PANEL_USER" -c "cd ${PANEL_HOME}/apps/api && NODE_ENV=production node dist/db/migrate.js" || \
+        # Source .env file explicitly before running node
+        su - "$PANEL_USER" -c "cd ${PANEL_HOME}/apps/api && export \$(grep -v '^#' ${PANEL_HOME}/.env | xargs) && NODE_ENV=production node dist/db/migrate.js" || \
             warn "Migration failed — will retry on first start"
     fi
 
@@ -1124,7 +1125,8 @@ DOVECOTSQL
     if [ -f "${PANEL_HOME}/apps/api/dist/db/seed.js" ]; then
         log "Seeding database..."
         cd "${PANEL_HOME}/apps/api"
-        su - "$PANEL_USER" -c "cd ${PANEL_HOME}/apps/api && NODE_ENV=production node dist/db/seed.js" || \
+        # Source .env file explicitly before running node
+        su - "$PANEL_USER" -c "cd ${PANEL_HOME}/apps/api && export \$(grep -v '^#' ${PANEL_HOME}/.env | xargs) && NODE_ENV=production node dist/db/seed.js" || \
             warn "Seeding failed — will retry on first start"
     fi
 
