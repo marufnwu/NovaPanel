@@ -217,9 +217,17 @@ phase_preflight() {
 
     # Set defaults based on hostname
     local HOSTNAME_FQDN
-    HOSTNAME_FQDN="$(hostname -f 2>/dev/null || echo 'localhost')"
+    HOSTNAME_FQDN="$(hostname -f 2>/dev/null || hostname)"
     local HOSTNAME_DOMAIN
-    HOSTNAME_DOMAIN="$(hostname -d 2>/dev/null || echo 'localhost')"
+    HOSTNAME_DOMAIN="$(hostname -d 2>/dev/null || echo 'local')"
+
+    # FIX: Validate hostname looks like a proper FQDN (contains at least one dot)
+    # On servers without proper DNS setup, hostname -f returns just the hostname
+    # which results in invalid emails like admin@maruf-server
+    if [[ "$HOSTNAME_FQDN" != *.* ]]; then
+        HOSTNAME_FQDN="novapanel.local"
+        HOSTNAME_DOMAIN="novapanel.local"
+    fi
 
     ADMIN_EMAIL="${ADMIN_EMAIL:-admin@${HOSTNAME_FQDN}}"
     LE_EMAIL="${LE_EMAIL:-$ADMIN_EMAIL}"
