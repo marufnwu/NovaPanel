@@ -1,0 +1,122 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  NovaPanel Docker Compose Configuration                             ║
+# ║                                                                     ║
+# ║  Usage:                                                             ║
+# ║    docker compose build                # Build the image            ║
+# ║    docker compose up -d                # Start all services         ║
+# ║    docker compose logs -f novapanel    # Follow panel logs          ║
+# ║    docker compose exec novapanel bash  # Shell into container       ║
+# ║                                                                     ║
+# ║  All services run inside a single container managed by supervisord. ║
+# ║  Volumes persist data across container restarts.                    ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+services:
+  novapanel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: novapanel
+    restart: unless-stopped
+
+    # ─── Port Mappings ───────────────────────────────────────────────
+    # Host ports are prefixed with 1 to avoid conflicts with host services
+    ports:
+      - "13080:3000"     # Panel API (internal)
+      - "80:80"          # Nginx HTTP (frontend)
+      - "443:443"        # Nginx HTTPS (frontend)
+      - "8080:8080"      # Apache HTTP (backend, .htaccess)
+      - "21:21"          # FTP control
+      - "50000-50100:50000-50100"  # FTP passive mode
+      - "53:53/tcp"      # DNS TCP
+      - "53:53/udp"      # DNS UDP
+      - "25:25"          # SMTP
+      - "110:110"        # POP3
+      - "143:143"        # IMAP
+      - "993:993"        # IMAPS
+      - "995:995"        # POP3S
+
+    # ─── Volume Mounts (persistence) ─────────────────────────────────
+    volumes:
+      - novapanel-data:/var/lib/novapanel       # Panel DB, secrets, backups
+      - novapanel-www:/var/www/vhosts           # Website files
+      - novapanel-mysql:/var/lib/mysql          # MariaDB data
+      - novapanel-pgsql:/var/lib/postgresql     # PostgreSQL data
+      - novapanel-logs:/var/log/novapanel       # Panel logs
+      - novapanel-bind:/etc/bind/zones          # DNS zone files
+      - novapanel-mail:/var/mail/vhosts         # Virtual mailboxes
+      - novapanel-ssl:/etc/novapanel/ssl        # SSL certificates
+
+    # ─── Environment Variables ───────────────────────────────────────
+    environment:
+      # Server
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      PANEL_URL: ${PANEL_URL:-http://localhost:80}
+
+      # Database (SQLite for panel metadata)
+      DB_PATH: /var/lib/novapanel/novapanel.db
+
+      # Auth secrets (use .env file for production overrides)
+      SESSION_SECRET: ${SESSION_SECRET:-docker-dev-session-secret-must-be-32-chars-minimum!!}
+      JWT_SECRET: ${JWT_SECRET:-docker-dev-jwt-secret-must-be-32-characters-minimum!!}
+      SF_ENCRYPTION_KEY: ${SF_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+
+      # Redis
+      REDIS_URL: redis://127.0.0.1:6379
+
+      # Admin bootstrap
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@novapanel.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme123}
+
+      # Mail
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME:-mail.novapanel.local}
+
+      # SSL / Let's Encrypt
+      LE_EMAIL: ${LE_EMAIL:-admin@novapanel.local}
+
+      # Paths
+      VHOSTS_ROOT: /var/www/vhosts
+      BACKUP_DIR: /var/lib/novapanel/backups
+
+      # PostgreSQL version (for supervisord)
+      PG_VERSION: "16"
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+
+    # ─── Health Check ────────────────────────────────────────────────
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+
+    # ─── Container Settings ──────────────────────────────────────────
+    privileged: true
+    cap_add:
+      - NET_ADMIN      # For iptables/firewall management
+      - SYS_ADMIN      # For system service management
+    sysctls:
+      net.ipv4.ip_forward: 0
+
+# ─── Named Volumes ──────────────────────────────────────────────────────
+volumes:
+  novapanel-data:
+    driver: local
+  novapanel-www:
+    driver: local
+  novapanel-mysql:
+    driver: local
+  novapanel-pgsql:
+    driver: local
+  novapanel-logs:
+    driver: local
+  novapanel-bind:
+    driver: local
+  novapanel-mail:
+    driver: local
+  novapanel-ssl:
+    driver: local

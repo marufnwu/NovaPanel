@@ -1,0 +1,40 @@
+# Source files (not needed - we use pre-built dist)
+apps/api/src
+!apps/api/src/db/migrations
+apps/web/src
+
+# Build artifacts we don't need
+.turbo
+*.tsbuildinfo
+
+# Dev files
+.env
+.git
+plans
+*.md
+!README.md
+
+# Config files not needed in Docker
+apps/api/drizzle.config.ts
+apps/api/tsconfig.json
+apps/web/tsconfig.json
+apps/web/vite.config.ts
+apps/web/tailwind.config.js
+apps/web/postcss.config.js
+apps/web/index.html
+apps/web/tsconfig.tsbuildinfo
+
+# Test files
+*.test.ts
+
+# Web node_modules (not needed, only API deps)
+apps/web/node_modules
+
+# Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# IDE
+.vscode
+.idea
