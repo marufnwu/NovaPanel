@@ -1103,9 +1103,9 @@ ENVEOF
     if [ -f "${PANEL_HOME}/apps/api/dist/db/migrate.js" ]; then
         log "Running database migrations..."
         cd "${PANEL_HOME}/apps/api"
-        # Fix Bug #3: Use sudo -u with set -a/source instead of su - with export $(grep|xargs)
-        # This handles special characters in .env values properly (e.g. PHP_FPM_POOL_DIR=/etc/php/{version}/fpm/pool.d)
-        sudo -u "$PANEL_USER" bash -c "cd ${PANEL_HOME}/apps/api && set -a && source ${PANEL_HOME}/.env && set +a && NODE_ENV=production node dist/db/migrate.js" || \
+        # Run migrations as root (sudo -u fails in nohup context with libsql error 14)
+        # Ownership is fixed later by chown -R at line ~1142
+        set -a && source "${PANEL_HOME}/.env" && set +a && NODE_ENV=production node dist/db/migrate.js || \
             warn "Migration failed — will retry on first start"
     fi
 
@@ -1133,8 +1133,9 @@ DOVECOTSQL
     if [ -f "${PANEL_HOME}/apps/api/dist/db/seed.js" ]; then
         log "Seeding database..."
         cd "${PANEL_HOME}/apps/api"
-        # Fix Bug #3: Use sudo -u with set -a/source instead of su - with export $(grep|xargs)
-        sudo -u "$PANEL_USER" bash -c "cd ${PANEL_HOME}/apps/api && set -a && source ${PANEL_HOME}/.env && set +a && NODE_ENV=production node dist/db/seed.js" || \
+        # Run seed as root (sudo -u fails in nohup context with libsql error 14)
+        # Ownership is fixed later by chown -R
+        set -a && source "${PANEL_HOME}/.env" && set +a && NODE_ENV=production node dist/db/seed.js || \
             warn "Seeding failed — will retry on first start"
     fi
 
