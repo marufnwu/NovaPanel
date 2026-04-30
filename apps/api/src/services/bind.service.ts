@@ -9,15 +9,15 @@ export class BindService implements SystemService {
   readonly displayName = 'BIND9';
 
   async start(): Promise<void> {
-    await run('systemctl', ['start', 'bind9'], { sudo: true });
+    await run('systemctl', ['start', 'named'], { sudo: true });
   }
 
   async stop(): Promise<void> {
-    await run('systemctl', ['stop', 'bind9'], { sudo: true });
+    await run('systemctl', ['stop', 'named'], { sudo: true });
   }
 
   async restart(): Promise<void> {
-    await run('systemctl', ['restart', 'bind9'], { sudo: true });
+    await run('systemctl', ['restart', 'named'], { sudo: true });
   }
 
   async reload(): Promise<void> {
@@ -25,7 +25,7 @@ export class BindService implements SystemService {
   }
 
   async status(): Promise<ServiceInfo> {
-    const result = await run('systemctl', ['is-active', 'bind9'], { sudo: true });
+    const result = await run('systemctl', ['is-active', 'named'], { sudo: true });
     const status: ServiceStatus = result.stdout.trim() === 'active' ? 'running' : 'stopped';
     return { name: this.name, displayName: this.displayName, status };
   }

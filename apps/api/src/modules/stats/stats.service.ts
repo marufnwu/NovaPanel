@@ -16,7 +16,7 @@ import { logger } from '../../config/logger.js';
 import { AppError } from '../../errors.js';
 
 const ALLOWED_SERVICES = [
-  'nginx', 'apache2', 'bind9', 'mariadb', 'postgresql',
+  'nginx', 'apache2', 'named', 'mariadb', 'postgresql',
   'postfix', 'dovecot', 'proftpd', 'ufw', 'fail2ban', 'cloudflared',
   'php8.1-fpm', 'php8.2-fpm', 'php8.3-fpm', 'php8.4-fpm',
 ];
@@ -124,7 +124,7 @@ export class StatsService {
     const services = [
       { name: 'nginx', displayName: 'Nginx' },
       { name: 'apache2', displayName: 'Apache2' },
-      { name: 'bind9', displayName: 'BIND9 DNS' },
+      { name: 'named', displayName: 'BIND9 DNS' },
       { name: 'mariadb', displayName: 'MariaDB' },
       { name: 'postgresql', displayName: 'PostgreSQL' },
       { name: 'postfix', displayName: 'Postfix Mail' },

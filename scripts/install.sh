@@ -70,7 +70,14 @@ section() {
 
 # ─── Helper: Generate a random secret ────────────────────────────────────
 gen_secret() {
-    openssl rand -hex "${1:-32}"
+    local length="${1:-32}"
+    # FIX #9: Use openssl if available, fallback to /dev/urandom
+    if command -v openssl &>/dev/null; then
+        openssl rand -hex "$length"
+    else
+        # Fallback: use /dev/urandom with od
+        od -An -tx1 -N "$((length * 2))" /dev/urandom | tr -d ' \n'
+    fi
 }
 
 # ─── Helper: Verify a command succeeded with message ─────────────────────
@@ -339,20 +346,30 @@ phase_system_packages() {
     verify_cmd "nginx -v" "Nginx installed"
     wait_for_port 127.0.0.1 80 30
 
-    # 1i. Apache (backend for .htaccess support)
+    # FIX #10: Backup Apache ports.conf before modifying
     log "Installing Apache2 (backend on port 8080)..."
     apt-get install -y -qq apache2 apache2-utils
     # Configure Apache to listen on 8080 only
+    if [ -f /etc/apache2/ports.conf ]; then
+        cp /etc/apache2/ports.conf /etc/apache2/ports.conf.bak
+    fi
     cat > /etc/apache2/ports.conf << 'APACHEPORTS'
 # NovaPanel: Apache listens on 8080 as a backend
 # Nginx handles port 80/443 as the frontend
 Listen 8080
 APACHEPORTS
+    # FIX #4: Proper error handling - replace || true patterns
     # Disable default Apache vhost, enable proxy modules
-    a2dissite 000-default 2>/dev/null || true
-    a2enmod rewrite proxy proxy_http headers 2>/dev/null || true
+    if command -v a2dissite &>/dev/null; then
+        a2dissite 000-default 2>/dev/null || warn "a2dissite 000-default failed"
+    fi
+    if command -v a2enmod &>/dev/null; then
+        a2enmod rewrite proxy proxy_http headers 2>/dev/null || warn "a2enmod failed"
+    fi
     systemctl enable apache2
-    systemctl start apache2 || true
+    if ! systemctl start apache2; then
+        warn "Failed to start apache2"
+    fi
     verify_cmd "apache2 -v" "Apache installed"
     wait_for_port 127.0.0.1 8080 30
 
@@ -373,14 +390,15 @@ APACHEPORTS
         fi
     fi
 
-    # Configure BIND9 to listen on all interfaces
+    # FIX #1: Configure BIND9 - restrict recursion to localhost (security)
     if [ -f /etc/bind/named.conf.options ]; then
         cat > /etc/bind/named.conf.options << 'BINDOPTS'
 options {
     directory "/var/cache/bind";
     listen-on { any; };
     listen-on-v6 { any; };
-    allow-recursion { any; };
+    allow-query { any; };
+    allow-recursion { 127.0.0.1; ::1; };
     recursion yes;
     dnssec-validation auto;
 };
@@ -390,8 +408,10 @@ BINDOPTS
     mkdir -p /etc/bind/zones
     chown -R bind:bind /etc/bind/zones
 
-    systemctl enable bind9
-    systemctl start bind9 || true
+    systemctl enable named
+    if ! systemctl start named; then
+        warn "Failed to start named"
+    fi
     verify_cmd "named -v" "BIND9 installed"
     wait_for_port 127.0.0.1 53 30
 
@@ -431,8 +451,13 @@ BINDOPTS
 
     # Touch Postfix map files
     touch /etc/postfix/virtual_domains /etc/postfix/virtual_mailbox
-    postmap /etc/postfix/virtual_domains 2>/dev/null || true
-    postmap /etc/postfix/virtual_mailbox 2>/dev/null || true
+    # FIX #4: postmap can fail if files are empty, use warn instead of || true
+    if ! postmap /etc/postfix/virtual_domains 2>/dev/null; then
+        warn "postmap virtual_domains failed (file may be empty)"
+    fi
+    if ! postmap /etc/postfix/virtual_mailbox 2>/dev/null; then
+        warn "postmap virtual_mailbox failed (file may be empty)"
+    fi
 
     # Configure Dovecot for virtual users
     cat > /etc/dovecot/conf.d/99-novapanel.conf << 'DOVECOTCONF'
@@ -459,23 +484,8 @@ log_path = /var/log/dovecot.log
 info_log_path = /var/log/dovecot-info.log
 DOVECOTCONF
 
-    if [ ! -f /etc/dovecot/dovecot-sql.conf.ext ]; then
-        cat > /etc/dovecot/dovecot-sql.conf.ext << 'DOVECOTSQL'
-# NovaPanel Dovecot SQL configuration
-driver = sqlite
-connect = /var/lib/novapanel/novapanel.db
-
-# Look up mailboxes by username (ISSUE-10 fix)
-password_query = \
-  SELECT username AS user, password_hash AS password \
-  FROM mailboxes WHERE username = '%u' AND is_active = 1 AND is_suspended = 0
-user_query = \
-  SELECT '/var/mail/vhosts' AS home, 5000 AS uid, 5000 AS gid, mailbox AS mail \
-  FROM mailboxes WHERE username = '%u'
-DOVECOTSQL
-        chown root:dovecot /etc/dovecot/dovecot-sql.conf.ext
-        chmod 640 /etc/dovecot/dovecot-sql.conf.ext
-    fi
+    # FIX #5: Dovecot SQL config will be created after database migrations run
+    # (moved to phase_panel_deploy after migrations complete)
 
     # Configure OpenDKIM
     if [ -f /etc/opendkim.conf ]; then
@@ -489,11 +499,20 @@ DOVECOTSQL
         sed -i 's/^ENABLED=0/ENABLED=1/' /etc/default/spamassassin
     fi
 
-    systemctl enable postfix dovecot opendkim spamassassin 2>/dev/null || true
-    systemctl start postfix || true
-    systemctl start dovecot || true
-    systemctl start opendkim 2>/dev/null || true
-    systemctl start spamassassin 2>/dev/null || true
+    # FIX #4: Enable and start mail services with proper error handling
+    systemctl enable postfix dovecot opendkim spamassassin 2>/dev/null || warn "Some mail services could not be enabled"
+    if ! systemctl start postfix; then
+        warn "Failed to start postfix"
+    fi
+    if ! systemctl start dovecot; then
+        warn "Failed to start dovecot"
+    fi
+    if ! systemctl start opendkim; then
+        warn "Failed to start opendkim"
+    fi
+    if ! systemctl start spamassassin; then
+        warn "Failed to start spamassassin"
+    fi
 
     verify_cmd "postconf mail_version" "Postfix installed"
     verify_cmd "dovecot --version" "Dovecot installed"
@@ -522,7 +541,9 @@ PROFTPDCONF
     chmod 640 /etc/proftpd/ftpd.passwd
 
     systemctl enable proftpd
-    systemctl start proftpd || true
+    if ! systemctl start proftpd; then
+        warn "Failed to start proftpd"
+    fi
     verify_cmd "proftpd -v" "ProFTPD installed"
 
     # 1m. Redis / Valkey
@@ -559,6 +580,8 @@ PROFTPDCONF
             warn "cloudflared installation skipped (unavailable)"
         rm -f /tmp/cloudflared.deb
     fi
+    # FIX #11: Cloudflared creates outbound tunnel connections (no inbound ports needed)
+    # If exposing SSH through cloudflared tunnel, open port 22 in UFW as usual
 }
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -569,12 +592,40 @@ phase_service_config() {
 
     # 2a. MariaDB security
     log "Securing MariaDB..."
-    # Set root password
-    mariadb -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';" 2>/dev/null || true
-    mariadb -u root -p"${DB_PASSWORD}" -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null || true
-    mariadb -u root -p"${DB_PASSWORD}" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
-    mariadb -u root -p"${DB_PASSWORD}" -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
-    mariadb -u root -p"${DB_PASSWORD}" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+
+    # FIX #2: MariaDB password logic - support re-runs
+    # Store password in /etc/novapanel/.db-password (mode 600)
+    mkdir -p /etc/novapanel
+    if [ -f /etc/novapanel/.db-password ]; then
+        DB_PASSWORD="$(cat /etc/novapanel/.db-password)"
+    else
+        echo -n "$DB_PASSWORD" > /etc/novapanel/.db-password
+        chmod 600 /etc/novapanel/.db-password
+    fi
+
+    # Set root password only if connection doesn't already work
+    if ! mariadb -u root -p"$DB_PASSWORD" -e "SELECT 1" &>/dev/null; then
+        log "Setting MariaDB root password..."
+        mariadb -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';" 2>/dev/null || \
+            warn "Failed to set MariaDB root password"
+        mariadb -u root -p"${DB_PASSWORD}" -e "FLUSH PRIVILEGES;" 2>/dev/null || \
+            warn "Failed to flush MariaDB privileges"
+    fi
+
+    # Remove anonymous users and test database
+    # FIX #4: Use explicit error handling instead of || true
+    if ! mariadb -u root -p"${DB_PASSWORD}" -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null; then
+        warn "Failed to remove anonymous MySQL users"
+    fi
+    if ! mariadb -u root -p"${DB_PASSWORD}" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null; then
+        warn "Failed to remove remote root users"
+    fi
+    if ! mariadb -u root -p"${DB_PASSWORD}" -e "DROP DATABASE IF EXISTS test;" 2>/dev/null; then
+        warn "Failed to drop test database"
+    fi
+    if ! mariadb -u root -p"${DB_PASSWORD}" -e "FLUSH PRIVILEGES;" 2>/dev/null; then
+        warn "Failed to flush privileges"
+    fi
 
     # Bind MariaDB to 127.0.0.1 only
     local MARIADB_CONF
@@ -586,10 +637,14 @@ phase_service_config() {
     done
     if [ -n "${MARIADB_CONF:-}" ]; then
         if ! grep -q "bind-address = 127.0.0.1" "$MARIADB_CONF" 2>/dev/null; then
-            sed -i 's/^#\?bind-address.*/bind-address = 127.0.0.1/' "$MARIADB_CONF" 2>/dev/null || true
+            if ! sed -i 's/^#\?bind-address.*/bind-address = 127.0.0.1/' "$MARIADB_CONF" 2>/dev/null; then
+                warn "Failed to set MariaDB bind-address"
+            fi
         fi
     fi
-    systemctl restart mariadb || true
+    if ! systemctl restart mariadb; then
+        warn "Failed to restart mariadb"
+    fi
     ok "MariaDB secured and bound to 127.0.0.1"
 
     # 2b. PostgreSQL security
@@ -598,21 +653,36 @@ phase_service_config() {
     local PG_HBA="/etc/postgresql/${PG_MAJOR}/main/pg_hba.conf"
 
     if [ -f "$PG_CONF" ]; then
-        sed -i "s/^#\?listen_addresses.*/listen_addresses = '127.0.0.1'/" "$PG_CONF"
+        if ! sed -i "s/^#\?listen_addresses.*/listen_addresses = '127.0.0.1'/" "$PG_CONF" 2>/dev/null; then
+            warn "Failed to set PostgreSQL listen_addresses"
+        fi
     fi
-    systemctl restart postgresql || true
+    if ! systemctl restart postgresql; then
+        warn "Failed to restart postgresql"
+    fi
     ok "PostgreSQL bound to 127.0.0.1"
 
     # 2c. PHP-FPM configuration
     log "Configuring PHP-FPM pools..."
     for ver in "${PHP_VERSIONS[@]}"; do
         local pool_conf="/etc/php/${ver}/fpm/pool.d/www.conf"
+        # FIX #6: Disable the default www pool to avoid conflicts
+        if [ -f "$pool_conf" ]; then
+            mv "$pool_conf" "${pool_conf}.disabled"
+            ok "Disabled default PHP ${ver} FPM www pool"
+        fi
+    done
+
+    for ver in "${PHP_VERSIONS[@]}"; do
+        local pool_conf="/etc/php/${ver}/fpm/pool.d/www.conf.disabled"
         if [ -f "$pool_conf" ]; then
             sed -i "s|^listen = .*|listen = /run/php/php${ver}-fpm.sock|" "$pool_conf"
             sed -i "s|^;*\s*listen.owner = .*|listen.owner = www-data|" "$pool_conf"
             sed -i "s|^;*\s*listen.group = .*|listen.group = www-data|" "$pool_conf"
             sed -i "s|^;*\s*listen.mode = .*|listen.mode = 0660|" "$pool_conf"
-            systemctl restart "php${ver}-fpm" 2>/dev/null || true
+            if ! systemctl restart "php${ver}-fpm" 2>/dev/null; then
+                warn "Failed to restart php${ver}-fpm"
+            fi
             ok "PHP ${ver} FPM configured"
         fi
     done
@@ -728,6 +798,41 @@ phase_panel_deploy() {
     fi
     ok "Panel user: ${PANEL_USER}"
 
+    # FIX #7: Create sudoers entry for panel user (CRITICAL)
+    log "Configuring sudo access for ${PANEL_USER}..."
+    cat > /etc/sudoers.d/novapanel << 'SUDOERS'
+# NovaPanel service management
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart *
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop *
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl start *
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload *
+novapanel ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
+novapanel ALL=(ALL) NOPASSWD: /usr/sbin/nginx -s reload
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/novapanel-*.tmp /etc/nginx/*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/novapanel-*.tmp /etc/php/*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/rm -f /etc/nginx/sites-enabled/*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/ln -s /etc/nginx/sites-available/* /etc/nginx/sites-enabled/
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/nginx/sites-available/*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/php/*/fpm/pool.d/*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/chown -R novapanel\:novapanel /var/www/*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/chmod * /var/www/*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /var/www/*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/crontab -u * *
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/supervisorctl *
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/ufw *
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/certbot *
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/dovecot/*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/postfix/*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/proftpd/*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/bind/*
+SUDOERS
+    chmod 440 /etc/sudoers.d/novapanel
+    if command -v visudo &>/dev/null; then
+        visudo -c 2>/dev/null || warn "sudoers syntax check failed"
+    fi
+    ok "Sudo access configured for ${PANEL_USER}"
+
     # 3b. Create directories
     log "Creating panel directories..."
     mkdir -p /var/www/vhosts
@@ -782,8 +887,15 @@ phase_panel_deploy() {
     if [ -f "${PANEL_HOME}/package.json" ]; then
         cd "${PANEL_HOME}"
 
+        # FIX #12: pnpm install with explicit error handling
         log "Installing dependencies..."
-        pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+        if ! pnpm install --frozen-lockfile 2>/dev/null; then
+            warn "frozen-lockfile failed, falling back to regular install (dependencies may differ)"
+            if ! pnpm install; then
+                fail "pnpm install failed"
+                exit 1
+            fi
+        fi
 
         log "Building NovaPanel..."
         pnpm build
@@ -850,12 +962,32 @@ ENVEOF
         ok "Environment file already exists"
     fi
 
-    # 3f. Run database migrations
+    # FIX #5: Create Dovecot SQL config AFTER database migrations run
     if [ -f "${PANEL_HOME}/apps/api/dist/db/migrate.js" ]; then
         log "Running database migrations..."
         cd "${PANEL_HOME}/apps/api"
         su - "$PANEL_USER" -c "cd ${PANEL_HOME}/apps/api && NODE_ENV=production node dist/db/migrate.js" || \
             warn "Migration failed — will retry on first start"
+    fi
+
+    # FIX #5: Create Dovecot SQL config after migrations have run
+    if [ ! -f /etc/dovecot/dovecot-sql.conf.ext ]; then
+        log "Creating Dovecot SQL configuration..."
+        cat > /etc/dovecot/dovecot-sql.conf.ext << 'DOVECOTSQL'
+# NovaPanel Dovecot SQL configuration
+driver = sqlite
+connect = /var/lib/novapanel/novapanel.db
+
+# Look up mailboxes by username
+password_query = \
+  SELECT username AS user, password_hash AS password \
+  FROM mailboxes WHERE username = '%u' AND is_active = 1 AND is_suspended = 0
+user_query = \
+  SELECT '/var/mail/vhosts' AS home, 5000 AS uid, 5000 AS gid, mailbox AS mail \
+  FROM mailboxes WHERE username = '%u'
+DOVECOTSQL
+        chown root:dovecot /etc/dovecot/dovecot-sql.conf.ext
+        chmod 640 /etc/dovecot/dovecot-sql.conf.ext
     fi
 
     # 3g. Run database seeding
@@ -893,12 +1025,13 @@ RestartSec=10
 # Load environment from .env file
 EnvironmentFile=${PANEL_HOME}/.env
 
-# Security hardening
+# FIX #8: Security hardening with proper ReadWritePaths
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=false
 # NOTE: Panel API is directly accessible on port 3000 as fallback if Nginx fails
-ReadWritePaths=/var/www /var/log/novapanel /var/lib/novapanel /etc/novapanel /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/apache2/sites-available /etc/bind/zones /etc/php /etc/postfix /etc/dovecot /etc/proftpd /tmp
+# ReadWritePaths: Panel needs write access to configs, logs, and web roots
+ReadWritePaths=/var/www /var/log/novapanel /var/lib/novapanel /etc/novapanel /etc/nginx /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/apache2 /etc/apache2/sites-available /etc/bind /etc/bind/zones /etc/php /etc/postfix /etc/dovecot /etc/proftpd /etc/ssl /etc/letsencrypt /tmp
 PrivateTmp=true
 
 [Install]
@@ -991,11 +1124,11 @@ phase_verification() {
         warn "Apache: not active (may not be required)"
     fi
 
-    # BIND9
-    if systemctl is-active --quiet bind9 2>/dev/null; then
-        ok "BIND9: active"
+    # named (BIND9)
+    if systemctl is-active --quiet named 2>/dev/null; then
+        ok "named (BIND9): active"
     else
-        fail "BIND9: NOT active"
+        fail "named (BIND9): NOT active"
         FAILURES=$((FAILURES + 1))
     fi
 
@@ -1103,6 +1236,25 @@ phase_verification() {
 phase_summary() {
     section "Installation Summary"
 
+    # FIX #3: Write credentials to a secure file instead of printing to terminal
+    local CREDS_FILE="/root/novapanel-credentials.txt"
+    cat > "$CREDS_FILE" << CREDSEOF
+NovaPanel Credentials
+=====================
+Generated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+Panel URL:      ${PANEL_URL}
+Admin Email:    ${ADMIN_EMAIL}
+Admin Password: ${ADMIN_PASSWORD}
+
+Database Password: (stored in /etc/novapanel/.db-password)
+
+Config:         ${PANEL_HOME}/.env
+Logs:           journalctl -u novapanel -f
+Manage:         systemctl {start|stop|restart} novapanel
+CREDSEOF
+    chmod 600 "$CREDS_FILE"
+
     echo ""
     echo -e "${BOLD}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${BOLD}║           NovaPanel Installation Complete                    ║${NC}"
@@ -1110,18 +1262,18 @@ phase_summary() {
     echo ""
     echo -e "  ${GREEN}Panel URL:${NC}      ${PANEL_URL}"
     echo -e "  ${GREEN}Admin Email:${NC}    ${ADMIN_EMAIL}"
-    echo -e "  ${GREEN}Admin Password:${NC} ${ADMIN_PASSWORD}"
+    echo -e "  ${GREEN}Credentials:${NC}    Saved to ${CREDS_FILE}"
     echo ""
     echo -e "  ${CYAN}Config:${NC}         ${PANEL_HOME}/.env"
     echo -e "  ${CYAN}Logs:${NC}           journalctl -u novapanel -f"
     echo -e "  ${CYAN}Manage:${NC}         systemctl {start|stop|restart} novapanel"
-    echo -e "  ${CYAN}Services:${NC}       systemctl list-units --type=service | grep -E 'nginx|mariadb|postgres|redis|postfix|dovecot|bind9|proftpd|php'"
+    echo -e "  ${CYAN}Services:${NC}       systemctl list-units --type=service | grep -E 'nginx|mariadb|postgres|redis|postfix|dovecot|named|proftpd|php'"
     echo ""
     echo -e "  ${YELLOW}Important:${NC}"
     echo -e "    • Change the default admin password immediately after first login"
     echo -e "    • Configure SSL/TLS with: certbot --nginx -d yourdomain.com"
     echo -e "    • Review firewall: ufw status verbose"
-    echo -e "    • MariaDB root password is in ${PANEL_HOME}/.env"
+    echo -e "    • MariaDB root password is in /etc/novapanel/.db-password"
     echo ""
     echo -e "  ${DIM}Install script v${SCRIPT_VERSION} | $(date -u +"%Y-%m-%d %H:%M:%S UTC")${NC}"
     echo ""
