@@ -35,7 +35,7 @@ LABEL org.opencontainers.image.source="https://github.com/novapanel/novapanel"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=8732
 ENV HOST=0.0.0.0
 ENV PG_VERSION=16
 
@@ -191,7 +191,7 @@ RUN chmod +x /entrypoint.sh && \
                                      /var/log/novapanel /var/lib/novapanel
 
 # ─── Expose ports ───────────────────────────────────────────────────────
-# 3000  — Panel API
+# 8732  — Panel API
 # 80    — Nginx HTTP
 # 443   — Nginx HTTPS
 # 8080  — Apache HTTP (backend)
@@ -202,11 +202,11 @@ RUN chmod +x /entrypoint.sh && \
 # 143   — IMAP
 # 993   — IMAPS
 # 995   — POP3S
-EXPOSE 3000 80 443 8080 21 53/tcp 53/udp 25 110 143 993 995
+EXPOSE 8732 80 443 8080 21 53/tcp 53/udp 25 110 143 993 995
 
 # ─── Health check ───────────────────────────────────────────────────────
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:3000/api/v1/health || exit 1
+    CMD curl -f http://localhost:8732/api/v1/health || exit 1
 
 # ─── Entrypoint & CMD ───────────────────────────────────────────────────
 ENTRYPOINT ["/entrypoint.sh"]

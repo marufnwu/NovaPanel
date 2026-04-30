@@ -12,7 +12,7 @@
 # ║  Environment variables (all optional with sensible defaults):       ║
 # ║    ADMIN_EMAIL     — Admin email (default: admin@$(hostname -f))    ║
 # ║    ADMIN_PASSWORD  — Admin password (default: auto-generated)       ║
-# ║    PANEL_URL       — Panel URL (default: http://$(hostname -f):3000)║
+# ║    PANEL_URL       — Panel URL (default: http://$(hostname -f):8732)║
 # ║    PANEL_USER      — System user (default: novapanel)               ║
 # ║    PANEL_HOME      — Install dir (default: /opt/novapanel)          ║
 # ║    MAIL_HOSTNAME   — Mail hostname (default: mail.$(hostname -d))   ║
@@ -231,7 +231,7 @@ phase_preflight() {
 
     ADMIN_EMAIL="${ADMIN_EMAIL:-admin@${HOSTNAME_FQDN}}"
     LE_EMAIL="${LE_EMAIL:-$ADMIN_EMAIL}"
-    PANEL_URL="${PANEL_URL:-http://${HOSTNAME_FQDN}:3000}"
+    PANEL_URL="${PANEL_URL:-http://${HOSTNAME_FQDN}:8732}"
     MAIL_HOSTNAME="${MAIL_HOSTNAME:-mail.${HOSTNAME_DOMAIN}}"
 
     # Generate passwords if not set
@@ -700,12 +700,12 @@ phase_service_config() {
     cat > /etc/nginx/sites-available/novapanel << 'NGINXCONF'
 # NovaPanel — Nginx Frontend Reverse Proxy
 #
-# NOTE: The NovaPanel API is directly accessible on port 3000 as a FALLBACK
+# NOTE: The NovaPanel API is directly accessible on port 8732 as a FALLBACK
 # if Nginx is unavailable. This ensures admin access even when Nginx config
-# is broken. Access: http://your-server:3000
+# is broken. Access: http://your-server:8732
 
 upstream panel_api {
-    server 127.0.0.1:3000;
+    server 127.0.0.1:8732;
     keepalive 64;
 }
 
@@ -787,7 +787,7 @@ NGINXCONF
     ufw allow 993/tcp
     ufw allow 995/tcp
     # Panel API
-    ufw allow 3000/tcp
+    ufw allow 8732/tcp
 
     ufw --force enable
     ok "UFW firewall configured"
@@ -926,7 +926,7 @@ SUDOERS
 
 # Server
 NODE_ENV=production
-PORT=3000
+PORT=8732
 HOST=0.0.0.0
 PANEL_URL=${PANEL_URL}
 
@@ -1195,10 +1195,10 @@ phase_verification() {
         FAILURES=$((FAILURES + 1))
     fi
 
-    if ss -tlnp | grep -q ':3000 '; then
-        ok "NovaPanel: listening on port 3000"
+    if ss -tlnp | grep -q ':8732 '; then
+        ok "NovaPanel: listening on port 8732"
     else
-        fail "NovaPanel: NOT listening on port 3000"
+        fail "NovaPanel: NOT listening on port 8732"
         FAILURES=$((FAILURES + 1))
     fi
 

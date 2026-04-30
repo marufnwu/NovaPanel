@@ -10,7 +10,7 @@ import { logger } from '../../config/logger.js';
 import * as sudoFs from '../../services/sudo-fs.js';
 
 // Reserved ports that cannot be used in custom Nginx directives
-const RESERVED_PORTS: readonly number[] = [80, 443, 3000, 8080, 53, 21, 25, 110, 143, 993, 995];
+const RESERVED_PORTS: readonly number[] = [80, 443, 8732, 8080, 53, 21, 25, 110, 143, 993, 995];
 
 /**
  * Validate custom Nginx directives for dangerous patterns.

@@ -363,7 +363,7 @@ phase_service_config() {
 
 # Upstream for the panel API
 upstream panel_api {
-    server 127.0.0.1:3000;
+    server 127.0.0.1:8732;
     keepalive 64;
 }
 
@@ -635,7 +635,7 @@ phase_panel_init() {
         SESSION_SECRET="$SESSION_SECRET" \
         JWT_SECRET="$JWT_SECRET" \
         SF_ENCRYPTION_KEY="$SF_ENCRYPTION_KEY" \
-        PANEL_URL="${PANEL_URL:-http://localhost:3000}" \
+        PANEL_URL="${PANEL_URL:-http://localhost:8732}" \
         ADMIN_EMAIL="${ADMIN_EMAIL:-admin@novapanel.local}" \
         LE_EMAIL="${LE_EMAIL:-admin@novapanel.local}" \
         MAIL_HOSTNAME="${MAIL_HOSTNAME:-mail.novapanel.local}" \
@@ -653,7 +653,7 @@ phase_panel_init() {
         SESSION_SECRET="$SESSION_SECRET" \
         JWT_SECRET="$JWT_SECRET" \
         SF_ENCRYPTION_KEY="$SF_ENCRYPTION_KEY" \
-        PANEL_URL="${PANEL_URL:-http://localhost:3000}" \
+        PANEL_URL="${PANEL_URL:-http://localhost:8732}" \
         ADMIN_EMAIL="${ADMIN_EMAIL:-admin@novapanel.local}" \
         ADMIN_PASSWORD="${ADMIN_PASSWORD:-changeme123}" \
         LE_EMAIL="${LE_EMAIL:-admin@novapanel.local}" \
@@ -679,7 +679,7 @@ phase_launch() {
     # Print summary
     echo ""
     echo -e "${BOLD}Service Configuration Summary:${NC}"
-    echo -e "  ${GREEN}Panel API${NC}:    http://0.0.0.0:3000"
+    echo -e "  ${GREEN}Panel API${NC}:    http://0.0.0.0:8732"
     echo -e "  ${GREEN}Nginx${NC}:        http://0.0.0.0:80 (frontend proxy)"
     echo -e "  ${GREEN}Apache${NC}:       http://127.0.0.1:8080 (backend, .htaccess)"
     echo -e "  ${GREEN}MariaDB${NC}:      127.0.0.1:3306"
