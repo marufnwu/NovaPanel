@@ -330,12 +330,16 @@ phase_preflight() {
         echo "============================================================"
         echo ""
         
-        # Ask if user wants to continue
-        read -p "Continue with installation? [Y/n] " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]] && [ -n "$REPLY" ]; then
-            echo "Installation cancelled."
-            exit 0
+        # Ask if user wants to continue (skip in non-interactive mode)
+        if [ -t 0 ]; then
+            read -p "Continue with installation? [Y/n] " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]] && [ -n "$REPLY" ]; then
+                echo "Installation cancelled."
+                exit 0
+            fi
+        else
+            ok "Continuing in non-interactive mode..."
         fi
     fi
 
