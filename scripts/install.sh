@@ -1140,11 +1140,45 @@ SUDOERS
             exit 1
         fi
 
-        log "Installing dependencies (as root, will fix ownership after)..."
+        # FIX: Ensure turbo cache directory exists and is writable
+        log "Setting up turbo cache directory..."
+        local TURBO_CACHE_DIR="/tmp/novapanel-turbo-cache"
+        mkdir -p "$TURBO_CACHE_DIR"
+        chmod 777 "$TURBO_CACHE_DIR" 2>/dev/null || true
+        export TURBO_CACHE_DIR="$TURBO_CACHE_DIR"
+        export TURBO_LOG_DIR="$TURBO_CACHE_DIR/logs"
+        mkdir -p "$TURBO_LOG_DIR"
+        chmod 777 "$TURBO_LOG_DIR" 2>/dev/null || true
+
+        log "Installing dependencies..."
         pnpm install 2>&1 | tee /tmp/novapanel-pnpm-install.log
 
-        log "Building panel..."
-        pnpm build 2>&1 | tee -a /tmp/novapanel-pnpm-install.log
+        log "Building API and web..."
+        # Build API backend first using direct tsc (avoids turbo cache permission issues)
+        cd "${PANEL_HOME}/apps/api" && {
+            rm -rf dist
+            mkdir -p dist
+            # Build TypeScript using pnpm exec to ensure correct PATH
+            pnpm exec tsc --build --force 2>&1 || {
+                warn "tsc --build failed, trying npx tsc..."
+                /usr/bin/npx tsc --build --force 2>&1 || {
+                    # Fallback: use system node with direct tsc call
+                    node /opt/novapanel/node_modules/.bin/tsc --build --force 2>&1
+                }
+            }
+        }
+        
+        # Copy migrations to dist folder (TypeScript compiler doesn't copy them)
+        cp -r "${PANEL_HOME}/apps/api/src/db/migrations" "${PANEL_HOME}/apps/api/dist/db/" 2>/dev/null || true
+        
+        cd "${PANEL_HOME}"
+
+        # Build web frontend
+        cd "${PANEL_HOME}/apps/web" && {
+            rm -rf dist
+            pnpm exec vite build 2>&1 | tail -20
+        }
+        cd "${PANEL_HOME}"
 
         # Fix ownership after build
         chown -R novapanel:novapanel /opt/novapanel
