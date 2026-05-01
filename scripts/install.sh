@@ -244,7 +244,14 @@ phase_preflight() {
         HOSTNAME_DOMAIN="localhost"
     fi
 
-    ADMIN_EMAIL="${ADMIN_EMAIL:-admin@${HOSTNAME_FQDN}}"
+    # Use IP for Panel URL, but valid domain for email addresses
+    # (IP-based emails like admin@192.168.0.211 fail validation)
+    local EMAIL_DOMAIN="$HOSTNAME_FQDN"
+    if [[ "$HOSTNAME_FQDN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        EMAIL_DOMAIN="localhost.localdomain"
+    fi
+
+    ADMIN_EMAIL="${ADMIN_EMAIL:-admin@${EMAIL_DOMAIN}}"
     LE_EMAIL="${LE_EMAIL:-$ADMIN_EMAIL}"
     PANEL_URL="${PANEL_URL:-http://${HOSTNAME_FQDN}:8732}"
     MAIL_HOSTNAME="${MAIL_HOSTNAME:-mail.${HOSTNAME_DOMAIN}}"
