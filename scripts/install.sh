@@ -326,12 +326,25 @@ phase_system_packages() {
     # 1g. PHP (via ondrej/php PPA — Ubuntu only; Debian uses sury)
     log "Adding PHP repository (ondrej/php)..."
     if [ "$ID" = "ubuntu" ]; then
-        add-apt-repository -y ppa:ondrej/php
+        # Check if PPA already exists to avoid hanging on re-runs
+        if ! grep -rq "ondrej" /etc/apt/sources.list.d/ 2>/dev/null; then
+            log "Adding ondrej/php PPA (with 120s timeout)..."
+            if ! timeout 120 add-apt-repository -y ppa:ondrej/php 2>&1; then
+                warn "Failed to add ondrej/php PPA (network issue?) — PHP packages may already be available"
+            fi
+        else
+            ok "ondrej/php PPA already configured"
+        fi
     else
         # Debian: use sury repo
-        curl -fsSL "https://packages.sury.org/php/apt.gpg" | gpg --batch --yes --dearmor -o /usr/share/keyrings/sury-php.gpg
-        echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php $(lsb_release -cs) main" \
-            > /etc/apt/sources.list.d/sury-php.list
+        if ! grep -q "sury" /etc/apt/sources.list.d/sury-php.list 2>/dev/null; then
+            log "Adding sury PHP repository..."
+            curl -fsSL "https://packages.sury.org/php/apt.gpg" | gpg --batch --yes --dearmor -o /usr/share/keyrings/sury-php.gpg
+            echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php $(lsb_release -cs) main" \
+                > /etc/apt/sources.list.d/sury-php.list
+        else
+            ok "sury PHP repository already configured"
+        fi
     fi
     apt-get update -qq
 
