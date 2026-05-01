@@ -128,7 +128,7 @@ wait_for_port() {
     local elapsed=0
 
     while [ "$elapsed" -lt "$timeout" ]; do
-        if ss -tlnp | grep -q ":${port} "; then
+        if ss -tlnp | grep -q ":${port}"; then
             ok "Port ${port} is listening"
             return 0
         fi
