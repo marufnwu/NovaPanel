@@ -55,6 +55,7 @@ LOG_LEVEL="${LOG_LEVEL:-info}"
 IS_LOCAL_SERVER=false
 BEHIND_NAT=false
 PUBLIC_IP=""
+SERVER_IP=""
 
 # ─── Colors ──────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -267,7 +268,6 @@ phase_preflight() {
     HOSTNAME_DOMAIN="$(hostname -d 2>/dev/null || echo 'local')"
 
     # Detect server IP for Panel URL fallback
-    local SERVER_IP
     SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
     # Fallback: try external IP if hostname -I returns nothing or only 127.0.0.1
     if [ -z "$SERVER_IP" ] || [ "$SERVER_IP" = "127.0.0.1" ]; then
@@ -275,6 +275,7 @@ phase_preflight() {
     fi
 
     # Detect public IP and check if server is behind NAT
+    # SERVER_IP is already set as a local variable above, so use it directly
     detect_public_ip "$SERVER_IP"
 
     # Validate hostname looks like a proper FQDN (contains at least one dot)
