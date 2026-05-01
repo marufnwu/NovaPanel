@@ -229,12 +229,19 @@ phase_preflight() {
     local HOSTNAME_DOMAIN
     HOSTNAME_DOMAIN="$(hostname -d 2>/dev/null || echo 'local')"
 
-    # FIX: Validate hostname looks like a proper FQDN (contains at least one dot)
-    # On servers without proper DNS setup, hostname -f returns just the hostname
-    # which results in invalid emails like admin@maruf-server
+    # Detect server IP for Panel URL fallback
+    local SERVER_IP
+    SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    # Fallback: try external IP if hostname -I returns nothing or only 127.0.0.1
+    if [ -z "$SERVER_IP" ] || [ "$SERVER_IP" = "127.0.0.1" ]; then
+        SERVER_IP="$(curl -sf --connect-timeout 3 ifconfig.me 2>/dev/null || echo '127.0.0.1')"
+    fi
+
+    # Validate hostname looks like a proper FQDN (contains at least one dot)
     if [[ "$HOSTNAME_FQDN" != *.* ]]; then
-        HOSTNAME_FQDN="example.com"
-        HOSTNAME_DOMAIN="example.com"
+        # No valid FQDN — use server IP for Panel URL
+        HOSTNAME_FQDN="$SERVER_IP"
+        HOSTNAME_DOMAIN="localhost"
     fi
 
     ADMIN_EMAIL="${ADMIN_EMAIL:-admin@${HOSTNAME_FQDN}}"
