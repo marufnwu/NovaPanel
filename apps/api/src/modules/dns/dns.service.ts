@@ -11,6 +11,7 @@ import { logger } from '../../config/logger.js';
 import * as sudoFs from '../../services/sudo-fs.js';
 import { resolve4, resolve6, resolveMx } from 'node:dns/promises';
 import { auditService } from '../audit/audit.service.js';
+import { createDnsError } from '../../utils/error-messages.js';
 
 export class DnsService {
   /**

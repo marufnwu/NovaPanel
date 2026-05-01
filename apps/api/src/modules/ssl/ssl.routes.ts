@@ -23,9 +23,9 @@ export default async function sslRoutes(fastify: FastifyInstance) {
   // POST /api/v1/ssl/domains/:id/letsencrypt — Issue Let's Encrypt cert
   fastify.post('/domains/:id/letsencrypt', async (req) => {
     const { id } = req.params as { id: string };
-    const { email } = issueLetsEncryptSchema.parse(req.body);
+    const { email, challengeType } = issueLetsEncryptSchema.parse(req.body);
     try {
-      return { success: true, data: await service.issueLetsEncrypt(id, email, req.user.id, req.ip) };
+      return { success: true, data: await service.issueLetsEncrypt(id, email, req.user.id, req.ip, challengeType) };
     } catch (error) {
       if (error instanceof AppError) throw error;
       req.log.error(error, 'Failed to issue Let\'s Encrypt certificate');

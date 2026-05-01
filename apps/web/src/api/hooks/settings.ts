@@ -367,6 +367,12 @@ export function useImportConfig() {
 
 // ─── Data Retention ───────────────────────────────────────────────────────────
 
+export interface DataRetentionSettings {
+  auditLogRetentionDays: number;
+  logRetentionDays: number;
+  backupRetentionCount: number;
+}
+
 export function useDataRetention() {
   return useQuery({
     queryKey: ['settings', 'data-retention'],
@@ -380,5 +386,30 @@ export function useUpdateDataRetention() {
     mutationFn: (data: Partial<DataRetentionSettings>) =>
       api.put('/settings/data-retention', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['settings', 'data-retention'] }),
+  });
+}
+
+// ─── Server Context ───────────────────────────────────────────────────────────
+
+export interface ServerContext {
+  localIps: string[];
+  hasPublicIp: boolean;
+  publicIp: string | null;
+  primaryIp: string;
+  panelUrl: string;
+  panelUrlIsPrivate: boolean;
+  tunnelConfigured: boolean;
+  tunnelActive: boolean;
+  tunnelUrl: string | null;
+  canIssueHttpSsl: boolean;
+  canReceiveExternalMail: boolean;
+  canServePublicDns: boolean;
+}
+
+export function useServerContext() {
+  return useQuery({
+    queryKey: ['server-context'],
+    queryFn: () => api.get<ServerContext>('/settings/server-context'),
+    staleTime: 5 * 60 * 1000, // 5 minutes (matches backend cache)
   });
 }

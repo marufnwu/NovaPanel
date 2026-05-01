@@ -11,6 +11,7 @@ import {
 } from '../../api/hooks/stats';
 import { useAuditLog } from '../../api/hooks/audit';
 import { useTunnelStatus } from '../../api/hooks/tunnel';
+import { useServerContext } from '../../api/hooks/settings';
 import {
   Activity,
   Cpu,
@@ -36,6 +37,7 @@ import {
   Download,
   Package,
   Zap,
+  X,
 } from 'lucide-react';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -101,17 +103,142 @@ function SegmentedBar({ segments }: { segments: { value: number; color: string; 
   );
 }
 
-function ServiceCard({ svc, onRestart }: { svc: { name: string; displayName: string; status: string }; onRestart: (name: string) => void }) {
+// --- Local Server Detection Banner ---
+
+interface LocalServerBannerProps {
+  serverContext: {
+    hasPublicIp: boolean;
+    panelUrlIsPrivate: boolean;
+    panelUrl: string;
+    tunnelActive: boolean;
+    tunnelUrl: string | null;
+    canIssueHttpSsl: boolean;
+    canReceiveExternalMail: boolean;
+    canServePublicDns: boolean;
+  } | undefined;
+  isLoading: boolean;
+  onDismiss: () => void;
+}
+
+function LocalServerBanner({ serverContext, isLoading, onDismiss }: LocalServerBannerProps) {
+  if (isLoading || !serverContext) return null;
+
+  // No banner needed for public IP
+  if (serverContext.hasPublicIp) return null;
+
+  // Critical: local server without tunnel
+  if (!serverContext.hasPublicIp && !serverContext.tunnelActive) {
+    return (
+      <div className="flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3">
+        <AlertTriangle className="h-5 w-5 shrink-0 text-yellow-500 mt-0.5" />
+        <div className="flex-1">
+          <p className="text-sm font-medium text-yellow-600">Local Server Detected</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Your server appears to be on a local network without a public IP. External features like SSL, mail, and public DNS require a Cloudflare Tunnel.
+          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <Link
+              to="/tunnels"
+              className="inline-flex items-center gap-1.5 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700"
+            >
+              Set Up Cloudflare Tunnel <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
+        </div>
+        <button
+          onClick={onDismiss}
+          className="shrink-0 rounded p-1 text-yellow-600 hover:bg-yellow-500/20"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    );
+  }
+
+  // Tunnel is working (local server with active tunnel)
+  if (!serverContext.hasPublicIp && serverContext.tunnelActive) {
+    // Panel URL not updated warning
+    if (serverContext.panelUrlIsPrivate) {
+      return (
+        <div className="flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-yellow-500 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-yellow-600">Panel URL Not Updated</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Your panel URL is still set to a local address ({serverContext.panelUrl}). This may cause issues with links in emails and notifications. Update it in Server Settings.
+            </p>
+            <div className="flex items-center gap-2 mt-2">
+              <Link
+                to="/settings/server"
+                className="inline-flex items-center gap-1.5 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700"
+              >
+                Update Panel URL <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+          </div>
+          <button
+            onClick={onDismiss}
+            className="shrink-0 rounded p-1 text-yellow-600 hover:bg-yellow-500/20"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      );
+    }
+
+    // All good with tunnel
+    return (
+      <div className="flex items-start gap-3 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3">
+        <Cloud className="h-5 w-5 shrink-0 text-green-500 mt-0.5" />
+        <div className="flex-1">
+          <p className="text-sm font-medium text-green-600">Connected via Cloudflare Tunnel</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Your services are accessible externally at {serverContext.tunnelUrl || 'your tunnel URL'}.
+          </p>
+        </div>
+        <button
+          onClick={onDismiss}
+          className="shrink-0 rounded p-1 text-green-600 hover:bg-green-500/20"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function ServiceCard({ svc, onRestart, serverContext }: { svc: { name: string; displayName: string; status: string }; onRestart: (name: string) => void; serverContext?: { canIssueHttpSsl: boolean; canReceiveExternalMail: boolean; canServePublicDns: boolean } }) {
   const [showMenu, setShowMenu] = useState(false);
   const isRunning = svc.status === 'running';
+
+  // Determine capability badges based on service type
+  const serviceLower = svc.name.toLowerCase();
+  const isMailService = serviceLower.includes('postfix') || serviceLower.includes('dovecot') || serviceLower.includes('mail');
+  const isDnsService = serviceLower.includes('bind') || serviceLower.includes('named') || serviceLower.includes('dns');
+  const isSslRelated = serviceLower.includes('nginx') || serviceLower.includes('apache') || serviceLower.includes('certbot');
+
+  const showLocalOnlyBadge = serverContext && (
+    (isMailService && !serverContext.canReceiveExternalMail) ||
+    (isDnsService && !serverContext.canServePublicDns) ||
+    (isSslRelated && !serverContext.canIssueHttpSsl)
+  );
 
   return (
     <div className="relative flex items-center justify-between rounded-lg border border-border bg-card p-3">
       <div className="flex items-center gap-3">
         <span className={`h-2.5 w-2.5 rounded-full ${isRunning ? 'bg-green-500' : 'bg-red-500'}`} />
-        <div>
-          <span className="text-sm font-medium">{svc.displayName}</span>
-          <p className="text-[10px] text-muted-foreground">{svc.name}</p>
+        <div className="flex items-center gap-2">
+          <div>
+            <span className="text-sm font-medium">{svc.displayName}</span>
+            <p className="text-[10px] text-muted-foreground">{svc.name}</p>
+          </div>
+          {showLocalOnlyBadge && (
+            <span className="inline-flex items-center rounded-full bg-yellow-500/10 px-2 py-0.5 text-[10px] font-medium text-yellow-600">
+              Local only
+            </span>
+          )}
         </div>
       </div>
       <div className="relative">
@@ -282,10 +409,12 @@ export function DashboardPage() {
   const { data: diskDetails } = useDiskDetails();
   const { data: auditEntries } = useAuditLog(1, 50);
   const { data: tunnelStatus } = useTunnelStatus();
+  const { data: serverContext, isLoading: serverContextLoading } = useServerContext();
   const restartService = useRestartService();
   const navigate = useNavigate();
 
   const [restartingService, setRestartingService] = useState<string | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   // "Last updated" indicator
   const [lastUpdatedAgo, setLastUpdatedAgo] = useState<string>('');
@@ -356,6 +485,15 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Dashboard" description="Server overview and resource usage" />
+
+      {/* Local Server Detection Banner */}
+      {!bannerDismissed && (
+        <LocalServerBanner
+          serverContext={serverContext}
+          isLoading={serverContextLoading}
+          onDismiss={() => setBannerDismissed(true)}
+        />
+      )}
 
       {/* Last updated indicator */}
       {lastUpdatedAgo && (
@@ -569,24 +707,38 @@ export function DashboardPage() {
             <Cloud className="h-5 w-5 text-orange-500" />
           </div>
           <div className="mt-3">
-            {tunnelStatus ? (
+            {tunnelStatus && tunnelStatus.tunnels.length > 0 ? (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className={`h-2.5 w-2.5 rounded-full ${tunnelStatus.status === 'active' ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+                  <span className={`h-2.5 w-2.5 rounded-full ${tunnelStatus.status === 'active' ? 'bg-green-500 animate-pulse' : 'bg-orange-500'}`} />
                   <span className="text-sm font-medium">
-                    {tunnelStatus.status === 'active' ? 'Active' : 'Inactive'}
+                    {tunnelStatus.status === 'active' ? 'Active' : 'Disconnected'}
                   </span>
                 </div>
-                {tunnelStatus.tunnels.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {tunnelStatus.tunnels.length} tunnel{tunnelStatus.tunnels.length > 1 ? 's' : ''} configured
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  {tunnelStatus.tunnels.length} tunnel{tunnelStatus.tunnels.length > 1 ? 's' : ''} configured
+                </p>
                 <Link
                   to="/tunnels"
                   className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                 >
                   Manage tunnels <ArrowRight className="h-3 w-3" />
+                </Link>
+              </div>
+            ) : tunnelStatus && tunnelStatus.tunnels.length === 0 ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-gray-400" />
+                  <span className="text-sm font-medium text-muted-foreground">Not Configured</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Required for external access on local servers
+                </p>
+                <Link
+                  to="/tunnels"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700"
+                >
+                  Set Up Tunnel <ArrowRight className="h-3 w-3" />
                 </Link>
               </div>
             ) : (
@@ -668,7 +820,7 @@ export function DashboardPage() {
           ) : (
             services?.map((svc) => (
               <div key={svc.name} className="relative">
-                <ServiceCard svc={svc} onRestart={handleRestart} />
+                <ServiceCard svc={svc} onRestart={handleRestart} serverContext={serverContext} />
                 {restartingService === svc.name && (
                   <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/60">
                     <Loader2 className="h-5 w-5 animate-spin text-primary" />

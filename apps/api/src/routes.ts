@@ -64,6 +64,7 @@ export async function registerRoutes(fastify: FastifyInstance) {
 
   // Settings
   await fastify.register(import('./modules/settings/settings.routes.js'), { prefix: '/api/v1' });
+  await fastify.register(import('./modules/settings/server-context.js'), { prefix: '/api/v1' });
 
   // Notifications
   await fastify.register(import('./modules/notifications/notifications.routes.js'), { prefix: '/api/v1' });

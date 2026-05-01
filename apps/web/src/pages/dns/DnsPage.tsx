@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useDomains } from '../../api/hooks/domains';
+import { useServerContext } from '../../api/hooks/settings';
 import {
   useDnsZone,
   useCreateDnsRecord,
@@ -24,7 +25,7 @@ import { toast } from '../../lib/toast';
 import {
   Network, Plus, Trash2, Upload, Download, RotateCcw, Eye, RefreshCw,
   Globe, Edit3, Save, X, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2,
-  Cloud, RefreshCcw, Settings,
+  Cloud, RefreshCcw, Settings, Info,
 } from 'lucide-react';
 import type { DnsRecord, DnsZone } from '../../api/hooks/dns';
 
@@ -301,8 +302,16 @@ function RawZoneModal({ domainId }: { domainId: string }) {
 /* ------------------------------------------------------------------ */
 /*  Propagation Check Modal                                          */
 /* ------------------------------------------------------------------ */
-function PropagationModal({ domainId, onClose }: { domainId: string; onClose: () => void }) {
+function PropagationModal({ domainId, onClose, canServePublicDns, primaryIp }: {
+  domainId: string;
+  onClose: () => void;
+  canServePublicDns: boolean;
+  primaryIp: string;
+}) {
   const { data: results, isLoading, refetch } = usePropagationCheck(domainId);
+
+  // Check if any result has errors (expected for private IPs)
+  const hasErrors = results?.some((r: any) => r.error || !r.aMatches);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -320,49 +329,71 @@ function PropagationModal({ domainId, onClose }: { domainId: string; onClose: ()
           </div>
         </div>
 
+        {/* Warning for private IPs */}
+        {!canServePublicDns && (
+          <div className="mb-4 flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" />
+            <div>
+              <p className="text-sm text-yellow-700">
+                Your DNS zone uses a private IP address ({primaryIp}). External DNS propagation cannot complete because public DNS resolvers cannot reach your server. For public DNS, use Cloudflare Tunnel with CNAME records.
+              </p>
+            </div>
+          </div>
+        )}
+
         {isLoading ? (
           <LoadingSpinner />
         ) : results ? (
-          <div className="space-y-2">
-            {results.map((r: any, i: number) => (
-              <div key={i} className="rounded-lg border border-border p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Globe className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-medium">{r.resolver}</span>
-                    <span className="text-xs text-muted-foreground">({r.ip})</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs">
-                    <span className={`flex items-center gap-1 ${r.aMatches ? 'text-green-500' : 'text-red-500'}`}>
-                      {r.aMatches ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
-                      A record
-                    </span>
-                    <span className={`flex items-center gap-1 ${r.mxMatches ? 'text-green-500' : 'text-yellow-500'}`}>
-                      {r.mxMatches ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
-                      MX record
-                    </span>
-                    {r.latencyMs > 0 && (
-                      <span className="text-muted-foreground">{r.latencyMs}ms</span>
-                    )}
-                  </div>
-                </div>
-                {r.error ? (
-                  <p className="text-xs text-destructive">{r.error}</p>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
-                    <div>
-                      <span className="font-medium text-foreground">A records:</span>{' '}
-                      {r.aRecords.length > 0 ? r.aRecords.join(', ') : '(none)'}
-                    </div>
-                    <div>
-                      <span className="font-medium text-foreground">MX records:</span>{' '}
-                      {r.mxRecords.length > 0 ? r.mxRecords.join(', ') : '(none)'}
-                    </div>
-                  </div>
-                )}
+          <>
+            {/* Contextual message for expected failures */}
+            {!canServePublicDns && hasErrors && (
+              <div className="mb-4 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
+                <p className="text-sm text-yellow-700">
+                  As expected — DNS records with private IPs cannot propagate to public resolvers. Consider using Cloudflare Tunnel for public access.
+                </p>
               </div>
-            ))}
-          </div>
+            )}
+            <div className="space-y-2">
+              {results.map((r: any, i: number) => (
+                <div key={i} className="rounded-lg border border-border p-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Globe className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">{r.resolver}</span>
+                      <span className="text-xs text-muted-foreground">({r.ip})</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className={`flex items-center gap-1 ${r.aMatches ? 'text-green-500' : 'text-red-500'}`}>
+                        {r.aMatches ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                        A record
+                      </span>
+                      <span className={`flex items-center gap-1 ${r.mxMatches ? 'text-green-500' : 'text-yellow-500'}`}>
+                        {r.mxMatches ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                        MX record
+                      </span>
+                      {r.latencyMs > 0 && (
+                        <span className="text-muted-foreground">{r.latencyMs}ms</span>
+                      )}
+                    </div>
+                  </div>
+                  {r.error ? (
+                    <p className="text-xs text-destructive">{r.error}</p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
+                      <div>
+                        <span className="font-medium text-foreground">A records:</span>{' '}
+                        {r.aRecords.length > 0 ? r.aRecords.join(', ') : '(none)'}
+                      </div>
+                      <div>
+                        <span className="font-medium text-foreground">MX records:</span>{' '}
+                        {r.mxRecords.length > 0 ? r.mxRecords.join(', ') : '(none)'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
         ) : null}
 
         <div className="mt-4 flex justify-end">
@@ -644,6 +675,7 @@ function ExternalDnsSection({ domainId }: { domainId: string }) {
 /* ------------------------------------------------------------------ */
 export function DnsPage() {
   const { data: domains } = useDomains();
+  const { data: serverContext } = useServerContext();
   const [selectedDomain, setSelectedDomain] = useState('');
   const { data: zone, isLoading: zoneLoading, isError: zoneError, refetch: refetchZone } = useDnsZone(selectedDomain);
   const [showAdd, setShowAdd] = useState(false);
@@ -667,6 +699,9 @@ export function DnsPage() {
 
   const selectedDomainObj = domains?.find(d => d.id === selectedDomain);
   const grouped = useMemo(() => zone?.records ? groupRecords(zone.records) : [], [zone?.records]);
+
+  const canServePublicDns = serverContext?.canServePublicDns ?? true;
+  const primaryIp = serverContext?.primaryIp ?? '';
 
   const toggleGroup = (type: string) => {
     setExpandedGroups(prev => {
@@ -953,7 +988,12 @@ export function DnsPage() {
       {showImport && <ImportModal onClose={() => setShowImport(false)} />}
       {showRaw && selectedDomain && <RawZoneModal domainId={selectedDomain} />}
       {showPropagation && selectedDomain && (
-        <PropagationModal domainId={selectedDomain} onClose={() => setShowPropagation(false)} />
+        <PropagationModal
+          domainId={selectedDomain}
+          onClose={() => setShowPropagation(false)}
+          canServePublicDns={canServePublicDns}
+          primaryIp={primaryIp}
+        />
       )}
 
       <ConfirmDialog

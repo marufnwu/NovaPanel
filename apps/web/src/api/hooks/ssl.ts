@@ -71,18 +71,21 @@ export function useIssueLetsEncrypt() {
       sanDomains,
       wildcard,
       dnsProvider,
+      challengeType,
     }: {
       domainId: string;
       email: string;
       sanDomains?: string[];
       wildcard?: boolean;
       dnsProvider?: string;
+      challengeType?: 'http-01' | 'dns-01';
     }) =>
       api.post<SslCertificate>(`/domains/${domainId}/letsencrypt`, {
         email,
         sanDomains,
         wildcard,
         dnsProvider,
+        challengeType,
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ssl'] }),
   });

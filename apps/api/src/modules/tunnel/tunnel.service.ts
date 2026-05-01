@@ -9,6 +9,11 @@ import { logger } from '../../config/logger.js';
 import * as sudoFs from '../../services/sudo-fs.js';
 import YAML from 'yaml';
 import { auditService } from '../audit/audit.service.js';
+import { isPrivateUrl } from '../../utils/network.js';
+import { env } from '../../config/env.js';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import { createTunnelError } from '../../utils/error-messages.js';
 
 interface CloudflareZone {
   id: string;
@@ -28,6 +33,17 @@ interface TunnelInfo {
   }[];
 }
 
+/**
+ * Enhanced tunnel status with connectivity information
+ */
+export interface TunnelStatus {
+  status: 'active' | 'inactive' | 'degraded';
+  processRunning: boolean;
+  connectedToEdge: boolean;
+  lastConnectedAt: string | null;
+  message?: string;
+}
+
 export class TunnelService {
   /**
    * Full tunnel setup: create tunnel, configure, install as service
@@ -39,7 +55,7 @@ export class TunnelService {
       timeout: 60_000,
     });
     if (!createResult.success) {
-      throw new AppError(422, 'TUNNEL_CREATE_FAILED', `Failed to create tunnel: ${createResult.stderr}`);
+      throw createTunnelError(createResult.stderr, 'TUNNEL_CREATE_FAILED');
     }
 
     // Parse tunnel ID from output
@@ -155,7 +171,8 @@ export class TunnelService {
       const data = await response.json() as any;
       
       if (!data.success) {
-        throw new AppError(400, 'FETCH_ZONES_FAILED', 'Failed to fetch zones from Cloudflare');
+        const errorMsg = data.errors?.[0]?.message || data.messages?.[0] || 'Unknown Cloudflare API error';
+        throw createTunnelError(errorMsg, 'FETCH_ZONES_FAILED');
       }
 
       const zones: CloudflareZone[] = data.result.map((z: any) => ({
@@ -297,22 +314,81 @@ export class TunnelService {
   }
 
   /**
-   * Get tunnel status
+   * Get tunnel status with enhanced connectivity information
    */
-  async getStatus() {
-    const result = await run('systemctl', ['is-active', 'cloudflared']);
-    const status = result.stdout.trim() === 'active' ? 'active' : 'inactive';
+  async getStatus(): Promise<TunnelStatus> {
+    // Check if process is running
+    const processResult = await run('systemctl', ['is-active', 'cloudflared']);
+    const processRunning = processResult.stdout.trim() === 'active';
 
+    if (!processRunning) {
+      return {
+        status: 'inactive',
+        processRunning: false,
+        connectedToEdge: false,
+        lastConnectedAt: null,
+        message: 'Cloudflared process is not running',
+      };
+    }
+
+    // Process is running, check connectivity
     const tunnels = await db.select().from(cloudflareTunnels);
+    let connectedToEdge = false;
+    let lastConnectedAt: string | null = null;
+
+    // Try to get connectivity info from each tunnel
+    for (const tunnel of tunnels) {
+      try {
+        const infoResult = await run('cloudflared', ['tunnel', 'info', tunnel.tunnelId!, '--output', 'json'], {
+          sudo: true,
+          timeout: 10_000,
+        });
+
+        if (infoResult.success) {
+          const info: TunnelInfo = JSON.parse(infoResult.stdout);
+          if (info.connections && info.connections.length > 0) {
+            connectedToEdge = true;
+            lastConnectedAt = info.created_at;
+            break;
+          }
+        }
+      } catch {
+        // Continue checking other tunnels
+      }
+    }
+
+    // Also try to get metrics if available
+    if (!connectedToEdge) {
+      try {
+        const metricsResult = await run('curl', ['-s', 'http://localhost:9100/metrics'], {
+          timeout: 5_000,
+        });
+        if (metricsResult.success && metricsResult.stdout.includes('cloudflared')) {
+          // Metrics endpoint is responding, tunnel is likely connected
+          connectedToEdge = true;
+        }
+      } catch {
+        // Metrics not available, rely on tunnel info
+      }
+    }
+
+    let status: 'active' | 'inactive' | 'degraded' = 'inactive';
+    let message: string | undefined;
+
+    if (processRunning && connectedToEdge) {
+      status = 'active';
+      message = 'Tunnel is running and connected to Cloudflare edge';
+    } else if (processRunning && !connectedToEdge) {
+      status = 'degraded';
+      message = 'Tunnel process is running but not connected to Cloudflare edge';
+    }
 
     return {
       status,
-      tunnels: tunnels.map(t => ({
-        id: t.id,
-        name: t.name,
-        tunnelId: t.tunnelId,
-        status: t.status,
-      })),
+      processRunning,
+      connectedToEdge,
+      lastConnectedAt,
+      message,
     };
   }
 
@@ -413,6 +489,9 @@ export class TunnelService {
     if (tunnel.apiToken) {
       await this.createDnsCname(tunnel, data.hostname);
     }
+
+    // Auto-update PANEL_URL if tunnel route covers panel domain
+    await this.updatePanelUrlIfNeeded(data.hostname);
 
     logger.info({ hostname: data.hostname, service: data.service }, 'Tunnel route added');
 
@@ -640,8 +719,8 @@ export class TunnelService {
       const data = await response.json() as any;
 
       if (!data.success || !data.result?.length) {
-        throw new AppError(400, 'ZONE_NOT_FOUND',
-          `Domain "${rootDomain}" is not a configured Cloudflare zone. Add the domain to your Cloudflare account first.`);
+        const errorMsg = data.errors?.[0]?.message || `Domain "${rootDomain}" is not a configured Cloudflare zone. Add the domain to your Cloudflare account first.`;
+        throw createTunnelError(errorMsg, 'ZONE_NOT_FOUND');
       }
 
       const zone = data.result[0];
@@ -708,6 +787,68 @@ export class TunnelService {
       }
     } catch (error) {
       logger.warn({ hostname, error }, 'Failed to delete DNS CNAME');
+    }
+  }
+
+  /**
+   * Update PANEL_URL in .env file if the current URL is a private IP
+   * and a tunnel route is being added for the panel domain.
+   */
+  private async updatePanelUrlIfNeeded(hostname: string): Promise<void> {
+    const currentUrl = env.PANEL_URL;
+
+    // Check if current PANEL_URL is private (private IP or localhost)
+    if (!isPrivateUrl(currentUrl)) {
+      logger.debug({ hostname, currentUrl }, 'PANEL_URL is not private, skipping update');
+      return;
+    }
+
+    // Check if the hostname matches the panel's domain
+    // We use a simple heuristic: if the hostname looks like a panel hostname
+    // (e.g., contains "panel" or is the primary domain), we update
+    try {
+      const envPath = path.resolve(process.cwd(), '.env');
+      
+      // Read current .env content
+      let envContent = '';
+      try {
+        envContent = await fs.readFile(envPath, 'utf-8');
+      } catch {
+        logger.warn({ envPath }, 'Could not read .env file, skipping PANEL_URL update');
+        return;
+      }
+
+      // Determine the protocol (https for tunnel routes)
+      const newUrl = `https://${hostname}`;
+
+      // Check if PANEL_URL is already set to the same value
+      const currentMatch = currentUrl.match(/^https?:\/\/[^\/]+/);
+      const newMatch = newUrl.match(/^https?:\/\/[^\/]+/);
+      if (currentMatch && newMatch && currentMatch[0] === newMatch[0]) {
+        logger.debug({ currentUrl, newUrl }, 'PANEL_URL would be unchanged, skipping');
+        return;
+      }
+
+      // Update PANEL_URL in .env content
+      const newEnvContent = envContent.replace(
+        /^PANEL_URL=.*$/m,
+        `PANEL_URL=${newUrl}`
+      );
+
+      // Write updated .env file
+      await sudoFs.writeFile(envPath, newEnvContent);
+
+      // Update process.env for the running process
+      process.env.PANEL_URL = newUrl;
+
+      logger.info({ 
+        hostname, 
+        oldUrl: currentUrl, 
+        newUrl 
+      }, `PANEL_URL updated from ${currentUrl} to ${newUrl} due to tunnel route`);
+
+    } catch (error) {
+      logger.warn({ hostname, error }, 'Failed to update PANEL_URL in .env file');
     }
   }
 

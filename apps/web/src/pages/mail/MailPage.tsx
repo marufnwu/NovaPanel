@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useDomains } from '../../api/hooks/domains';
+import { useServerContext } from '../../api/hooks/settings';
 import {
   useMailDomainInfo,
   useEnableMail,
@@ -25,7 +26,7 @@ import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
 import {
   Mail, Plus, Trash2, Shield, Key, RefreshCw, ExternalLink,
   Settings, AlertTriangle, CheckCircle2, Eye, EyeOff, X, Copy,
-  Ban, Reply, Globe, Inbox, Send, Clock, ShieldCheck, Check,
+  Ban, Reply, Globe, Inbox, Send, Clock, ShieldCheck, Check, Info,
 } from 'lucide-react';
 import type { Mailbox, MailAlias, MailDomainInfo } from '../../api/hooks/mail';
 import { toast } from '../../lib/toast';
@@ -340,7 +341,7 @@ function AliasFormModal({
 /* ------------------------------------------------------------------ */
 /*  Connection Info Card                                               */
 /* ------------------------------------------------------------------ */
-function ConnectionInfoCard({ domainName }: { domainName: string }) {
+function ConnectionInfoCard({ domainName, hasPublicIp }: { domainName: string; hasPublicIp: boolean }) {
   const mailHost = `mail.${domainName}`;
   const connections = [
     {
@@ -396,6 +397,16 @@ function ConnectionInfoCard({ domainName }: { domainName: string }) {
           </div>
         ))}
       </div>
+      {!hasPublicIp && (
+        <div className="mt-4 flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" />
+          <div>
+            <p className="text-sm text-yellow-600">
+              Available on local network only
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -407,6 +418,7 @@ type Tab = 'mailboxes' | 'aliases' | 'settings' | 'security' | 'queue';
 
 export function MailPage() {
   const { data: domains } = useDomains();
+  const { data: serverContext } = useServerContext();
   const [domainId, setDomainId] = useState('');
   const { data: info, isLoading, isError, refetch } = useMailDomainInfo(domainId);
   const { data: dkimStatus } = useDkimStatus(domainId);
@@ -442,6 +454,10 @@ export function MailPage() {
   const setDMARC = useSetDMARC();
   const setCatchAll = useSetCatchAll();
   const setSpamAssassin = useSetSpamAssassin();
+
+  const canReceiveExternalMail = serverContext?.canReceiveExternalMail ?? true;
+  const hasPublicIp = serverContext?.hasPublicIp ?? true;
+  const tunnelActive = serverContext?.tunnelActive ?? false;
 
   const handleDomainChange = (id: string) => {
     setDomainId(id);
@@ -756,8 +772,23 @@ export function MailPage() {
           {/* SETTINGS TAB */}
           {tab === 'settings' && (
             <div className="space-y-5">
+              {/* External Mail Unavailable Warning */}
+              {!canReceiveExternalMail && (
+                <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" />
+                    <div>
+                      <h4 className="font-semibold text-yellow-600">External Mail Unavailable</h4>
+                      <p className="mt-1 text-sm text-yellow-700">
+                        Your server does not have a public IP. External email delivery (sending and receiving) requires either a public IP with proper MX/SPF/DKIM records, or a mail relay service. Local mail delivery between mailboxes on this server works normally.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Connection info with copy-to-clipboard */}
-              <ConnectionInfoCard domainName={domainName} />
+              <ConnectionInfoCard domainName={domainName} hasPublicIp={hasPublicIp} />
 
               {/* Webmail Access Link */}
               <div className="rounded-lg border border-border bg-card p-5">
@@ -770,14 +801,20 @@ export function MailPage() {
                       Access your email through the web-based mail client.
                     </p>
                   </div>
-                  <a
-                    href={`https://${domainName}/webmail`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                  >
-                    <Mail className="h-4 w-4" /> Open Webmail
-                  </a>
+                  {tunnelActive ? (
+                    <a
+                      href={`https://${domainName}/webmail`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                    >
+                      <Mail className="h-4 w-4" /> Open Webmail
+                    </a>
+                  ) : (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <span className="text-sm">Tunnel required for external access</span>
+                    </div>
+                  )}
                 </div>
                 <div className="mt-3 rounded bg-muted p-3 font-mono text-xs break-all">
                   https://{domainName}/webmail

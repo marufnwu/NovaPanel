@@ -3,6 +3,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { toast } from '../../lib/toast';
+import { useServerContext } from '../../api/hooks/settings';
 import {
   useServerIdentity,
   useUpdateServerIdentity,
@@ -198,10 +199,13 @@ function PanelSettingsSection() {
   const updateIdentity = useUpdateServerIdentity();
   const { data: panelData, isLoading: panelLoading, isError: panelError, refetch: refetchPanel } = usePanelSettings();
   const updatePanel = useUpdatePanelSettings();
+  const { data: serverContext } = useServerContext();
 
   const [hostname, setHostname] = useState('');
   const [panelUrl, setPanelUrl] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
+
+  const panelUrlIsPrivate = serverContext?.panelUrlIsPrivate ?? false;
 
   useEffect(() => {
     if (identityData?.hostname) setHostname(identityData.hostname);
@@ -293,6 +297,14 @@ function PanelSettingsSection() {
               <p className="mt-1 text-xs text-muted-foreground">
                 The URL used to access this control panel. Used for generating links in notifications and emails.
               </p>
+              {panelUrlIsPrivate && (
+                <div className="mt-2 flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" />
+                  <p className="text-xs text-yellow-600">
+                    Panel URL is set to a local address ({panelUrl}). If you've set up a Cloudflare Tunnel, update this to your tunnel URL (e.g., https://panel.yourdomain.com) for correct link generation in emails and notifications.
+                  </p>
+                </div>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium">Admin Email</label>

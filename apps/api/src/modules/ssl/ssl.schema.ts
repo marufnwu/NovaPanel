@@ -10,6 +10,8 @@ export const issueLetsEncryptSchema = z.object({
   sanDomains: z.array(z.string().min(1)).max(100).optional(),
   /** Whether to issue a wildcard certificate (*.domain) via DNS-01 challenge */
   wildcard: z.boolean().default(false),
+  /** Challenge type: 'http-01' (port 80 required) or 'dns-01' (Cloudflare DNS) */
+  challengeType: z.enum(['http-01', 'dns-01']).default('http-01'),
 });
 
 export const uploadCustomSchema = z.object({

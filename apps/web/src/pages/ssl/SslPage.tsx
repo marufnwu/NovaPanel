@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from '@tanstack/react-router';
 import { useDomains } from '../../api/hooks/domains';
+import { useServerContext } from '../../api/hooks/settings';
+import { useTunnelStatus } from '../../api/hooks/tunnel';
 import {
   useSslCertificates,
   useIssueLetsEncrypt,
@@ -23,9 +26,109 @@ import {
   ShieldCheck, Plus, Trash2, RefreshCw, Download, Lock,
   FileText, Key, Link2, ChevronLeft, X, AlertTriangle,
   CheckCircle2, XCircle, Clock, Shield, Search, Globe,
-  Zap, Eye, Copy,
+  Zap, Eye, Copy, AlertCircle, Info, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import type { SslCertificate, ChainValidationResult, MixedContentResult } from '../../api/hooks/ssl';
+
+/* ------------------------------------------------------------------ */
+/*  Structured Error Display                                          */
+/* ------------------------------------------------------------------ */
+interface StructuredError {
+  title?: string;
+  message?: string;
+  suggestion?: string;
+  cause?: string;
+}
+
+function parseStructuredError(error: any): StructuredError {
+  if (typeof error === 'string') {
+    try {
+      const parsed = JSON.parse(error);
+      if (parsed.title || parsed.message || parsed.suggestion) {
+        return parsed;
+      }
+    } catch {
+      return { message: error };
+    }
+  }
+  if (error && typeof error === 'object') {
+    if (error.title || error.message || error.suggestion) {
+      return {
+        title: error.title,
+        message: error.message,
+        suggestion: error.suggestion,
+        cause: error.cause,
+      };
+    }
+    // Check for nested error response
+    if (error.response?.data) {
+      const data = error.response.data;
+      if (data.title || data.message || data.suggestion) {
+        return {
+          title: data.title,
+          message: data.message,
+          suggestion: data.suggestion,
+          cause: data.cause,
+        };
+      }
+      if (typeof data === 'string') {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.title || parsed.message || parsed.suggestion) {
+            return parsed;
+          }
+        } catch {
+          return { message: data };
+        }
+      }
+    }
+  }
+  return { message: error?.message || 'An unknown error occurred' };
+}
+
+function StructuredErrorDisplay({ error }: { error: any }) {
+  const structured = parseStructuredError(error);
+  const [showDetails, setShowDetails] = useState(false);
+
+  return (
+    <div className="space-y-3">
+      {structured.title && (
+        <div className="flex items-center gap-2 text-sm font-semibold text-destructive">
+          <AlertCircle className="h-4 w-4" />
+          {structured.title}
+        </div>
+      )}
+      {structured.message && (
+        <p className="text-sm text-destructive/90">{structured.message}</p>
+      )}
+      {structured.suggestion && (
+        <div className="rounded-md bg-blue-500/10 border border-blue-500/30 p-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400">
+            <Info className="h-4 w-4 shrink-0" />
+            Suggested Fix
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">{structured.suggestion}</p>
+        </div>
+      )}
+      {structured.cause && (
+        <div>
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            {showDetails ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            Show technical details
+          </button>
+          {showDetails && (
+            <pre className="mt-2 max-h-32 overflow-auto rounded-md bg-muted p-2 font-mono text-xs text-muted-foreground">
+              {structured.cause}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /*  Issuance Progress Steps                                            */
@@ -38,7 +141,9 @@ const ISSUANCE_STEPS = [
   'Complete!',
 ];
 
-function IssuanceProgress({ currentStep, error }: { currentStep: number; error?: string }) {
+function IssuanceProgress({ currentStep, error }: { currentStep: number; error?: string | StructuredError }) {
+  const isStructuredError = error && typeof error === 'object' && ('title' in error || 'message' in error);
+  
   return (
     <div className="rounded-lg border border-border bg-card p-5">
       <h4 className="mb-4 font-semibold text-sm">Issuance Progress</h4>
@@ -69,8 +174,14 @@ function IssuanceProgress({ currentStep, error }: { currentStep: number; error?:
         })}
       </div>
       {error && (
-        <div className="mt-3 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <XCircle className="h-4 w-4 shrink-0" /> {error}
+        <div className="mt-3 rounded-md bg-destructive/10 px-3 py-2">
+          {isStructuredError ? (
+            <StructuredErrorDisplay error={error} />
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-destructive">
+              <XCircle className="h-4 w-4 shrink-0" /> {error as string}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -81,9 +192,12 @@ function IssuanceProgress({ currentStep, error }: { currentStep: number; error?:
 /*  Issue Certificate Modal                                           */
 /* ------------------------------------------------------------------ */
 type CertType = 'letsencrypt' | 'custom' | 'selfsigned';
+type ChallengeType = 'http-01' | 'dns-01';
 
 function IssueModal({ onClose }: { onClose: () => void }) {
   const domains = useDomains();
+  const { data: serverContext } = useServerContext();
+  const { data: tunnelStatus } = useTunnelStatus();
   const issueLE = useIssueLetsEncrypt();
   const uploadCustom = useUploadCustomCert();
   const selfSign = useGenerateSelfSigned();
@@ -98,9 +212,28 @@ function IssueModal({ onClose }: { onClose: () => void }) {
   const [days, setDays] = useState(365);
   const [error, setError] = useState('');
 
-  // Wildcard / DNS-01 options
+  // Challenge type and wildcard options
+  const [challengeType, setChallengeType] = useState<ChallengeType>('http-01');
   const [wildcard, setWildcard] = useState(false);
   const [dnsProvider, setDnsProvider] = useState('cloudflare');
+
+  // Pre-flight: if server cannot do HTTP-01, auto-select DNS-01
+  const canIssueHttpSsl = serverContext?.canIssueHttpSsl ?? true;
+  const tunnelConfigured = serverContext?.tunnelConfigured ?? false;
+
+  // Auto-select DNS-01 when server can't do HTTP-01
+  useEffect(() => {
+    if (!canIssueHttpSsl && challengeType === 'http-01') {
+      setChallengeType('dns-01');
+    }
+  }, [canIssueHttpSsl, challengeType]);
+
+  // DNS-01 is always required for wildcard
+  useEffect(() => {
+    if (wildcard && challengeType !== 'dns-01') {
+      setChallengeType('dns-01');
+    }
+  }, [wildcard, challengeType]);
 
   // Issuance progress
   const [showProgress, setShowProgress] = useState(false);
@@ -140,11 +273,12 @@ function IssueModal({ onClose }: { onClose: () => void }) {
             email,
             sanDomains: sanDomains ? sanDomains.split(',').map(s => s.trim()) : undefined,
             wildcard,
-            dnsProvider: wildcard ? dnsProvider : undefined,
+            dnsProvider: (wildcard || challengeType === 'dns-01') ? dnsProvider : undefined,
+            challengeType: wildcard ? 'dns-01' : challengeType,
           },
           {
             onSuccess: () => { setProgressStep(ISSUANCE_STEPS.length - 1); setTimeout(onClose, 800); },
-            onError: (err: any) => { setProgressError(err.message || 'Failed to issue certificate'); setShowProgress(false); setError(err.message || 'Failed to issue certificate'); },
+            onError: (err: any) => { setProgressError(''); setShowProgress(false); setError(err); },
           },
         );
       } catch { setShowProgress(false); }
@@ -218,6 +352,94 @@ function IssueModal({ onClose }: { onClose: () => void }) {
             {/* Let's Encrypt fields */}
             {certType === 'letsencrypt' && (
               <div className="space-y-4">
+                {/* Pre-flight warning for local servers */}
+                {!canIssueHttpSsl && (
+                  <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="h-5 w-5 shrink-0 text-yellow-600 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-yellow-600">HTTP-01 challenge unavailable</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Your server does not appear to have a public IP. HTTP-01 challenge will not work because port 80 must be publicly reachable from the internet.
+                        </p>
+                        <p className="mt-2 text-xs text-yellow-600 font-medium">
+                          DNS-01 challenge has been selected automatically. It works from behind NAT/firewall and uses Cloudflare API to validate domain ownership.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Challenge Type Selector */}
+                <div className="rounded-lg border border-border p-4">
+                  <label className="text-sm font-medium mb-3 block">Challenge Method</label>
+                  <div className="space-y-3">
+                    {/* HTTP-01 Option */}
+                    <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-lg border ${challengeType === 'http-01' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'}`}>
+                      <input
+                        type="radio"
+                        name="challengeType"
+                        value="http-01"
+                        checked={challengeType === 'http-01'}
+                        onChange={() => setChallengeType('http-01')}
+                        disabled={wildcard || !canIssueHttpSsl}
+                        className="mt-0.5 h-4 w-4"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">HTTP-01</span>
+                          {!wildcard && canIssueHttpSsl && (
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">Default</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Challenge file is served on port 80. Fast and simple.
+                        </p>
+                        {!canIssueHttpSsl && (
+                          <p className="text-xs text-yellow-600 mt-1">
+                            ⚠️ Requires port 80 publicly reachable from the internet
+                          </p>
+                        )}
+                      </div>
+                    </label>
+
+                    {/* DNS-01 Option */}
+                    <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-lg border ${challengeType === 'dns-01' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'}`}>
+                      <input
+                        type="radio"
+                        name="challengeType"
+                        value="dns-01"
+                        checked={challengeType === 'dns-01'}
+                        onChange={() => setChallengeType('dns-01')}
+                        className="mt-0.5 h-4 w-4"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">DNS-01</span>
+                          <span className="rounded bg-blue-500/10 text-blue-600 px-1.5 py-0.5 text-xs">Recommended for local servers</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Uses Cloudflare API to create TXT record. Works behind NAT/firewall.
+                        </p>
+                        {!tunnelConfigured && (
+                          <div className="mt-2 rounded-md bg-yellow-500/10 border border-yellow-500/30 p-2">
+                            <div className="flex items-center gap-2 text-xs text-yellow-600">
+                              <AlertTriangle className="h-3 w-3 shrink-0" />
+                              <span>⚠️ DNS-01 requires a Cloudflare Tunnel to be configured first.</span>
+                            </div>
+                            <Link
+                              to="/tunnels"
+                              className="mt-1 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                            >
+                              Configure Tunnel →
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
                 <div>
                   <label className="mb-1 block text-sm font-medium">Contact Email</label>
                   <input
@@ -252,7 +474,7 @@ function IssueModal({ onClose }: { onClose: () => void }) {
                     <div>
                       <p className="text-sm font-medium">Wildcard Certificate (*.domain.com)</p>
                       <p className="text-xs text-muted-foreground">
-                        Uses DNS-01 challenge instead of HTTP-01. Requires DNS provider access.
+                        Wildcard certificates require DNS-01 challenge. Your Cloudflare Tunnel must be configured.
                       </p>
                     </div>
                   </label>
@@ -360,9 +582,8 @@ function IssueModal({ onClose }: { onClose: () => void }) {
             )}
 
             {error && (
-              <div className="mt-3 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                {error}
+              <div className="mt-3 rounded-md bg-destructive/10 px-3 py-2">
+                <StructuredErrorDisplay error={error} />
               </div>
             )}
           </>
@@ -375,7 +596,7 @@ function IssueModal({ onClose }: { onClose: () => void }) {
           {!showProgress && (
             <button
               onClick={handleSubmit}
-              disabled={isPending || !domainId}
+              disabled={isPending || !domainId || (challengeType === 'dns-01' && !tunnelConfigured)}
               className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               {isPending ? (

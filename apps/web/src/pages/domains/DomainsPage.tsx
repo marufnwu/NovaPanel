@@ -24,6 +24,8 @@ import {
 import type { CreateDomainInput } from '../../api/hooks/domains';
 import { useWebsites, useAttachDomain } from '../../api/hooks/websites';
 import { usePhpVersions, DEFAULT_PHP_VERSIONS } from '../../api/hooks/php';
+import { useServerContext } from '../../api/hooks/settings';
+import { useTunnelRoutes } from '../../api/hooks/tunnel';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -32,7 +34,7 @@ import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
 import {
   Globe, Plus, Trash2, Ban, CheckCircle, X, FolderOpen, ExternalLink,
   Search, Shield, Server, ChevronRight, ArrowLeft, Link2, ArrowRightLeft,
-  Edit3, Activity, AlertTriangle, Unplug, Mail, FileText,
+  Edit3, Activity, AlertTriangle, Unplug, Mail, FileText, Info,
 } from 'lucide-react';
 import type { ApiError } from '../../api/client';
 import type { Domain } from '../../api/hooks/domains';
@@ -486,6 +488,8 @@ function BulkActionBar({ selectedIds, onClear, onSuspend, onActivate, onDelete, 
 
 // --- Domain Detail Panel ---
 function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }) {
+  const { data: serverContext } = useServerContext();
+  const { data: tunnelRoutes } = useTunnelRoutes();
   const { data: subdomains } = useSubdomains(domain.id);
   const { data: aliases } = useAliases(domain.id);
   const { data: redirects } = useRedirects(domain.id);
@@ -511,6 +515,29 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
     ? websites?.find((w) => w.id === domain.websiteId)
     : null;
 
+  // Determine Open button behavior based on server context
+  const hasPublicIp = serverContext?.hasPublicIp ?? true;
+  const tunnelActive = serverContext?.tunnelActive ?? false;
+  const tunnelUrl = serverContext?.tunnelUrl ?? null;
+
+  // Check if this domain has a tunnel route
+  const domainTunnelRoute = tunnelRoutes?.find(
+    (r) => r.hostname === domain.name || r.hostname === `*.${domain.name}`
+  );
+
+  // Build Open button URL
+  const getOpenUrl = () => {
+    if (hasPublicIp) {
+      return `http://${domain.name}`;
+    }
+    if (tunnelActive && domainTunnelRoute) {
+      return `${tunnelUrl}/${domain.name}`;
+    }
+    return null;
+  };
+
+  const openUrl = getOpenUrl();
+
   return (
     <div className="space-y-6">
       <button onClick={onBack} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -530,15 +557,38 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
           }`}>
             {domain.status}
           </span>
-          <a
-            href={`http://${domain.name}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm text-primary hover:bg-primary/10"
-          >
-            <ExternalLink className="h-3.5 w-3.5" /> Open
-          </a>
+          {openUrl ? (
+            <a
+              href={openUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm text-primary hover:bg-primary/10"
+            >
+              <ExternalLink className="h-3.5 w-3.5" /> Open
+            </a>
+          ) : (
+            <div className="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-muted-foreground">
+              <Info className="h-3.5 w-3.5" />
+              <span>Not Externally Accessible</span>
+            </div>
+          )}
         </div>
+        {!openUrl && hasPublicIp === false && (
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" />
+            <div className="flex-1">
+              <p className="text-sm text-yellow-600">
+                This domain is only accessible from your local network. Add a Cloudflare Tunnel route to make it publicly accessible.
+              </p>
+              <Link
+                to="/tunnels"
+                className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline"
+              >
+                Set up tunnel <ChevronRight className="h-3 w-3" />
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -933,6 +983,8 @@ export function DomainsPage() {
   const bulkSuspend = useBulkSuspendDomains();
   const bulkActivate = useBulkActivateDomains();
   const bulkDelete = useBulkDeleteDomains();
+  const { data: serverContext } = useServerContext();
+  const { data: tunnelRoutes } = useTunnelRoutes();
 
   const [showCreate, setShowCreate] = useState(false);
   const [createdDomain, setCreatedDomain] = useState<{ name: string; documentRoot: string } | null>(null);
@@ -1050,12 +1102,21 @@ export function DomainsPage() {
                 <p className="mt-1 text-sm text-green-700">
                   <strong>{createdDomain.name}</strong> is now active.
                 </p>
+                <p className="mt-2 text-sm text-green-600">
+                  To make it accessible from the internet, set up a Cloudflare Tunnel route.
+                </p>
                 {createdDomain.documentRoot && (
                   <div className="mt-2 flex items-center gap-1 text-sm text-green-600">
                     <FolderOpen className="h-4 w-4" />
                     <span className="font-mono text-xs">{createdDomain.documentRoot}</span>
                   </div>
                 )}
+                <Link
+                  to="/tunnels"
+                  className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  <ExternalLink className="h-4 w-4" /> Set Up Tunnel
+                </Link>
               </div>
             </div>
             <button onClick={() => setCreatedDomain(null)} className="text-green-600 hover:text-green-800">
@@ -1139,15 +1200,32 @@ export function DomainsPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{d.name}</span>
-                      <a
-                        href={`http://${d.name}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-muted-foreground hover:text-primary"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
+                      {(() => {
+                        const hasPublicIp = serverContext?.hasPublicIp ?? true;
+                        const tunnelActive = serverContext?.tunnelActive ?? false;
+                        const tunnelUrl = serverContext?.tunnelUrl ?? null;
+                        const domainRoute = tunnelRoutes?.find(
+                          (r) => r.hostname === d.name || r.hostname === `*.${d.name}`
+                        );
+                        const openUrl = hasPublicIp
+                          ? `http://${d.name}`
+                          : (tunnelActive && domainRoute ? `${tunnelUrl}/${d.name}` : null);
+                        return openUrl ? (
+                          <a
+                            href={openUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-muted-foreground hover:text-primary"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground" title="Not externally accessible">
+                            <Info className="h-3.5 w-3.5" />
+                          </span>
+                        );
+                      })()}
                     </div>
                   </td>
                   <td className="px-4 py-3">

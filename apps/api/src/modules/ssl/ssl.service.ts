@@ -1,6 +1,7 @@
 import { db } from '../../db/index.js';
 import { sslCertificates } from '../../db/schema/ssl.js';
 import { domains } from '../../db/schema/domains.js';
+import { cloudflareTunnels } from '../../db/schema/tunnels.js';
 import { eq, lt } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { certbotService } from '../../services/certbot.service.js';
@@ -13,6 +14,8 @@ import * as sudoFs from '../../services/sudo-fs.js';
 import { run } from '../../services/executor.js';
 import type { VhostContext } from '../../services/nginx.service.js';
 import { auditService } from '../audit/audit.service.js';
+import { detectNetworkInfo } from '../../utils/network.js';
+import { StructuredError } from '../../utils/error-messages.js';
 
 export class SslService {
   /**
@@ -83,16 +86,71 @@ export class SslService {
   /**
    * Issue a Let's Encrypt certificate via HTTP-01 challenge
    */
-  async issueLetsEncrypt(domainId: string, email: string, userId?: string, ipAddress?: string) {
+  async issueLetsEncrypt(domainId: string, email: string, userId?: string, ipAddress?: string, challengeType: 'http-01' | 'dns-01' = 'http-01') {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    // Issue certificate via certbot
-    const paths = await certbotService.issueCertificate(
-      domain.name,
-      email,
-      domain.documentRoot,
-    );
+    // Pre-flight check: for HTTP-01, warn if no public IP is available
+    if (challengeType === 'http-01') {
+      const networkInfo = await detectNetworkInfo();
+      if (!networkInfo.hasPublicIp) {
+        logger.warn({ domain: domain.name }, 'HTTP-01 challenge requested but server has no public IP - may fail');
+      }
+    }
+
+    let paths: { certPath: string; keyPath: string; chainPath?: string; fullChainPath?: string };
+
+    if (challengeType === 'dns-01') {
+      // DNS-01 challenge via Cloudflare
+      const cloudflareApiToken = await this.getCloudflareApiToken();
+      if (!cloudflareApiToken) {
+        throw new AppError(400, 'NO_CLOUDFLARE_TOKEN', 
+          'No Cloudflare API token configured. Please set up a Cloudflare tunnel first with DNS edit permissions.');
+      }
+      try {
+        paths = await certbotService.issueCertificateDns01({
+          domain: domain.name,
+          email,
+          wildcard: false, // Wildcard handling can be extended if needed
+          cloudflareApiToken,
+        });
+      } catch (error) {
+        if (error instanceof StructuredError) throw error;
+        const err = error as Error;
+        throw new StructuredError(
+          422,
+          'SSL_DNS01_FAILED',
+          err.message || 'DNS-01 certificate issuance failed',
+          'Certificate via DNS-01 challenge failed',
+          err.message?.includes('certbot') && err.message?.includes('not found')
+            ? 'Run the installation script to install certbot and its dependencies: ./scripts/install.sh'
+            : 'Check that your Cloudflare API token has DNS edit permissions and your domain is configured in Cloudflare.',
+          err.message
+        );
+      }
+    } else {
+      // HTTP-01 challenge (standalone/webroot)
+      try {
+        paths = await certbotService.issueCertificate(
+          domain.name,
+          email,
+          domain.documentRoot,
+        );
+      } catch (error) {
+        if (error instanceof StructuredError) throw error;
+        const err = error as Error;
+        throw new StructuredError(
+          422,
+          'SSL_HTTP01_FAILED',
+          err.message || 'HTTP-01 certificate issuance failed',
+          'Certificate via HTTP-01 challenge failed',
+          err.message?.includes('certbot') && err.message?.includes('not found')
+            ? 'Run the installation script to install certbot and its dependencies: ./scripts/install.sh'
+            : 'Ensure port 80 is accessible and your domain DNS points to this server.',
+          err.message
+        );
+      }
+    }
 
     // Get expiry date
     const expiresAt = await certbotService.getCertExpiry(paths.certPath);
@@ -100,7 +158,8 @@ export class SslService {
     // Read cert contents and encrypt for storage
     const certContent = await sudoFs.readFile(paths.certPath);
     const keyContent = await sudoFs.readFile(paths.keyPath);
-    const chainContent = paths.chainPath ? await sudoFs.readFile(paths.chainPath) : null;
+    const chainContent = (paths.chainPath ? await sudoFs.readFile(paths.chainPath) : null) ||
+                         (paths.fullChainPath ? await sudoFs.readFile(paths.fullChainPath) : null);
 
     // Upsert certificate record
     const certData: Record<string, unknown> = {
@@ -150,13 +209,13 @@ export class SslService {
       redirectHttpToHttps: true,
     }).where(eq(domains.id, domainId));
 
-    logger.info({ domain: domain.name }, 'SSL certificate issued via Let\'s Encrypt');
+    logger.info({ domain: domain.name, challengeType }, 'SSL certificate issued via Let\'s Encrypt');
 
     auditService.log({
       userId,
       action: 'ssl.issue',
       resource: `domain:${domain.name}`,
-      details: JSON.stringify({ type: 'letsencrypt', email }),
+      details: JSON.stringify({ type: 'letsencrypt', email, challengeType }),
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
@@ -164,7 +223,20 @@ export class SslService {
       type: 'letsencrypt',
       expiresAt,
       autoRenew: true,
+      challengeType,
     };
+  }
+
+  /**
+   * Get Cloudflare API token from an existing tunnel configuration
+   */
+  private async getCloudflareApiToken(): Promise<string | null> {
+    const tunnels = await db.select().from(cloudflareTunnels).limit(1);
+    const tunnel = tunnels[0];
+    if (!tunnel?.apiToken) {
+      return null;
+    }
+    return decrypt(tunnel.apiToken);
   }
 
   /**

@@ -51,6 +51,11 @@ LE_EMAIL="${LE_EMAIL:-}"
 DB_PASSWORD="${DB_PASSWORD:-}"
 LOG_LEVEL="${LOG_LEVEL:-info}"
 
+# ─── Local Server Detection ────────────────────────────────────────────
+IS_LOCAL_SERVER=false
+BEHIND_NAT=false
+PUBLIC_IP=""
+
 # ─── Colors ──────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -138,6 +143,38 @@ wait_for_port() {
 
     fail "Port ${port} not listening within ${timeout}s"
     return 1
+}
+
+# ─── Helper: Detect public IP and determine if server is behind NAT ─────
+detect_public_ip() {
+    # Check if the detected SERVER_IP is a private IP
+    local ip="$1"
+    local is_private=false
+    
+    # Check against RFC1918 private ranges
+    if [[ "$ip" =~ ^10\. ]] || \
+       [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] || \
+       [[ "$ip" =~ ^192\.168\. ]] || \
+       [[ "$ip" =~ ^127\. ]] || \
+       [[ "$ip" =~ ^169\.254\. ]]; then
+        is_private=true
+    fi
+    
+    # Try to detect actual public IP
+    local public_ip=""
+    public_ip="$(curl -sf --connect-timeout 5 https://ifconfig.me 2>/dev/null || \
+                 curl -sf --connect-timeout 5 https://icanhazip.com 2>/dev/null || \
+                 curl -sf --connect-timeout 5 https://api.ipify.org 2>/dev/null || echo '')"
+    
+    # If public IP differs from server IP, we're behind NAT
+    if [ -n "$public_ip" ] && [ "$public_ip" != "$SERVER_IP" ]; then
+        BEHIND_NAT=true
+        PUBLIC_IP="$public_ip"
+    fi
+    
+    if [ "$is_private" = true ]; then
+        IS_LOCAL_SERVER=true
+    fi
 }
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -237,6 +274,9 @@ phase_preflight() {
         SERVER_IP="$(curl -sf --connect-timeout 3 ifconfig.me 2>/dev/null || echo '127.0.0.1')"
     fi
 
+    # Detect public IP and check if server is behind NAT
+    detect_public_ip "$SERVER_IP"
+
     # Validate hostname looks like a proper FQDN (contains at least one dot)
     if [[ "$HOSTNAME_FQDN" != *.* ]]; then
         # No valid FQDN — use server IP for Panel URL
@@ -262,6 +302,41 @@ phase_preflight() {
     fi
     if [ -z "$ADMIN_PASSWORD" ]; then
         ADMIN_PASSWORD="$(gen_secret 16)"
+    fi
+
+    # Warn if local server detected
+    if [ "$IS_LOCAL_SERVER" = true ]; then
+        echo ""
+        echo "============================================================"
+        echo "⚠️  LOCAL SERVER DETECTED"
+        echo "============================================================"
+        echo ""
+        echo "Your server appears to be on a local network (IP: $SERVER_IP)"
+        if [ -n "$PUBLIC_IP" ]; then
+            echo "Public IP detected: $PUBLIC_IP (behind NAT)"
+        fi
+        echo ""
+        echo "Important notes for local servers:"
+        echo "  • The panel will be accessible at http://$SERVER_IP:8732"
+        echo "    (local network only)"
+        echo "  • SSL (Let's Encrypt HTTP-01) will NOT work without port forwarding"
+        echo "    Use DNS-01 challenge via Cloudflare Tunnel instead"
+        echo "  • External email delivery requires a public IP or mail relay"
+        echo "  • External DNS resolution requires a public IP"
+        echo ""
+        echo "RECOMMENDED: Set up a Cloudflare Tunnel after installation"
+        echo "to make your panel and websites accessible from the internet."
+        echo ""
+        echo "============================================================"
+        echo ""
+        
+        # Ask if user wants to continue
+        read -p "Continue with installation? [Y/n] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]] && [ -n "$REPLY" ]; then
+            echo "Installation cancelled."
+            exit 0
+        fi
     fi
 
     ok "Configuration collected"
@@ -632,7 +707,7 @@ PROFTPDCONF
 
     # 1n. Certbot
     log "Installing Certbot..."
-    apt-get install -y -qq certbot python3-certbot-nginx python3-certbot-apache
+    apt-get install -y -qq certbot python3-certbot-nginx python3-certbot-apache python3-certbot-dns-cloudflare
     verify_cmd "certbot --version" "Certbot installed"
 
     # 1o. Fail2Ban
@@ -653,6 +728,19 @@ PROFTPDCONF
     fi
     # FIX #11: Cloudflared creates outbound tunnel connections (no inbound ports needed)
     # If exposing SSH through cloudflared tunnel, open port 22 in UFW as usual
+    
+    # Show cloudflared installation status with local server guidance
+    if command -v cloudflared &>/dev/null; then
+        ok "cloudflared installed successfully"
+        if [ "$IS_LOCAL_SERVER" = true ]; then
+            echo "     → Set up a tunnel via the panel UI after installation"
+        fi
+    else
+        warn "cloudflared installation skipped"
+        if [ "$IS_LOCAL_SERVER" = true ]; then
+            echo "     → Install manually for tunnel support"
+        fi
+    fi
 }
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -1470,6 +1558,35 @@ CREDSEOF
     echo ""
     echo "  ⚠️  IMPORTANT: Change your admin password after first login!"
     echo ""
+    
+    # Add local server guidance if applicable
+    if [ "$IS_LOCAL_SERVER" = true ]; then
+        echo "============================================================"
+        echo "🌐 NEXT STEPS FOR LOCAL SERVER"
+        echo "============================================================"
+        echo ""
+        echo "Your panel is running on http://$SERVER_IP:8732"
+        echo "(accessible from your local network only)"
+        echo ""
+        echo "To make it accessible from the internet:"
+        echo ""
+        echo "  1. Log in to the panel at http://$SERVER_IP:8732"
+        echo "  2. Navigate to Tunnels in the sidebar"
+        echo "  3. Click 'Create Tunnel' to set up a Cloudflare Tunnel"
+        echo "  4. Add a route for your panel domain"
+        echo "  5. The panel URL will be automatically updated"
+        echo ""
+        echo "For SSL certificates:"
+        echo "  • Use DNS-01 challenge (works behind NAT)"
+        echo "  • Do NOT use HTTP-01 challenge (requires public port 80)"
+        echo ""
+        echo "For email:"
+        echo "  • Local mail delivery works between mailboxes"
+        echo "  • External mail requires a public IP or relay service"
+        echo ""
+        echo "============================================================"
+    fi
+    
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo -e "  ${DIM}Install script v${SCRIPT_VERSION} | $(date -u +"%Y-%m-%d %H:%M:%S UTC")${NC}"
