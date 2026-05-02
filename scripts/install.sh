@@ -1344,6 +1344,9 @@ SYSEOF
 # ═════════════════════════════════════════════════════════════════════════
 # PHASE 4: HEALTH VERIFICATION
 # ═════════════════════════════════════════════════════════════════════════
+# Global variable to track verification failures (shared between phase_verification and phase_summary)
+declare -g VERIFICATION_FAILURES=0
+
 phase_verification() {
     section "Phase 4: Health Verification"
 
@@ -1522,6 +1525,7 @@ phase_verification() {
         ok "All critical services are healthy"
     else
         fail "${FAILURES} verification check(s) failed — review output above"
+        VERIFICATION_FAILURES=$FAILURES
     fi
 }
 
@@ -1530,6 +1534,26 @@ phase_verification() {
 # ═════════════════════════════════════════════════════════════════════════
 phase_summary() {
     # FIX #3: Write credentials to a secure file instead of printing to terminal
+    
+    # Check if installation actually succeeded (no verification failures)
+    if [ "${VERIFICATION_FAILURES:-0}" -gt 0 ]; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  ⚠️  Installation Incomplete"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "  The installation completed but ${VERIFICATION_FAILURES} verification"
+        echo "  check(s) failed. The panel may not function correctly."
+        echo ""
+        echo "  Please review the errors above before continuing."
+        echo ""
+        echo "  To retry installation, run:"
+        echo "    curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/master/scripts/install.sh | sudo bash"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        exit 1
+    fi
+
     local CREDS_FILE="/root/novapanel-credentials.txt"
     cat > "$CREDS_FILE" << CREDSEOF
 NovaPanel Credentials
