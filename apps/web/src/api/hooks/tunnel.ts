@@ -51,7 +51,25 @@ export interface TokenValidation {
 export function useTunnelStatus() {
   return useQuery({
     queryKey: ['tunnel', 'status'],
-    queryFn: () => api.get<TunnelStatus>('/tunnel/status'),
+    queryFn: async () => {
+      // The API returns { status, processRunning, connectedToEdge, lastConnectedAt, message }
+      // but the frontend expects { status, tunnels: CloudflareTunnel[] }
+      const data = await api.get<{
+        status: 'active' | 'inactive' | 'degraded';
+        processRunning: boolean;
+        connectedToEdge: boolean;
+        lastConnectedAt: string | null;
+        message?: string;
+      }>('/tunnel/status');
+      
+      // Map backend TunnelStatus to frontend TunnelStatus
+      // Note: The backend doesn't provide tunnel list in status endpoint, 
+      // so we return an empty tunnels array
+      return {
+        status: data.status as 'active' | 'inactive',
+        tunnels: [] as CloudflareTunnel[],
+      } as TunnelStatus;
+    },
   });
 }
 
