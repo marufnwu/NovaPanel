@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # ╔══════════════════════════════════════════════════════════════════════╗
-# ║  NovaPanel Uninstaller                                              ║
-# ║                                                                     ║
-# ║  Safely removes NovaPanel from a server.                           ║
-# ║  Default: preserves user data (/var/www/) and databases            ║
-# ║  Use --purge to remove all data                                     ║
-# ║                                                                     ║
-# ║  Usage:                                                             ║
-# ║    sudo bash scripts/uninstall.sh                                   ║
-# ║    sudo bash scripts/uninstall.sh --confirm                         ║
-# ║    sudo bash scripts/uninstall.sh --confirm --purge                 ║
+# ║  NovaPanel Uninstaller                                               ║
+# ║                                                                      ║
+# ║  Safely removes NovaPanel from a server.                             ║
+# ║  Default: preserves user data (/var/www/) and databases              ║
+# ║  Use --purge to remove all data                                      ║
+# ║                                                                      ║
+# ║  Usage:                                                              ║
+# ║    sudo bash scripts/uninstall.sh                                    ║
+# ║    sudo bash scripts/uninstall.sh --confirm                          ║
+# ║    sudo bash scripts/uninstall.sh --confirm --purge                  ║
 # ║    sudo bash scripts/uninstall.sh --confirm --purge --remove-packages║
-# ║                                                                     ║
-# ║  Flags:                                                             ║
-# ║    --confirm        Skip confirmation prompts                       ║
-# ║    --purge          Remove databases and all website data           ║
-# ║    --remove-packages Remove system packages (nginx, php, etc.)      ║
-# ║    --help           Show this help message                          ║
+# ║                                                                      ║
+# ║  Flags:                                                              ║
+# ║    --confirm        Skip confirmation prompts                        ║
+# ║    --purge          Remove databases and all website data            ║
+# ║    --remove-packages Remove system packages (nginx, php, etc.)       ║
+# ║    --help           Show this help message                           ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
 set -euo pipefail
@@ -392,6 +392,9 @@ remove_website_data() {
 remove_packages() {
     section "Removing System Packages"
 
+    # Prevent interactive configuration dialogs
+    export DEBIAN_FRONTEND=noninteractive
+
     warn "Removing packages may break other services!"
     log "Press Ctrl+C to cancel, or wait 5 seconds to continue..."
 
@@ -433,8 +436,8 @@ remove_packages() {
 
     if [ ${#to_remove[@]} -gt 0 ]; then
         log "Removing ${#to_remove[@]} packages..."
-        apt-get remove -y --purge "${to_remove[@]}" 2>/dev/null || warn "Some packages could not be removed"
-        apt-get autoremove -y 2>/dev/null || true
+        DEBIAN_FRONTEND=noninteractive apt-get remove -y --purge "${to_remove[@]}" 2>/dev/null || warn "Some packages could not be removed"
+        DEBIAN_FRONTEND=noninteractive apt-get autoremove -y 2>/dev/null || true
         ok "Packages removed"
     else
         ok "No NovaPanel packages found to remove"
