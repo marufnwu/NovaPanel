@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 # ╔══════════════════════════════════════════════════════════════════════╗
-# ║  NovaPanel Server Installer — Verification-First Approach           ║
-# ║                                                                     ║
-# ║  Installs NovaPanel and all dependencies on a fresh server.         ║
-# ║  Supports: Ubuntu 22.04, Ubuntu 24.04, Debian 11, Debian 12        ║
-# ║                                                                     ║
-# ║  Usage:                                                             ║
-# ║    sudo bash scripts/install.sh                                     ║
-# ║    sudo ADMIN_EMAIL=you@example.com bash scripts/install.sh         ║
-# ║                                                                     ║
-# ║  Environment variables (all optional with sensible defaults):       ║
-# ║    ADMIN_EMAIL     — Admin email (default: admin@$(hostname -f))    ║
-# ║    ADMIN_PASSWORD  — Admin password (default: auto-generated)       ║
-# ║    PANEL_URL       — Panel URL (default: http://$(hostname -f):8732)║
-# ║    PANEL_USER      — System user (default: novapanel)               ║
-# ║    PANEL_HOME      — Install dir (default: /opt/novapanel)          ║
-# ║    MAIL_HOSTNAME   — Mail hostname (default: mail.$(hostname -d))   ║
-# ║    LE_EMAIL        — Let's Encrypt email (default: $ADMIN_EMAIL)    ║
-# ║    DB_PASSWORD     — MariaDB root password (default: auto-generated)║
-# ║                                                                     ║
-# ║  Idempotent: safe to run multiple times.                            ║
+# ║  NovaPanel Server Installer — Verification-First Approach            ║
+# ║                                                                      ║
+# ║  Installs NovaPanel and all dependencies on a fresh server.          ║
+# ║  Supports: Ubuntu 22.04, Ubuntu 24.04, Debian 11, Debian 12          ║
+# ║                                                                      ║
+# ║  Usage:                                                              ║
+# ║    sudo bash scripts/install.sh                                      ║
+# ║    sudo ADMIN_EMAIL=you@example.com bash scripts/install.sh          ║
+# ║                                                                      ║
+# ║  Environment variables (all optional with sensible defaults):        ║
+# ║    ADMIN_EMAIL     — Admin email (default: admin@$(hostname -f))     ║
+# ║    ADMIN_PASSWORD  — Admin password (default: auto-generated)        ║
+# ║    PANEL_URL       — Panel URL (default: http://$(hostname -f):8732) ║
+# ║    PANEL_USER      — System user (default: novapanel)                ║
+# ║    PANEL_HOME      — Install dir (default: /opt/novapanel)           ║
+# ║    MAIL_HOSTNAME   — Mail hostname (default: mail.$(hostname -d))    ║
+# ║    LE_EMAIL        — Let's Encrypt email (default: $ADMIN_EMAIL)     ║
+# ║    DB_PASSWORD     — MariaDB root password (default: auto-generated) ║
+# ║                                                                      ║
+# ║  Idempotent: safe to run multiple times.                             ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 set -euo pipefail
 
@@ -1007,6 +1007,7 @@ novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop *
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl start *
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload *
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active *
 novapanel ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
 novapanel ALL=(ALL) NOPASSWD: /usr/sbin/nginx -s reload
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/novapanel-*.tmp /etc/nginx/*
