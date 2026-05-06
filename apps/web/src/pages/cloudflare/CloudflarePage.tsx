@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../../api/client';
+import { Link } from '@tanstack/react-router';
+import { useTunnelRoutes, useTunnelStatus } from '../../api/hooks/tunnel';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -8,6 +10,7 @@ import {
   Cloud, Plus, Trash2, Globe, Shield, Lock, Server, RefreshCw,
   ExternalLink, Zap, Info, ChevronRight, Pause, Play, Mail,
   AlertTriangle, CheckCircle, XCircle, Search, Edit, Save, X,
+  Waypoints, ArrowRight,
 } from 'lucide-react';
 
 // --- Types ---
@@ -474,6 +477,72 @@ function OverviewTab({ zone }: { zone: LinkedZone }) {
           <VerifyButton zoneDbId={zone.id} zoneName={zone.zoneName} />
         </div>
       </div>
+
+      {/* Tunnel Status */}
+      <TunnelStatusCard zoneName={zone.zoneName} />
+    </div>
+  );
+}
+
+/**
+ * Shows tunnel routes that serve this domain, with link to Tunnels page.
+ */
+function TunnelStatusCard({ zoneName }: { zoneName: string }) {
+  const { data: tunnelRoutes, isLoading } = useTunnelRoutes();
+  const { data: tunnelStatus } = useTunnelStatus();
+
+  // Find routes matching this domain (exact or subdomain)
+  const matchingRoutes = (tunnelRoutes || []).filter(
+    (r) => r.hostname === zoneName || r.hostname.endsWith(`.${zoneName}`)
+  );
+
+  const isActive = tunnelStatus?.status === 'active';
+
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold flex items-center gap-2">
+          <Waypoints className="h-4 w-4 text-muted-foreground" />
+          Tunnel Routes
+        </h3>
+        <Link
+          to="/tunnels"
+          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+        >
+          Manage Tunnels <ArrowRight className="h-3 w-3" />
+        </Link>
+      </div>
+
+      {isLoading ? (
+        <LoadingSpinner />
+      ) : matchingRoutes.length === 0 ? (
+        <div className="text-sm text-muted-foreground">
+          <p>No tunnel routes found for this domain.</p>
+          <Link to="/tunnels" className="text-primary hover:underline text-xs mt-1 inline-block">
+            Set up a tunnel →
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+            <div className={`h-2 w-2 rounded-full ${isActive ? 'bg-green-500' : 'bg-red-500'}`} />
+            <span>Tunnel {isActive ? 'Connected' : 'Disconnected'}</span>
+          </div>
+          {matchingRoutes.map((route) => (
+            <div key={route.id} className="flex items-center justify-between rounded-md border border-border p-2">
+              <div>
+                <p className="text-sm font-medium">{route.hostname}</p>
+                <p className="text-xs text-muted-foreground">{route.service}</p>
+              </div>
+              <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                route.isActive ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'
+              }`}>
+                {route.isActive ? 'Active' : 'Disabled'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

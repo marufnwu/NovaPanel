@@ -554,6 +554,13 @@ function TunnelCard({ tunnel, routes, onAddRoute, onToggle, onDelete, onEditRout
                   <p className="text-xs text-muted-foreground truncate">{route.service}</p>
                 </div>
                 <div className="flex items-center gap-1 ml-2">
+                  <Link
+                    to="/cloudflare"
+                    className="rounded p-1 text-muted-foreground hover:bg-accent"
+                    title="Manage DNS in Cloudflare"
+                  >
+                    <Globe className="h-4 w-4" />
+                  </Link>
                   <button
                     onClick={() => onEditRoute(route)}
                     className="rounded p-1 text-muted-foreground hover:bg-accent"
