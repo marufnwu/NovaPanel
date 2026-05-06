@@ -14,6 +14,7 @@ import {
 
 interface LinkedZone {
   id: string;
+  domainId: string | null;
   zoneId: string;
   zoneName: string;
   accountId: string | null;
@@ -146,6 +147,11 @@ function ZoneList({ zones, onSelect, onLink, onRefresh }: {
     }
   };
 
+  // Summary stats
+  const activeZones = zones.filter(z => !z.isPaused).length;
+  const pausedZones = zones.filter(z => z.isPaused).length;
+  const strictZones = zones.filter(z => z.sslMode === 'strict' || z.sslMode === 'full').length;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -158,53 +164,146 @@ function ZoneList({ zones, onSelect, onLink, onRefresh }: {
       </div>
 
       {zones.length === 0 ? (
-        <EmptyState icon={Cloud} title="No Cloudflare zones linked" description="Link a Cloudflare zone to manage DNS, SSL, and settings from this panel." />
-      ) : (
-        <div className="rounded-lg border border-border">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border bg-muted/50">
-                <th className="px-4 py-3 text-left text-sm font-medium">Zone</th>
-                <th className="px-4 py-3 text-left text-sm font-medium">Plan</th>
-                <th className="px-4 py-3 text-left text-sm font-medium">SSL Mode</th>
-                <th className="px-4 py-3 text-left text-sm font-medium">Status</th>
-                <th className="px-4 py-3 text-right text-sm font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {zones.map((zone) => (
-                <tr key={zone.id} onClick={() => onSelect(zone)} className="cursor-pointer border-b border-border hover:bg-accent/50 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Globe className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium">{zone.zoneName}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-muted-foreground">{zone.plan || 'Free'}</td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                      zone.sslMode === 'strict' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                      zone.sslMode === 'full' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-                      zone.sslMode === 'flexible' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                      'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                    }`}>{zone.sslMode}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1.5">
-                      {zone.isPaused ? <Pause className="h-3.5 w-3.5 text-yellow-500" /> : <CheckCircle className="h-3.5 w-3.5 text-green-500" />}
-                      <span className="text-sm">{zone.isPaused ? 'Paused' : 'Active'}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={(e) => handleUnlink(zone.id, e)} disabled={unlinking === zone.id} className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10">
-                      <Trash2 className="h-3 w-3" /> {unlinking === zone.id ? 'Removing...' : 'Unlink'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="rounded-lg border border-border bg-card">
+          <div className="p-8 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/20">
+              <Cloud className="h-8 w-8 text-orange-500" />
+            </div>
+            <h3 className="mb-2 text-lg font-semibold">Connect Cloudflare</h3>
+            <p className="mb-6 max-w-md mx-auto text-sm text-muted-foreground">
+              Link your Cloudflare zones to manage DNS records, SSL certificates, firewall rules, caching, and more — all from this panel.
+            </p>
+            <div className="mx-auto max-w-lg">
+              <div className="grid gap-4 sm:grid-cols-3 text-left">
+                <div className="rounded-lg border border-border p-4">
+                  <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-md bg-blue-100 dark:bg-blue-900/20">
+                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400">1</span>
+                  </div>
+                  <h4 className="text-sm font-medium">Get API Token</h4>
+                  <p className="mt-1 text-xs text-muted-foreground">Create a token at Cloudflare dashboard with Zone:Read, DNS:Edit, SSL:Edit permissions</p>
+                </div>
+                <div className="rounded-lg border border-border p-4">
+                  <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-md bg-blue-100 dark:bg-blue-900/20">
+                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400">2</span>
+                  </div>
+                  <h4 className="text-sm font-medium">Link Your Zone</h4>
+                  <p className="mt-1 text-xs text-muted-foreground">Enter your API token and select which Cloudflare zone to manage</p>
+                </div>
+                <div className="rounded-lg border border-border p-4">
+                  <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-md bg-blue-100 dark:bg-blue-900/20">
+                    <span className="text-sm font-bold text-blue-600 dark:text-blue-400">3</span>
+                  </div>
+                  <h4 className="text-sm font-medium">Manage Everything</h4>
+                  <p className="mt-1 text-xs text-muted-foreground">Control DNS, SSL, firewall, caching, redirects, and mail settings</p>
+                </div>
+              </div>
+            </div>
+            <button onClick={onLink} className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+              <Plus className="h-4 w-4" /> Link Your First Zone
+            </button>
+          </div>
         </div>
+      ) : (
+        <>
+          {/* Summary Cards */}
+          <div className="grid gap-3 sm:grid-cols-4">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center gap-2">
+                <Globe className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Total Zones</span>
+              </div>
+              <div className="mt-1 text-2xl font-bold">{zones.length}</div>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <span className="text-sm text-muted-foreground">Active</span>
+              </div>
+              <div className="mt-1 text-2xl font-bold text-green-600">{activeZones}</div>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center gap-2">
+                <Pause className="h-4 w-4 text-yellow-500" />
+                <span className="text-sm text-muted-foreground">Paused</span>
+              </div>
+              <div className="mt-1 text-2xl font-bold text-yellow-600">{pausedZones}</div>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center gap-2">
+                <Lock className="h-4 w-4 text-blue-500" />
+                <span className="text-sm text-muted-foreground">Secure SSL</span>
+              </div>
+              <div className="mt-1 text-2xl font-bold text-blue-600">{strictZones}</div>
+            </div>
+          </div>
+
+          {/* Zone Table */}
+          <div className="rounded-lg border border-border">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="px-4 py-3 text-left text-sm font-medium">Zone</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">Plan</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">SSL</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">Status</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">Nameservers</th>
+                  <th className="px-4 py-3 text-right text-sm font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {zones.map((zone) => (
+                  <tr key={zone.id} onClick={() => onSelect(zone)} className="cursor-pointer border-b border-border hover:bg-accent/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-orange-100 dark:bg-orange-900/20">
+                          <Cloud className="h-4 w-4 text-orange-500" />
+                        </div>
+                        <div>
+                          <span className="font-medium">{zone.zoneName}</span>
+                          {zone.domainId && (
+                            <div className="text-xs text-muted-foreground">Linked to domain</div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                        zone.plan === 'Pro' || zone.plan === 'Business' || zone.plan === 'Enterprise'
+                          ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                          : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                      }`}>{zone.plan || 'Free'}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                        zone.sslMode === 'strict' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                        zone.sslMode === 'full' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                        zone.sslMode === 'flexible' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                        'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                      }`}>{zone.sslMode}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        {zone.isPaused ? <Pause className="h-3.5 w-3.5 text-yellow-500" /> : <CheckCircle className="h-3.5 w-3.5 text-green-500" />}
+                        <span className="text-sm">{zone.isPaused ? 'Paused' : 'Active'}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="text-xs text-muted-foreground font-mono max-w-[200px] truncate">
+                        {zone.nameservers ? JSON.parse(zone.nameservers).slice(0, 1).join(', ') : '—'}
+                        {zone.nameservers && JSON.parse(zone.nameservers).length > 1 && ` +${JSON.parse(zone.nameservers).length - 1}`}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button onClick={(e) => handleUnlink(zone.id, e)} disabled={unlinking === zone.id} className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10">
+                        <Trash2 className="h-3 w-3" /> {unlinking === zone.id ? 'Removing...' : 'Unlink'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
@@ -278,39 +377,99 @@ function OverviewTab({ zone }: { zone: LinkedZone }) {
 
   if (loading) return <LoadingSpinner />;
 
+  const statusColor = overview?.status === 'active'
+    ? 'text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400'
+    : 'text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20 dark:text-yellow-400';
+
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <div className="rounded-lg border border-border p-4">
-        <h3 className="mb-3 font-semibold">Zone Info</h3>
-        <dl className="space-y-2 text-sm">
-          <div className="flex justify-between"><dt className="text-muted-foreground">Zone ID</dt><dd className="font-mono text-xs">{overview?.zoneId}</dd></div>
-          <div className="flex justify-between"><dt className="text-muted-foreground">Status</dt><dd>{overview?.status}</dd></div>
-          <div className="flex justify-between"><dt className="text-muted-foreground">Plan</dt><dd>{overview?.plan}</dd></div>
-          <div className="flex justify-between"><dt className="text-muted-foreground">SSL Mode</dt><dd>{overview?.sslMode}</dd></div>
-          <div className="flex justify-between"><dt className="text-muted-foreground">DNS Records</dt><dd>{overview?.dnsRecordCount}</dd></div>
-          <div className="flex justify-between"><dt className="text-muted-foreground">Page Rules</dt><dd>{overview?.pageRuleCount}</dd></div>
-        </dl>
-      </div>
-      <div className="rounded-lg border border-border p-4">
-        <h3 className="mb-3 font-semibold">Nameservers</h3>
-        <div className="space-y-1">
-          {(overview?.nameservers || []).map((ns: string) => (
-            <div key={ns} className="rounded bg-muted/50 px-3 py-1.5 font-mono text-xs">{ns}</div>
-          ))}
+    <div className="space-y-4">
+      {/* Status Banner */}
+      <div className={`flex items-center gap-3 rounded-lg border p-4 ${statusColor}`}>
+        {zone.isPaused ? <Pause className="h-5 w-5" /> : <CheckCircle className="h-5 w-5" />}
+        <div>
+          <div className="font-medium">{zone.isPaused ? 'Cloudflare Proxy Paused' : 'Cloudflare Proxy Active'}</div>
+          <div className="text-sm opacity-80">{zone.isPaused ? 'DNS only mode — traffic not proxied through Cloudflare' : `Zone "${zone.zoneName}" is active and being proxied through Cloudflare`}</div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
+      </div>
+
+      {/* Quick Stats */}
+      <div className="grid gap-3 sm:grid-cols-4">
+        <div className="rounded-lg border border-border p-3 text-center">
+          <div className="text-2xl font-bold">{overview?.dnsRecordCount || 0}</div>
+          <div className="text-xs text-muted-foreground">DNS Records</div>
+        </div>
+        <div className="rounded-lg border border-border p-3 text-center">
+          <div className="text-2xl font-bold">{overview?.pageRuleCount || 0}</div>
+          <div className="text-xs text-muted-foreground">Page Rules</div>
+        </div>
+        <div className="rounded-lg border border-border p-3 text-center">
+          <div className={`text-sm font-bold capitalize ${
+            overview?.sslMode === 'strict' ? 'text-green-600' :
+            overview?.sslMode === 'full' ? 'text-blue-600' :
+            overview?.sslMode === 'flexible' ? 'text-yellow-600' : 'text-red-600'
+          }`}>{overview?.sslMode || 'unknown'}</div>
+          <div className="text-xs text-muted-foreground">SSL Mode</div>
+        </div>
+        <div className="rounded-lg border border-border p-3 text-center">
+          <div className="text-sm font-bold">{overview?.plan || 'Free'}</div>
+          <div className="text-xs text-muted-foreground">Plan</div>
+        </div>
+      </div>
+
+      {/* Zone Details + Nameservers */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-lg border border-border p-4">
+          <h3 className="mb-3 font-semibold">Zone Details</h3>
+          <dl className="space-y-2.5 text-sm">
+            <div className="flex justify-between"><dt className="text-muted-foreground">Zone ID</dt><dd className="font-mono text-xs bg-muted/50 rounded px-2 py-0.5">{overview?.zoneId || zone.zoneId}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Status</dt><dd><span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusColor}`}>{overview?.status || zone.status}</span></dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Plan</dt><dd>{overview?.plan || zone.plan}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Created</dt><dd>{overview?.createdAt ? new Date(overview.createdAt).toLocaleDateString() : '—'}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Activated</dt><dd>{overview?.activatedAt ? new Date(overview.activatedAt).toLocaleDateString() : '—'}</dd></div>
+            {zone.domainId && (
+              <div className="flex justify-between"><dt className="text-muted-foreground">Linked Domain</dt><dd className="text-primary">Yes</dd></div>
+            )}
+          </dl>
+        </div>
+        <div className="rounded-lg border border-border p-4">
+          <h3 className="mb-3 font-semibold">Nameservers</h3>
+          <div className="space-y-1.5">
+            {(overview?.nameservers || []).map((ns: string) => (
+              <div key={ns} className="flex items-center gap-2 rounded bg-muted/50 px-3 py-2">
+                <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="font-mono text-xs">{ns}</span>
+              </div>
+            ))}
+            {(overview?.originalNameservers || []).length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-medium text-muted-foreground mb-1.5">Original Nameservers</p>
+                {overview.originalNameservers.map((ns: string) => (
+                  <div key={ns} className="flex items-center gap-2 rounded bg-muted/30 px-3 py-1.5">
+                    <span className="font-mono text-xs text-muted-foreground">{ns}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="rounded-lg border border-border p-4">
+        <h3 className="mb-3 font-semibold">Quick Actions</h3>
+        <div className="flex flex-wrap gap-2">
           <button onClick={async () => {
-            try { await api.post(`/cloudflare/zones/${zone.id}/cache/purge`, { purgeEverything: true }); toast.success('Cache purged'); }
+            try { await api.post(`/cloudflare/zones/${zone.id}/cache/purge`, { purgeEverything: true }); toast.success('Cache purged successfully'); }
             catch (e: any) { toast.error(e.message || 'Failed to purge cache'); }
-          }} className="inline-flex items-center gap-1 rounded-md border border-input px-3 py-1.5 text-xs hover:bg-accent">
-            <RefreshCw className="h-3 w-3" /> Purge Cache
+          }} className="inline-flex items-center gap-1.5 rounded-md border border-input px-3 py-2 text-sm hover:bg-accent transition-colors">
+            <RefreshCw className="h-4 w-4" /> Purge Cache
           </button>
           <button onClick={async () => {
             const action = zone.isPaused ? 'unpause' : 'pause';
             try { await api.post(`/cloudflare/zones/${zone.id}/${action}`); toast.success(`Cloudflare ${action}d`); }
             catch (e: any) { toast.error(e.message); }
-          }} className="inline-flex items-center gap-1 rounded-md border border-input px-3 py-1.5 text-xs hover:bg-accent">
-            {zone.isPaused ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />} {zone.isPaused ? 'Enable' : 'Disable'} Proxy
+          }} className="inline-flex items-center gap-1.5 rounded-md border border-input px-3 py-2 text-sm hover:bg-accent transition-colors">
+            {zone.isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />} {zone.isPaused ? 'Enable Proxy' : 'Disable Proxy'}
           </button>
           <VerifyButton zoneDbId={zone.id} zoneName={zone.zoneName} />
         </div>
@@ -1056,19 +1215,33 @@ function WildcardTab({ zoneDbId, zoneName }: { zoneDbId: string; zoneName: strin
 // --- Link Zone Modal ---
 
 function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: () => void }) {
-  const [step, setStep] = useState<'token' | 'select' | 'linking'>('token');
+  const [step, setStep] = useState<'token' | 'validating' | 'select' | 'linking'>('token');
   const [apiToken, setApiToken] = useState('');
   const [cfZones, setCfZones] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [tokenInfo, setTokenInfo] = useState<{ valid: boolean; status: string; type: string } | null>(null);
+  const [zoneFilter, setZoneFilter] = useState('');
 
-  const handleFetchZones = async () => {
+  const handleValidateAndFetch = async () => {
     setLoading(true);
     try {
+      // First validate the token
+      const validateData = await api.post<{ valid: boolean; status: string; type: string }>('/tunnel/validate-token', { apiToken });
+      setTokenInfo(validateData);
+
+      // Then fetch zones
       const data = await api.post<{ zones: any[]; total_count: number }>('/cloudflare/zones/list', { apiToken });
-      setCfZones(data?.zones || []);
-      setStep('select');
+      const zones = data?.zones || [];
+
+      if (zones.length === 0) {
+        toast.error('No zones found for this API token. Make sure your token has Zone:Read permission.');
+        setStep('token');
+      } else {
+        setCfZones(zones);
+        setStep('select');
+      }
     } catch (e: any) {
-      toast.error(e.message || 'Failed to fetch zones');
+      toast.error(e.message || 'Invalid API token or insufficient permissions');
     } finally {
       setLoading(false);
     }
@@ -1078,7 +1251,7 @@ function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: (
     setStep('linking');
     try {
       await api.post('/cloudflare/zones/link', { zoneId: zone.id, apiToken });
-      toast.success(`Zone "${zone.name}" linked`);
+      toast.success(`Zone "${zone.name}" linked successfully! SSL auto-configured.`);
       onLinked();
     } catch (e: any) {
       toast.error(e.message || 'Failed to link zone');
@@ -1086,22 +1259,62 @@ function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: (
     }
   };
 
+  const filteredZones = zoneFilter
+    ? cfZones.filter(z => z.name.toLowerCase().includes(zoneFilter.toLowerCase()))
+    : cfZones;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg bg-card p-6 shadow-lg">
-        <h2 className="mb-4 text-lg font-semibold">Link Cloudflare Zone</h2>
+      <div className="w-full max-w-lg rounded-lg bg-card p-6 shadow-lg">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Link Cloudflare Zone</h2>
+          <button onClick={onClose} className="rounded p-1 hover:bg-accent text-muted-foreground">✕</button>
+        </div>
+
+        {/* Step indicator */}
+        <div className="mb-6 flex items-center gap-2">
+          {['token', 'validating'].includes(step) && (
+            <div className="flex items-center gap-2 text-sm">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">1</div>
+              <span className="font-medium">Enter API Token</span>
+              <div className="h-px flex-1 bg-border" />
+              <div className="flex h-6 w-6 items-center justify-center rounded-full border border-border text-xs text-muted-foreground">2</div>
+              <span className="text-muted-foreground">Select Zone</span>
+            </div>
+          )}
+          {['select', 'linking'].includes(step) && (
+            <div className="flex items-center gap-2 text-sm">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-green-500 text-xs font-bold text-white">✓</div>
+              <span className="text-green-600">Token Valid</span>
+              <div className="h-px flex-1 bg-border" />
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">2</div>
+              <span className="font-medium">Select Zone</span>
+            </div>
+          )}
+        </div>
 
         {step === 'token' && (
           <div className="space-y-4">
             <div>
-              <label className="mb-1 block text-sm font-medium">Cloudflare API Token</label>
-              <input type="password" value={apiToken} onChange={e => setApiToken(e.target.value)} placeholder="Your CF API token" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
-              <p className="mt-1 text-xs text-muted-foreground">Token needs Zone:Read, DNS:Edit, SSL:Edit permissions</p>
+              <label className="mb-1.5 block text-sm font-medium">Cloudflare API Token</label>
+              <input type="password" value={apiToken} onChange={e => setApiToken(e.target.value)} placeholder="cfat_..." className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+              <div className="mt-2 rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">Required permissions:</p>
+                <ul className="mt-1 space-y-0.5 list-disc list-inside">
+                  <li>Zone → Zone → Read</li>
+                  <li>Zone → DNS → Edit</li>
+                  <li>Zone → Zone Settings → Read & Edit</li>
+                  <li>Zone → SSL and Certificates → Edit</li>
+                </ul>
+                <p className="mt-2">
+                  Create token at: <span className="font-mono text-primary">dash.cloudflare.com/profile/api-tokens</span>
+                </p>
+              </div>
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={onClose} className="rounded-md border border-input px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-              <button onClick={handleFetchZones} disabled={!apiToken || loading} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                {loading ? 'Fetching...' : 'Fetch Zones'}
+              <button onClick={handleValidateAndFetch} disabled={!apiToken || loading} className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                {loading ? <><LoadingSpinner /> Validating...</> : <><CheckCircle className="h-4 w-4" /> Validate & Continue</>}
               </button>
             </div>
           </div>
@@ -1109,23 +1322,58 @@ function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: (
 
         {step === 'select' && (
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Select a zone to link:</p>
-            <div className="max-h-64 space-y-2 overflow-y-auto">
-              {cfZones.map((z) => (
-                <button key={z.id} onClick={() => handleLink(z)} className="w-full rounded-md border border-input p-3 text-left hover:bg-accent transition-colors">
-                  <div className="font-medium">{z.name}</div>
-                  <div className="text-xs text-muted-foreground">{z.plan?.name || 'Free'} • {z.status}</div>
-                </button>
-              ))}
+            {tokenInfo && (
+              <div className="flex items-center gap-2 rounded-md bg-green-50 dark:bg-green-900/20 p-2 text-sm text-green-700 dark:text-green-400">
+                <CheckCircle className="h-4 w-4" />
+                <span>Token verified ({tokenInfo.type} token) • {cfZones.length} zone{cfZones.length !== 1 ? 's' : ''} found</span>
+              </div>
+            )}
+
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <input value={zoneFilter} onChange={e => setZoneFilter(e.target.value)} placeholder="Filter zones..." className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm" />
             </div>
-            <button onClick={() => setStep('token')} className="text-sm text-muted-foreground hover:text-foreground">← Back</button>
+
+            <div className="max-h-72 space-y-2 overflow-y-auto">
+              {filteredZones.length === 0 ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">No zones match your filter</p>
+              ) : (
+                filteredZones.map((z) => (
+                  <button key={z.id} onClick={() => handleLink(z)} className="w-full rounded-lg border border-input p-4 text-left hover:bg-accent hover:border-primary/50 transition-all group">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium group-hover:text-primary">{z.name}</div>
+                        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className={`inline-flex rounded-full px-1.5 py-0.5 text-xs font-medium ${
+                            z.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-yellow-100 text-yellow-700'
+                          }`}>{z.status}</span>
+                          <span>{z.plan?.name || 'Free'} plan</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        {z.name_servers && z.name_servers.length > 0 && (
+                          <div className="text-xs font-mono text-muted-foreground">
+                            {z.name_servers[0]}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="flex items-center justify-between">
+              <button onClick={() => { setStep('token'); setTokenInfo(null); }} className="text-sm text-muted-foreground hover:text-foreground">← Back</button>
+              <span className="text-xs text-muted-foreground">{filteredZones.length} of {cfZones.length} zones</span>
+            </div>
           </div>
         )}
 
         {step === 'linking' && (
-          <div className="flex items-center justify-center py-8">
+          <div className="flex flex-col items-center justify-center py-8">
             <LoadingSpinner />
-            <span className="ml-3 text-sm">Linking zone...</span>
+            <span className="mt-3 text-sm">Linking zone and auto-configuring SSL...</span>
+            <span className="mt-1 text-xs text-muted-foreground">This may take a few seconds</span>
           </div>
         )}
       </div>
