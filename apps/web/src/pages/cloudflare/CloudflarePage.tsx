@@ -1583,11 +1583,11 @@ function LinkZoneModal({ onClose, onLinked, initialApiToken }: { onClose: () => 
 
   // Auto-fetch zones if token was pre-filled from SetupModal
   useEffect(() => {
-    if (initialApiToken && initialApiToken === apiToken && step === 'validating') {
+    if (apiToken && step === 'validating') {
       handleValidateAndFetch();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [step]);
 
   const handleValidateAndFetch = async () => {
     if (!apiToken.trim()) return;
