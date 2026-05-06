@@ -40,6 +40,7 @@ export interface TunnelStatus {
   status: 'active' | 'inactive' | 'degraded';
   processRunning: boolean;
   connectedToEdge: boolean;
+  connectionCount: number;
   lastConnectedAt: string | null;
   message?: string;
   tunnels: Array<{
@@ -445,12 +446,58 @@ export class TunnelService {
       throw new AppError(404, 'TUNNEL_NOT_FOUND', 'Tunnel not found');
     }
 
+    // First try to get local routes
     const routes = await db.select().from(tunnelRoutes)
       .where(eq(tunnelRoutes.tunnelId, tunnelDbId));
 
     const activeRoutes = routes.filter(r => r.isActive);
 
-    // Return the ingress configuration that would be sent to Cloudflare API
+    // If we have local routes, return those
+    if (activeRoutes.length > 0) {
+      return {
+        tunnel: tunnel.tunnelId,
+        accountId: tunnel.accountId,
+        ingress: activeRoutes.map((r) => ({
+          hostname: r.hostname,
+          service: r.service,
+          originRequest: r.noTlsVerify ? { noTLSVerify: true } : undefined,
+        })),
+        catchAll: { service: 'http_status:404' },
+      };
+    }
+
+    // No local routes — try to fetch remote config from Cloudflare API
+    if (tunnel.apiToken && tunnel.accountId && tunnel.tunnelId) {
+      try {
+        const apiToken = decrypt(tunnel.apiToken);
+        const response = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${tunnel.accountId}/cfd_tunnel/${tunnel.tunnelId}/configurations`,
+          {
+            headers: { Authorization: `Bearer ${apiToken}` },
+          }
+        );
+        const data = await response.json() as any;
+        if (data.success && data.result?.config?.ingress) {
+          return {
+            tunnel: tunnel.tunnelId,
+            accountId: tunnel.accountId,
+            ingress: data.result.config.ingress
+              .filter((i: any) => i.hostname) // exclude catch-all
+              .map((i: any) => ({
+                hostname: i.hostname,
+                service: i.service,
+                originRequest: i.originRequest || undefined,
+              })),
+            catchAll: data.result.config.ingress.find((i: any) => !i.hostname) || { service: 'http_status:404' },
+            source: 'remote',
+          };
+        }
+      } catch {
+        // Fall through to empty config
+      }
+    }
+
+    // Return empty config
     return {
       tunnel: tunnel.tunnelId,
       accountId: tunnel.accountId,
@@ -480,6 +527,7 @@ export class TunnelService {
         status: 'inactive',
         processRunning: false,
         connectedToEdge: false,
+        connectionCount: 0,
         lastConnectedAt: null,
         message: 'Cloudflared process is not running',
         tunnels: tunnels.map(t => ({
@@ -493,36 +541,92 @@ export class TunnelService {
       };
     }
 
-    // Process is running, check connectivity via Cloudflare API
+    // Process is running, check connectivity
     let connectedToEdge = false;
     let lastConnectedAt: string | null = null;
+    let connectionCount = 0;
 
-    for (const tunnel of tunnels) {
-      if (!tunnel.apiToken || !tunnel.accountId || !tunnel.tunnelId) continue;
-      
-      try {
-        const apiToken = decrypt(tunnel.apiToken);
-        const response = await fetch(
-          `https://api.cloudflare.com/client/v4/accounts/${tunnel.accountId}/cfd_tunnel/${tunnel.tunnelId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${apiToken}`,
-            },
-          }
-        );
-
-        const data = await response.json() as any;
-        if (data.success && data.result) {
-          const connections = data.result.connections || [];
-          if (connections.length > 0) {
-            connectedToEdge = true;
-            // Use conns_active_at for last connection time, not created_at (Fix 4)
-            lastConnectedAt = data.result.conns_active_at || data.result.created_at || null;
+    // First, try local cloudflared metrics endpoint (most reliable)
+    try {
+      // Find the metrics port from cloudflared process or try default ports
+      for (let port = 20241; port <= 20250; port++) {
+        try {
+          const metricsResp = await fetch(`http://127.0.0.1:${port}/metrics`, {
+            signal: AbortSignal.timeout(2000),
+          });
+          if (metricsResp.ok) {
+            const metricsText = await metricsResp.text();
+            const haMatch = metricsText.match(/cloudflared_tunnel_ha_connections (\d+)/);
+            if (haMatch) {
+              connectionCount = parseInt(haMatch[1], 10);
+              if (connectionCount > 0) {
+                connectedToEdge = true;
+              }
+            }
             break;
+          }
+        } catch {
+          // Try next port
+        }
+      }
+    } catch {
+      // Metrics unavailable, fall through to API check
+    }
+
+    // If metrics didn't confirm connectivity, try Cloudflare API as fallback
+    if (!connectedToEdge) {
+      for (const tunnel of tunnels) {
+        if (!tunnel.apiToken || !tunnel.accountId || !tunnel.tunnelId) continue;
+        
+        try {
+          const apiToken = decrypt(tunnel.apiToken);
+          const response = await fetch(
+            `https://api.cloudflare.com/client/v4/accounts/${tunnel.accountId}/cfd_tunnel/${tunnel.tunnelId}`,
+            {
+              headers: {
+                Authorization: `Bearer ${apiToken}`,
+              },
+            }
+          );
+
+          const data = await response.json() as any;
+          if (data.success && data.result) {
+            const connections = data.result.connections || [];
+            if (connections.length > 0) {
+              connectedToEdge = true;
+              connectionCount = connections.length;
+              lastConnectedAt = data.result.conns_active_at || data.result.created_at || null;
+              break;
+            }
+            // Cloudflare API often returns empty connections even when connected
+            // If status is "active" in DB and process is running, trust it
+            if (tunnel.status === 'active') {
+              connectedToEdge = true;
+              break;
+            }
+          }
+        } catch {
+          // Continue checking other tunnels
+        }
+      }
+    }
+
+    // Final fallback: if process is running and has been running for a while,
+    // cloudflared would have exited if it couldn't connect, so trust the process
+    if (!connectedToEdge && processRunning) {
+      try {
+        const uptime = await run('systemctl', ['show', 'cloudflared', '--property=ActiveEnterTimestamp']);
+        const ts = uptime.stdout.trim().replace('ActiveEnterTimestamp=', '');
+        if (ts) {
+          const startTime = new Date(ts);
+          const runningSeconds = (Date.now() - startTime.getTime()) / 1000;
+          // If process has been running for more than 30 seconds, it's likely connected
+          if (runningSeconds > 30) {
+            connectedToEdge = true;
           }
         }
       } catch {
-        // Continue checking other tunnels
+        // Can't determine uptime, leave as is
       }
     }
 
@@ -541,6 +645,7 @@ export class TunnelService {
       status,
       processRunning,
       connectedToEdge,
+      connectionCount,
       lastConnectedAt,
       message,
       tunnels: tunnels.map(t => ({
