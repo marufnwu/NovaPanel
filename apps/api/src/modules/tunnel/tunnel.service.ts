@@ -466,7 +466,32 @@ export class TunnelService {
       };
     }
 
-    // No local routes — try to fetch remote config from Cloudflare API
+    // No local routes — try to fetch from cloudflared management API first
+    for (let port = 20241; port <= 20250; port++) {
+      try {
+        const resp = await fetch(`http://127.0.0.1:${port}/config`, { signal: AbortSignal.timeout(2000) });
+        if (resp.ok) {
+          const data = await resp.json() as any;
+          if (data.config?.ingress) {
+            return {
+              tunnel: tunnel.tunnelId,
+              accountId: tunnel.accountId,
+              ingress: data.config.ingress
+                .filter((i: any) => i.hostname)
+                .map((i: any) => ({
+                  hostname: i.hostname,
+                  service: i.service,
+                  originRequest: i.originRequest || undefined,
+                })),
+              catchAll: data.config.ingress.find((i: any) => !i.hostname) || { service: 'http_status:404' },
+              source: 'cloudflared',
+            };
+          }
+        }
+      } catch { /* try next port */ }
+    }
+
+    // Fallback: Cloudflare API
     if (tunnel.apiToken && tunnel.accountId && tunnel.tunnelId) {
       try {
         const apiToken = decrypt(tunnel.apiToken);
@@ -482,7 +507,7 @@ export class TunnelService {
             tunnel: tunnel.tunnelId,
             accountId: tunnel.accountId,
             ingress: data.result.config.ingress
-              .filter((i: any) => i.hostname) // exclude catch-all
+              .filter((i: any) => i.hostname)
               .map((i: any) => ({
                 hostname: i.hostname,
                 service: i.service,
@@ -739,29 +764,65 @@ export class TunnelService {
       throw new AppError(404, 'TUNNEL_NOT_FOUND', 'Tunnel not found');
     }
 
-    if (!tunnel.apiToken || !tunnel.accountId || !tunnel.tunnelId) {
-      throw new AppError(400, 'MISSING_CREDENTIALS', 'Tunnel does not have API credentials for remote sync');
+    // Fetch tunnel config using multiple sources
+    let remoteIngress: Array<{ hostname: string; service: string; noTlsVerify: boolean }> = [];
+    let source = 'none';
+
+    // Primary: Fetch from local cloudflared management API (/config endpoint)
+    for (let port = 20241; port <= 20250; port++) {
+      try {
+        const resp = await fetch(`http://127.0.0.1:${port}/config`, { signal: AbortSignal.timeout(2000) });
+        if (resp.ok) {
+          const data = await resp.json() as any;
+          if (data.config?.ingress) {
+            remoteIngress = data.config.ingress
+              .filter((i: any) => i.hostname) // exclude catch-all (empty hostname)
+              .map((i: any) => ({
+                hostname: i.hostname,
+                service: i.service,
+                noTlsVerify: i.originRequest?.noTLSVerify || false,
+              }));
+            source = `cloudflared:${port}`;
+            break;
+          }
+        }
+      } catch { /* try next port */ }
     }
 
-    // Fetch remote config from Cloudflare API
-    const apiToken = decrypt(tunnel.apiToken);
-    const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${tunnel.accountId}/cfd_tunnel/${tunnel.tunnelId}/configurations`,
-      { headers: { Authorization: `Bearer ${apiToken}` } }
-    );
-    const data = await response.json() as any;
-
-    if (!data.success || !data.result?.config?.ingress) {
-      throw new AppError(500, 'SYNC_FAILED', 'Failed to fetch remote tunnel configuration from Cloudflare API');
+    // Fallback: Cloudflare API
+    if (remoteIngress.length === 0 && tunnel.apiToken && tunnel.accountId && tunnel.tunnelId) {
+      try {
+        const apiToken = decrypt(tunnel.apiToken);
+        const response = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${tunnel.accountId}/cfd_tunnel/${tunnel.tunnelId}/configurations`,
+          { headers: { Authorization: `Bearer ${apiToken}` } }
+        );
+        const data = await response.json() as any;
+        if (data.success && data.result?.config?.ingress) {
+          remoteIngress = data.result.config.ingress
+            .filter((i: any) => i.hostname)
+            .map((i: any) => ({
+              hostname: i.hostname,
+              service: i.service,
+              noTlsVerify: i.originRequest?.noTLSVerify || false,
+            }));
+          source = 'cloudflare-api';
+        }
+      } catch { /* fall through */ }
     }
 
-    const remoteIngress = data.result.config.ingress
-      .filter((i: any) => i.hostname) // exclude catch-all
-      .map((i: any) => ({
-        hostname: i.hostname,
-        service: i.service,
-        noTlsVerify: i.originRequest?.noTLSVerify || false,
-      }));
+    if (remoteIngress.length === 0) {
+      return {
+        synced: 0,
+        stale: 0,
+        totalRemote: 0,
+        totalLocal: 0,
+        newRoutes: [],
+        staleRoutes: [],
+        source,
+        message: 'No remote routes found. Tunnel may not be running or has no routes configured.',
+      };
+    }
 
     // Get existing local routes
     const localRoutes = await db.select().from(tunnelRoutes)
