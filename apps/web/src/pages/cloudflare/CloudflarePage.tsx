@@ -82,7 +82,7 @@ export function CloudflarePage() {
       const data = await api.get<LinkedZone[]>('/cloudflare/zones');
       setZones(data || []);
     } catch (error: any) {
-      toast.error('Failed to load Cloudflare zones');
+      toast.error('Failed to load Cloudflare domains');
     } finally {
       setLoading(false);
     }
@@ -94,7 +94,7 @@ export function CloudflarePage() {
 
   return (
     <div>
-      <PageHeader title="Cloudflare" description="Manage DNS, SSL, firewall, and settings for your Cloudflare zones" />
+      <PageHeader title="Cloudflare" description="Connect your Cloudflare domains to manage DNS, SSL, security, and caching from this panel" />
 
       {!selectedZone ? (
         <ZoneList
@@ -134,14 +134,14 @@ function ZoneList({ zones, onSelect, onLink, onRefresh }: {
 
   const handleUnlink = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('Unlink this zone? DNS records will NOT be deleted from Cloudflare.')) return;
+    if (!confirm('Remove this domain from Cloudflare management? DNS records will NOT be deleted from Cloudflare.')) return;
     setUnlinking(id);
     try {
       await api.delete(`/cloudflare/zones/${id}`);
-      toast.success('Zone unlinked');
+      toast.success('Domain removed');
       onRefresh();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to unlink zone');
+      toast.error(error.message || 'Failed to remove domain');
     } finally {
       setUnlinking(null);
     }
@@ -156,7 +156,7 @@ function ZoneList({ zones, onSelect, onLink, onRefresh }: {
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <button onClick={onLink} className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-          <Plus className="h-4 w-4" /> Link Zone
+          <Plus className="h-4 w-4" /> Connect Domain
         </button>
         <button onClick={onRefresh} className="inline-flex items-center gap-2 rounded-md border border-input px-4 py-2 text-sm font-medium hover:bg-accent">
           <RefreshCw className="h-4 w-4" /> Refresh
@@ -170,8 +170,8 @@ function ZoneList({ zones, onSelect, onLink, onRefresh }: {
               <Cloud className="h-8 w-8 text-orange-500" />
             </div>
             <h3 className="mb-2 text-lg font-semibold">Connect Cloudflare</h3>
-            <p className="mb-6 max-w-md mx-auto text-sm text-muted-foreground">
-              Link your Cloudflare zones to manage DNS records, SSL certificates, firewall rules, caching, and more — all from this panel.
+            <p className="mb-4 max-w-lg mx-auto text-sm text-muted-foreground">
+              Cloudflare provides DNS management, SSL certificates, DDoS protection, and a CDN for your domains. Connect your Cloudflare account to manage everything from this panel.
             </p>
             <div className="mx-auto max-w-lg">
               <div className="grid gap-4 sm:grid-cols-3 text-left">
@@ -180,14 +180,14 @@ function ZoneList({ zones, onSelect, onLink, onRefresh }: {
                     <span className="text-sm font-bold text-blue-600 dark:text-blue-400">1</span>
                   </div>
                   <h4 className="text-sm font-medium">Get API Token</h4>
-                  <p className="mt-1 text-xs text-muted-foreground">Create a token at Cloudflare dashboard with Zone:Read, DNS:Edit, SSL:Edit permissions</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Go to Cloudflare dashboard and create an API token with DNS and SSL permissions</p>
                 </div>
                 <div className="rounded-lg border border-border p-4">
                   <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-md bg-blue-100 dark:bg-blue-900/20">
                     <span className="text-sm font-bold text-blue-600 dark:text-blue-400">2</span>
                   </div>
-                  <h4 className="text-sm font-medium">Link Your Zone</h4>
-                  <p className="mt-1 text-xs text-muted-foreground">Enter your API token and select which Cloudflare zone to manage</p>
+                  <h4 className="text-sm font-medium">Connect Your Domain</h4>
+                  <p className="mt-1 text-xs text-muted-foreground">Enter your API token and select which domain to manage</p>
                 </div>
                 <div className="rounded-lg border border-border p-4">
                   <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-md bg-blue-100 dark:bg-blue-900/20">
@@ -199,7 +199,7 @@ function ZoneList({ zones, onSelect, onLink, onRefresh }: {
               </div>
             </div>
             <button onClick={onLink} className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-              <Plus className="h-4 w-4" /> Link Your First Zone
+              <Plus className="h-4 w-4" /> Connect Your First Domain
             </button>
           </div>
         </div>
@@ -210,7 +210,7 @@ function ZoneList({ zones, onSelect, onLink, onRefresh }: {
             <div className="rounded-lg border border-border bg-card p-4">
               <div className="flex items-center gap-2">
                 <Globe className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Total Zones</span>
+                <span className="text-sm text-muted-foreground">Domains</span>
               </div>
               <div className="mt-1 text-2xl font-bold">{zones.length}</div>
             </div>
@@ -237,12 +237,12 @@ function ZoneList({ zones, onSelect, onLink, onRefresh }: {
             </div>
           </div>
 
-          {/* Zone Table */}
+          {/* Domain Table */}
           <div className="rounded-lg border border-border">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
-                  <th className="px-4 py-3 text-left text-sm font-medium">Zone</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">Domain</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">Plan</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">SSL</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">Status</th>
@@ -261,7 +261,7 @@ function ZoneList({ zones, onSelect, onLink, onRefresh }: {
                         <div>
                           <span className="font-medium">{zone.zoneName}</span>
                           {zone.domainId && (
-                            <div className="text-xs text-muted-foreground">Linked to domain</div>
+                            <div className="text-xs text-muted-foreground">Connected to local domain</div>
                           )}
                         </div>
                       </div>
@@ -309,7 +309,7 @@ function ZoneList({ zones, onSelect, onLink, onRefresh }: {
   );
 }
 
-// --- Zone Detail ---
+// --- Domain Detail ---
 
 function ZoneDetail({ zone, onBack, activeTab, onTabChange }: {
   zone: LinkedZone;
@@ -331,7 +331,7 @@ function ZoneDetail({ zone, onBack, activeTab, onTabChange }: {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <button onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground">← Back to Zones</button>
+        <button onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground">← Back to Domains</button>
         <span className="text-muted-foreground">/</span>
         <span className="font-medium">{zone.zoneName}</span>
       </div>
@@ -387,8 +387,8 @@ function OverviewTab({ zone }: { zone: LinkedZone }) {
       <div className={`flex items-center gap-3 rounded-lg border p-4 ${statusColor}`}>
         {zone.isPaused ? <Pause className="h-5 w-5" /> : <CheckCircle className="h-5 w-5" />}
         <div>
-          <div className="font-medium">{zone.isPaused ? 'Cloudflare Proxy Paused' : 'Cloudflare Proxy Active'}</div>
-          <div className="text-sm opacity-80">{zone.isPaused ? 'DNS only mode — traffic not proxied through Cloudflare' : `Zone "${zone.zoneName}" is active and being proxied through Cloudflare`}</div>
+          <div className="font-medium">{zone.isPaused ? 'Cloudflare Paused' : 'Cloudflare Active'}</div>
+          <div className="text-sm opacity-80">{zone.isPaused ? 'DNS only mode — traffic is not protected by Cloudflare' : `"${zone.zoneName}" is active and protected by Cloudflare`}</div>
         </div>
       </div>
 
@@ -416,12 +416,12 @@ function OverviewTab({ zone }: { zone: LinkedZone }) {
         </div>
       </div>
 
-      {/* Zone Details + Nameservers */}
+      {/* Domain Details + Nameservers */}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-lg border border-border p-4">
-          <h3 className="mb-3 font-semibold">Zone Details</h3>
+          <h3 className="mb-3 font-semibold">Domain Details</h3>
           <dl className="space-y-2.5 text-sm">
-            <div className="flex justify-between"><dt className="text-muted-foreground">Zone ID</dt><dd className="font-mono text-xs bg-muted/50 rounded px-2 py-0.5">{overview?.zoneId || zone.zoneId}</dd></div>
+            <div className="flex justify-between"><dt className="text-muted-foreground">Cloudflare Zone ID</dt><dd className="font-mono text-xs bg-muted/50 rounded px-2 py-0.5">{overview?.zoneId || zone.zoneId}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Status</dt><dd><span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusColor}`}>{overview?.status || zone.status}</span></dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Plan</dt><dd>{overview?.plan || zone.plan}</dd></div>
             <div className="flex justify-between"><dt className="text-muted-foreground">Created</dt><dd>{overview?.createdAt ? new Date(overview.createdAt).toLocaleDateString() : '—'}</dd></div>
@@ -731,7 +731,7 @@ function SettingsTab({ zoneDbId }: { zoneDbId: string }) {
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-border p-4 space-y-4">
-        <h3 className="font-semibold">Zone Settings</h3>
+        <h3 className="font-semibold">Domain Settings</h3>
         <div className="grid gap-4 md:grid-cols-2">
           <ToggleSetting label="Email Obfuscation" description="Protect email addresses from scrapers" checked={settings?.emailObfuscation ?? true} onChange={v => setSettings({ ...settings, emailObfuscation: v })} />
           <ToggleSetting label="Hotlink Protection" description="Prevent other sites from using your images" checked={settings?.hotlinkProtection ?? false} onChange={v => setSettings({ ...settings, hotlinkProtection: v })} />
@@ -998,7 +998,7 @@ function MailTab({ zoneDbId }: { zoneDbId: string }) {
   ];
 
   const handleApply = async (provider: string) => {
-    if (!confirm(`Apply ${provider} mail DNS records? This will add records to your Cloudflare zone.`)) return;
+    if (!confirm(`Apply ${provider} mail DNS records? This will add MX and SPF records to your Cloudflare domain.`)) return;
     setApplying(provider);
     try {
       const result = await api.post<{ applied: number }>(`/cloudflare/zones/${zoneDbId}/mail-preset`, { provider });
@@ -1071,7 +1071,7 @@ function VerifyButton({ zoneDbId, zoneName }: { zoneDbId: string; zoneName: stri
                     ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
                     : <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />}
                   <div>
-                    <div className="text-sm font-medium capitalize">{key === 'http' ? 'HTTP Reachability' : key === 'dns' ? 'DNS Configuration' : key === 'tunnel' ? 'Tunnel Route' : key === 'ssl' ? 'SSL/TLS' : 'Zone Status'}</div>
+                    <div className="text-sm font-medium capitalize">{key === 'http' ? 'HTTP Reachability' : key === 'dns' ? 'DNS Configuration' : key === 'tunnel' ? 'Tunnel Route' : key === 'ssl' ? 'SSL/TLS' : 'Domain Status'}</div>
                     <div className="text-xs text-muted-foreground">{check.details}</div>
                   </div>
                 </div>
@@ -1212,7 +1212,7 @@ function WildcardTab({ zoneDbId, zoneName }: { zoneDbId: string; zoneName: strin
   );
 }
 
-// --- Link Zone Modal ---
+// --- Connect Domain Modal ---
 
 function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: () => void }) {
   const [step, setStep] = useState<'token' | 'validating' | 'select' | 'linking'>('token');
@@ -1234,7 +1234,7 @@ function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: (
       const zones = data?.zones || [];
 
       if (zones.length === 0) {
-        toast.error('No zones found for this API token. Make sure your token has Zone:Read permission.');
+        toast.error('No domains found for this API token. Make sure your token has Zone:Read permission.');
         setStep('token');
       } else {
         setCfZones(zones);
@@ -1251,10 +1251,10 @@ function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: (
     setStep('linking');
     try {
       await api.post('/cloudflare/zones/link', { zoneId: zone.id, apiToken });
-      toast.success(`Zone "${zone.name}" linked successfully! SSL auto-configured.`);
+      toast.success(`"${zone.name}" connected successfully! SSL auto-configured.`);
       onLinked();
     } catch (e: any) {
-      toast.error(e.message || 'Failed to link zone');
+      toast.error(e.message || 'Failed to connect domain');
       setStep('select');
     }
   };
@@ -1267,7 +1267,7 @@ function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-full max-w-lg rounded-lg bg-card p-6 shadow-lg">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Link Cloudflare Zone</h2>
+          <h2 className="text-lg font-semibold">Connect Cloudflare Domain</h2>
           <button onClick={onClose} className="rounded p-1 hover:bg-accent text-muted-foreground">✕</button>
         </div>
 
@@ -1279,7 +1279,7 @@ function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: (
               <span className="font-medium">Enter API Token</span>
               <div className="h-px flex-1 bg-border" />
               <div className="flex h-6 w-6 items-center justify-center rounded-full border border-border text-xs text-muted-foreground">2</div>
-              <span className="text-muted-foreground">Select Zone</span>
+              <span className="text-muted-foreground">Select Domain</span>
             </div>
           )}
           {['select', 'linking'].includes(step) && (
@@ -1288,7 +1288,7 @@ function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: (
               <span className="text-green-600">Token Valid</span>
               <div className="h-px flex-1 bg-border" />
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">2</div>
-              <span className="font-medium">Select Zone</span>
+              <span className="font-medium">Select Domain</span>
             </div>
           )}
         </div>
@@ -1325,18 +1325,18 @@ function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: (
             {tokenInfo && (
               <div className="flex items-center gap-2 rounded-md bg-green-50 dark:bg-green-900/20 p-2 text-sm text-green-700 dark:text-green-400">
                 <CheckCircle className="h-4 w-4" />
-                <span>Token verified ({tokenInfo.type} token) • {cfZones.length} zone{cfZones.length !== 1 ? 's' : ''} found</span>
+                <span>Token verified ({tokenInfo.type} token) • {cfZones.length} domain{cfZones.length !== 1 ? 's' : ''} found</span>
               </div>
             )}
 
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <input value={zoneFilter} onChange={e => setZoneFilter(e.target.value)} placeholder="Filter zones..." className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm" />
+              <input value={zoneFilter} onChange={e => setZoneFilter(e.target.value)} placeholder="Filter domains..." className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm" />
             </div>
 
             <div className="max-h-72 space-y-2 overflow-y-auto">
               {filteredZones.length === 0 ? (
-                <p className="py-4 text-center text-sm text-muted-foreground">No zones match your filter</p>
+                <p className="py-4 text-center text-sm text-muted-foreground">No domains match your filter</p>
               ) : (
                 filteredZones.map((z) => (
                   <button key={z.id} onClick={() => handleLink(z)} className="w-full rounded-lg border border-input p-4 text-left hover:bg-accent hover:border-primary/50 transition-all group">
@@ -1364,7 +1364,7 @@ function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: (
             </div>
             <div className="flex items-center justify-between">
               <button onClick={() => { setStep('token'); setTokenInfo(null); }} className="text-sm text-muted-foreground hover:text-foreground">← Back</button>
-              <span className="text-xs text-muted-foreground">{filteredZones.length} of {cfZones.length} zones</span>
+              <span className="text-xs text-muted-foreground">{filteredZones.length} of {cfZones.length} domains</span>
             </div>
           </div>
         )}
@@ -1372,7 +1372,7 @@ function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: (
         {step === 'linking' && (
           <div className="flex flex-col items-center justify-center py-8">
             <LoadingSpinner />
-            <span className="mt-3 text-sm">Linking zone and auto-configuring SSL...</span>
+            <span className="mt-3 text-sm">Connecting domain and auto-configuring SSL...</span>
             <span className="mt-1 text-xs text-muted-foreground">This may take a few seconds</span>
           </div>
         )}
