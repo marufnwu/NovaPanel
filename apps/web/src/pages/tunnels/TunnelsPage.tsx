@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useTunnelStatus, useTunnelRoutes, useSetupTunnel, useStartTunnel, useStopTunnel, useAddTunnelRoute, useDeleteTunnelRoute, useToggleTunnelRoute, useEditTunnelRoute, useDeleteTunnel, useTunnelInfo, useTunnelConfig, useValidateToken, useFetchZones, useTunnelLogs, useCreateDnsCname, CloudflareTunnel, TunnelRoute, CloudflareZone } from '../../api/hooks/tunnel';
+import { useTunnelStatus, useTunnelRoutes, useSetupTunnel, useStartTunnel, useStopTunnel, useAddTunnelRoute, useDeleteTunnelRoute, useToggleTunnelRoute, useEditTunnelRoute, useDeleteTunnel, useTunnelInfo, useTunnelConfig, useValidateToken, useFetchZones, useTunnelLogs, useCreateDnsCname, useSyncTunnelRoutes, CloudflareTunnel, TunnelRoute, CloudflareZone } from '../../api/hooks/tunnel';
 import { Link } from '@tanstack/react-router';
 import { useDomains } from '../../api/hooks/domains';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -413,6 +413,34 @@ function DeleteTunnelModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onCl
   );
 }
 
+function SyncRoutesButton({ tunnelId }: { tunnelId: string }) {
+  const syncRoutes = useSyncTunnelRoutes();
+
+  const handleSync = () => {
+    syncRoutes.mutate(tunnelId, {
+      onSuccess: (data) => {
+        if (data.synced > 0) {
+          toast.success(`Synced ${data.synced} route(s) from Cloudflare`);
+        } else {
+          toast.info('Routes are already in sync');
+        }
+      },
+      onError: (error: any) => toast.error(error.message || 'Failed to sync routes'),
+    });
+  };
+
+  return (
+    <button
+      onClick={handleSync}
+      disabled={syncRoutes.isPending}
+      className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs hover:bg-accent/80 disabled:opacity-50"
+      title="Sync routes from Cloudflare"
+    >
+      <RefreshCw className={`h-3 w-3 ${syncRoutes.isPending ? 'animate-spin' : ''}`} /> Sync
+    </button>
+  );
+}
+
 function TunnelCard({ tunnel, routes, onAddRoute, onToggle, onDelete, onEditRoute, onShowConfig, onDeleteTunnel }: {
   tunnel: CloudflareTunnel;
   routes: TunnelRoute[];
@@ -503,13 +531,16 @@ function TunnelCard({ tunnel, routes, onAddRoute, onToggle, onDelete, onEditRout
             <Globe className="h-4 w-4 text-muted-foreground" />
             Routes ({routes.length})
           </h4>
-          <button
-            onClick={onAddRoute}
-            disabled={!isRunning}
-            className="flex items-center gap-1 rounded bg-primary/10 px-2 py-1 text-xs text-primary hover:bg-primary/20 disabled:opacity-50"
-          >
-            <Plus className="h-3 w-3" /> Add
-          </button>
+          <div className="flex items-center gap-2">
+            <SyncRoutesButton tunnelId={tunnel.id} />
+            <button
+              onClick={onAddRoute}
+              disabled={!isRunning}
+              className="flex items-center gap-1 rounded bg-primary/10 px-2 py-1 text-xs text-primary hover:bg-primary/20 disabled:opacity-50"
+            >
+              <Plus className="h-3 w-3" /> Add
+            </button>
+          </div>
         </div>
 
         {routes.length === 0 ? (

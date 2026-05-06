@@ -101,6 +101,12 @@ export default async function tunnelRoutes(fastify: FastifyInstance) {
     return { success: true, data: await service.toggleRoute(id, req.user.id, req.ip) };
   });
 
+  // POST /tunnel/:id/sync-routes — Sync remote routes from Cloudflare API into local DB
+  fastify.post('/tunnel/:id/sync-routes', async (req) => {
+    const { id } = req.params as { id: string };
+    return { success: true, data: await service.syncRemoteRoutes(id, req.user.id, req.ip) };
+  });
+
   // POST /tunnel/dns/cname — Create DNS CNAME record
   fastify.post('/tunnel/dns/cname', async (req, reply) => {
     const { zoneId, hostname, target } = req.body as { zoneId: string; hostname: string; target: string };

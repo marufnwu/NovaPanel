@@ -705,12 +705,122 @@ export class TunnelService {
 
   /**
    * List tunnel routes
+   * Auto-syncs from Cloudflare remote config if no local routes exist
    */
   async listRoutes(tunnelDbId?: string) {
     if (tunnelDbId) {
-      return db.select().from(tunnelRoutes).where(eq(tunnelRoutes.tunnelId, tunnelDbId));
+      const routes = await db.select().from(tunnelRoutes).where(eq(tunnelRoutes.tunnelId, tunnelDbId));
+
+      // Auto-sync from remote if no local routes exist
+      if (routes.length === 0) {
+        try {
+          await this.syncRemoteRoutes(tunnelDbId);
+          return db.select().from(tunnelRoutes).where(eq(tunnelRoutes.tunnelId, tunnelDbId));
+        } catch (err) {
+          logger.warn({ err, tunnelDbId }, 'Auto-sync of remote routes failed');
+        }
+      }
+
+      return routes;
     }
     return db.select().from(tunnelRoutes);
+  }
+
+  /**
+   * Sync remote tunnel routes from Cloudflare API into local DB.
+   * Fetches the current ingress rules from Cloudflare and creates
+   * local DB records for any routes that don't already exist locally.
+   */
+  async syncRemoteRoutes(tunnelDbId: string, userId?: string, ipAddress?: string) {
+    const [tunnel] = await db.select().from(cloudflareTunnels)
+      .where(eq(cloudflareTunnels.id, tunnelDbId)).limit(1);
+
+    if (!tunnel) {
+      throw new AppError(404, 'TUNNEL_NOT_FOUND', 'Tunnel not found');
+    }
+
+    if (!tunnel.apiToken || !tunnel.accountId || !tunnel.tunnelId) {
+      throw new AppError(400, 'MISSING_CREDENTIALS', 'Tunnel does not have API credentials for remote sync');
+    }
+
+    // Fetch remote config from Cloudflare API
+    const apiToken = decrypt(tunnel.apiToken);
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${tunnel.accountId}/cfd_tunnel/${tunnel.tunnelId}/configurations`,
+      { headers: { Authorization: `Bearer ${apiToken}` } }
+    );
+    const data = await response.json() as any;
+
+    if (!data.success || !data.result?.config?.ingress) {
+      throw new AppError(500, 'SYNC_FAILED', 'Failed to fetch remote tunnel configuration from Cloudflare API');
+    }
+
+    const remoteIngress = data.result.config.ingress
+      .filter((i: any) => i.hostname) // exclude catch-all
+      .map((i: any) => ({
+        hostname: i.hostname,
+        service: i.service,
+        noTlsVerify: i.originRequest?.noTLSVerify || false,
+      }));
+
+    // Get existing local routes
+    const localRoutes = await db.select().from(tunnelRoutes)
+      .where(eq(tunnelRoutes.tunnelId, tunnelDbId));
+
+    // Find routes that exist remotely but not locally (match by hostname)
+    const existingHostnames = new Set(localRoutes.map(r => r.hostname));
+    const newRemoteRoutes = remoteIngress.filter((remote: any) => !existingHostnames.has(remote.hostname));
+
+    // Insert new routes into local DB
+    const syncedRoutes = [];
+    for (const route of newRemoteRoutes) {
+      const routeId = nanoid();
+      await db.insert(tunnelRoutes).values({
+        id: routeId,
+        tunnelId: tunnelDbId,
+        hostname: route.hostname,
+        service: route.service,
+        noTlsVerify: route.noTlsVerify,
+        domainId: null,
+        isActive: true,
+      });
+      syncedRoutes.push({ id: routeId, hostname: route.hostname, service: route.service });
+    }
+
+    // Find local routes that no longer exist remotely (stale local routes)
+    const remoteHostnames = new Set(remoteIngress.map((r: any) => r.hostname));
+    const staleRoutes = localRoutes.filter(local => !remoteHostnames.has(local.hostname) && local.isActive);
+
+    // Log results
+    logger.info({
+      tunnelId: tunnel.tunnelId,
+      remoteCount: remoteIngress.length,
+      localCount: localRoutes.length,
+      syncedCount: syncedRoutes.length,
+      staleCount: staleRoutes.length,
+    }, 'Tunnel routes synced from remote');
+
+    if (syncedRoutes.length > 0) {
+      auditService.log({
+        userId,
+        action: 'tunnel.routes.sync',
+        resource: `tunnel:${tunnel.name}`,
+        details: JSON.stringify({
+          syncedCount: syncedRoutes.length,
+          routes: syncedRoutes.map(r => ({ hostname: r.hostname, service: r.service })),
+        }),
+        ipAddress,
+      }).catch(err => logger.error({ err }, 'Audit log failed'));
+    }
+
+    return {
+      synced: syncedRoutes.length,
+      stale: staleRoutes.length,
+      totalRemote: remoteIngress.length,
+      totalLocal: localRoutes.length + syncedRoutes.length,
+      newRoutes: syncedRoutes,
+      staleRoutes: staleRoutes.map(r => ({ id: r.id, hostname: r.hostname, service: r.service })),
+    };
   }
 
   /**

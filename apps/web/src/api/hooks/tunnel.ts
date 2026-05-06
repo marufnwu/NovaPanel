@@ -187,6 +187,15 @@ export function useToggleTunnelRoute() {
   });
 }
 
+export function useSyncTunnelRoutes() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (tunnelDbId: string) =>
+      api.post<{ synced: number; totalRemote: number; totalLocal: number; newRoutes: Array<{ id: string; hostname: string; service: string }>; staleRoutes: Array<{ id: string; hostname: string; service: string }> }>(`/tunnel/${tunnelDbId}/sync-routes`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tunnel'] }),
+  });
+}
+
 export function useCreateDnsCname() {
   return useMutation({
     mutationFn: (data: { zoneId: string; hostname: string; target: string }) =>
