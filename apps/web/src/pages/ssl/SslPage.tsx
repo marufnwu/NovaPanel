@@ -428,7 +428,7 @@ function IssueModal({ onClose }: { onClose: () => void }) {
                               <span>⚠️ DNS-01 requires a Cloudflare Tunnel to be configured first.</span>
                             </div>
                             <Link
-                              to="/tunnels"
+                              to="/cloudflare"
                               className="mt-1 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
                             >
                               Configure Tunnel →

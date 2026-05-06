@@ -22,6 +22,11 @@ export interface TunnelRoute {
 
 export interface TunnelStatus {
   status: 'active' | 'inactive' | 'degraded';
+  processRunning: boolean;
+  connectedToEdge: boolean;
+  connectionCount: number;
+  lastConnectedAt: string | null;
+  message: string | null;
   tunnels: CloudflareTunnel[];
 }
 
@@ -58,6 +63,7 @@ export function useTunnelStatus() {
         status: 'active' | 'inactive' | 'degraded';
         processRunning: boolean;
         connectedToEdge: boolean;
+        connectionCount: number;
         lastConnectedAt: string | null;
         message?: string;
         tunnels: Array<{
@@ -72,6 +78,11 @@ export function useTunnelStatus() {
       
       return {
         status: data.status as 'active' | 'inactive' | 'degraded',
+        processRunning: data.processRunning,
+        connectedToEdge: data.connectedToEdge,
+        connectionCount: data.connectionCount,
+        lastConnectedAt: data.lastConnectedAt,
+        message: data.message || null,
         tunnels: (data.tunnels || []).map(t => ({
           id: t.id,
           tunnelId: t.tunnelId,

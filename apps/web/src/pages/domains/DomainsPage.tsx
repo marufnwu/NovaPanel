@@ -581,7 +581,7 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
                 This domain is only accessible from your local network. Add a Cloudflare Tunnel route to make it publicly accessible.
               </p>
               <Link
-                to="/tunnels"
+                to="/cloudflare"
                 className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline"
               >
                 Set up tunnel <ChevronRight className="h-3 w-3" />
@@ -1153,7 +1153,7 @@ export function DomainsPage() {
                   </div>
                 )}
                 <Link
-                  to="/tunnels"
+                  to="/cloudflare"
                   className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                 >
                   <ExternalLink className="h-4 w-4" /> Set Up Tunnel

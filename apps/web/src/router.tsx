@@ -16,7 +16,6 @@ import { DnsPage } from './pages/dns/DnsPage';
 import { MailPage } from './pages/mail/MailPage';
 import { DatabasesPage } from './pages/databases/DatabasesPage';
 import { FtpPage } from './pages/ftp/FtpPage';
-import { TunnelsPage } from './pages/tunnels/TunnelsPage';
 import { FilesPage } from './pages/files/FilesPage';
 import { TerminalPage } from './pages/terminal/TerminalPage';
 import { CronPage } from './pages/cron/CronPage';
@@ -120,12 +119,6 @@ const ftpRoute = createRoute({
   component: FtpPage,
 });
 
-const tunnelsRoute = createRoute({
-  getParentRoute: () => protectedRoute,
-  path: '/tunnels',
-  component: TunnelsPage,
-});
-
 const filesRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/files',
@@ -224,7 +217,6 @@ const routeTree = rootRoute.addChildren([
     mailRoute,
     databasesRoute,
     ftpRoute,
-    tunnelsRoute,
     cloudflareRoute,
     filesRoute,
     terminalRoute,

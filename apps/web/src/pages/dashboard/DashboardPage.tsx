@@ -138,7 +138,7 @@ function LocalServerBanner({ serverContext, isLoading, onDismiss }: LocalServerB
           </p>
           <div className="flex items-center gap-2 mt-2">
             <Link
-              to="/tunnels"
+              to="/cloudflare"
               className="inline-flex items-center gap-1.5 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700"
             >
               Set Up Cloudflare Tunnel <ArrowRight className="h-3 w-3" />
@@ -719,7 +719,7 @@ export function DashboardPage() {
                   {tunnelStatus.tunnels.length} tunnel{tunnelStatus.tunnels.length > 1 ? 's' : ''} configured
                 </p>
                 <Link
-                  to="/tunnels"
+                  to="/cloudflare"
                   className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                 >
                   Manage tunnels <ArrowRight className="h-3 w-3" />
@@ -735,7 +735,7 @@ export function DashboardPage() {
                   Required for external access on local servers
                 </p>
                 <Link
-                  to="/tunnels"
+                  to="/cloudflare"
                   className="inline-flex items-center gap-1.5 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700"
                 >
                   Set Up Tunnel <ArrowRight className="h-3 w-3" />
@@ -748,7 +748,7 @@ export function DashboardPage() {
                   <span className="text-sm font-medium text-muted-foreground">Not configured</span>
                 </div>
                 <Link
-                  to="/tunnels"
+                  to="/cloudflare"
                   className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                 >
                   Set up tunnel <ArrowRight className="h-3 w-3" />
