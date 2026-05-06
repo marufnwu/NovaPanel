@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { AppError } from '../../errors.js';
 import { CloudflareService } from './cloudflare.service.js';
 import {
   linkZoneSchema,
@@ -288,7 +289,7 @@ export default async function cloudflareRoutes(fastify: FastifyInstance) {
     handler: async (req) => {
       const { id } = req.params as { id: string };
       const { domainId } = req.body as { domainId?: string };
-      if (!domainId) throw new Error('domainId is required');
+      if (!domainId) throw new AppError(400, 'DOMAIN_ID_REQUIRED', 'domainId is required');
       return { success: true, data: await service.enableWildcard(id, domainId, req.user.id, req.ip) };
     },
   });

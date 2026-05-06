@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && node -e \"const fs=require('fs');const p=require('path');const src=p.join(__dirname,'src','db','migrations');const dest=p.join(__dirname,'dist','db','migrations');if(!fs.existsSync(dest))fs.mkdirSync(dest,{recursive:true});function cp(s,d){const st=fs.statSync(s);if(st.isDirectory()){if(!fs.existsSync(d))fs.mkdirSync(d,{recursive:true});fs.readdirSync(s).forEach(f=>cp(p.join(s,f),p.join(d,f)))}else fs.copyFileSync(s,d)}cp(src,dest)\"",
     "start": "node dist/index.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
