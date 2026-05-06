@@ -26,17 +26,19 @@ export interface FirewallStatus {
 export class FirewallService {
   async getStatus(): Promise<FirewallStatus> {
     const result = await run('ufw', ['status', 'verbose'], { sudo: true });
-    const enabled = result.stdout.toLowerCase().includes('enabled');
-    
-    const defaultInput = this.extractDefault(result.stdout, 'Default input policy');
-    const defaultOutput = this.extractDefault(result.stdout, 'Default output policy');
-    const defaultForward = this.extractDefault(result.stdout, 'Default forward policy');
-    
+    const output = result.stdout.toLowerCase();
+    const enabled = output.includes('status: active');
+
+    // Parse "Default: deny (incoming), allow (outgoing), disabled (routed)" format
+    const defaultInput = this.extractDefaultPolicy(result.stdout, 'incoming');
+    const defaultOutput = this.extractDefaultPolicy(result.stdout, 'outgoing');
+    const defaultForward = this.extractDefaultPolicy(result.stdout, 'routed');
+
     return { enabled, defaultInput, defaultOutput, defaultForward };
   }
 
   async enable(userId?: string, ipAddress?: string): Promise<{ success: boolean }> {
-    const result = await run('ufw', ['enable'], { sudo: true });
+    const result = await run('ufw', ['enable'], { sudo: true, input: 'y' });
     logger.info('UFW firewall enabled');
 
     auditService.log({
@@ -70,7 +72,11 @@ export class FirewallService {
   async addRule(rule: { action: 'allow' | 'deny'; port?: string; protocol?: string; from?: string; to?: string }, userId?: string, ipAddress?: string) {
     const args: string[] = [rule.action];
 
-    if (rule.from && rule.to) {
+    if (rule.from && rule.port) {
+      // from + port + proto: "allow from <source> to any port <port> proto <proto>"
+      args.push('from', rule.from, 'to', 'any', 'port', rule.port);
+      if (rule.protocol) args.push('proto', rule.protocol);
+    } else if (rule.from && rule.to) {
       args.push('from', rule.from, 'to', rule.to);
     } else if (rule.port) {
       args.push(rule.port + (rule.protocol ? `/${rule.protocol}` : ''));
@@ -212,15 +218,29 @@ export class FirewallService {
     }
   }
 
-  private extractDefault(output: string, key: string): string {
-    const match = output.match(new RegExp(`${key}\\s*:\\s*(\\w+)`, 'i'));
-    return match ? match[1].toLowerCase() : 'deny';
+  /**
+   * Extract default policy from UFW verbose output.
+   * Handles both formats:
+   *   New: "Default: deny (incoming), allow (outgoing), disabled (routed)"
+   *   Old: "Default input policy: deny"
+   */
+  private extractDefaultPolicy(output: string, direction: string): string {
+    // Try new format: "Default: deny (incoming), allow (outgoing), disabled (routed)"
+    const defaultLine = output.match(/Default:\s*(.+)/i);
+    if (defaultLine) {
+      const defaults = defaultLine[1].toLowerCase();
+      const dirMatch = defaults.match(new RegExp(`(allow|deny|reject|disabled)\\s*\\(${direction}\\)`));
+      if (dirMatch) return dirMatch[1];
+    }
+    // Try old format: "Default input policy: deny"
+    const oldMatch = output.match(new RegExp(`Default\\s+${direction}\\s+policy\\s*:\\s*(\\w+)`, 'i'));
+    return oldMatch ? oldMatch[1].toLowerCase() : 'deny';
   }
 
   private parseUfwStatus(output: string): UfwRule[] {
     const rules: UfwRule[] = [];
     for (const line of output.split('\n')) {
-      const match = line.match(/^\[\s*(\d+)\]\s+(.+?)\s{2,}(ALLOW|DENY)\s+(IN|OUT|FWD)\s+(.+)/);
+      const match = line.match(/^\[\s*(\d+)\]\s+(.+?)\s{2,}(ALLOW|DENY|LIMIT|REJECT)\s+(IN|OUT|FWD)\s+(.+)/);
       if (match) {
         rules.push({
           number: parseInt(match[1]),

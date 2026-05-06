@@ -1,7 +1,8 @@
-import { readdir, stat, lstat, readFile, writeFile, mkdir, rm, rename, chmod, cp, open } from 'node:fs/promises';
+import { readdir, stat, lstat, readFile, open, writeFile as fsWriteFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { run } from '../../services/executor.js';
+import * as sudoFs from '../../services/sudo-fs.js';
 import { AppError } from '../../errors.js';
 import { logger } from '../../config/logger.js';
 import { auditService } from '../audit/audit.service.js';
@@ -192,7 +193,16 @@ export class FilesService {
 
     this.safePath(homeDir, path.join(relativePath, filename));
 
-    await writeFile(targetPath, content);
+    // Write to temp file first (novapanel user can write to /tmp), then sudo mv to target
+    const tempPath = `/tmp/novapanel-upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      await fsWriteFile(tempPath, content);
+      await sudoFs.rename(tempPath, targetPath);
+    } catch (e: any) {
+      // Clean up temp file if mv failed
+      try { await sudoFs.remove(tempPath, { force: true }); } catch {}
+      throw new AppError(500, 'UPLOAD_FAILED', `Failed to upload file: ${e.message}`);
+    }
     logger.info({ path: targetPath, size: content.length }, 'File uploaded');
 
     auditService.log({
@@ -212,7 +222,7 @@ export class FilesService {
   async createDirectory(homeDir: string, relativePath: string, dirName: string, userId?: string, ipAddress?: string) {
     const targetPath = this.safePath(homeDir, path.join(relativePath, dirName));
     try {
-      await mkdir(targetPath, { recursive: true });
+      await sudoFs.mkdir(targetPath);
 
       auditService.log({
         userId,
@@ -223,12 +233,6 @@ export class FilesService {
 
       return { name: dirName, created: true };
     } catch (error: any) {
-      if (error.code === 'EACCES') {
-        throw new AppError(403, 'ACCESS_DENIED', 'Permission denied: cannot create directory');
-      }
-      if (error.code === 'EEXIST') {
-        throw new AppError(409, 'ALREADY_EXISTS', 'Directory already exists');
-      }
       throw new AppError(500, 'MKDIR_FAILED', `Failed to create directory: ${error.message}`);
     }
   }
@@ -238,7 +242,7 @@ export class FilesService {
    */
   async deleteItem(homeDir: string, relativePath: string, userId?: string, ipAddress?: string) {
     const targetPath = this.safePath(homeDir, relativePath);
-    await rm(targetPath, { recursive: true, force: true });
+    await sudoFs.remove(targetPath, { recursive: true, force: true });
     logger.info({ path: targetPath }, 'Item deleted');
 
     auditService.log({
@@ -256,7 +260,7 @@ export class FilesService {
     const oldPath = this.safePath(homeDir, oldRelativePath);
     const newPath = this.safePath(homeDir, newRelativePath);
     try {
-      await rename(oldPath, newPath);
+      await sudoFs.rename(oldPath, newPath);
 
       auditService.log({
         userId,
@@ -268,12 +272,6 @@ export class FilesService {
 
       return { oldPath: oldRelativePath, newPath: newRelativePath };
     } catch (error: any) {
-      if (error.code === 'EACCES') {
-        throw new AppError(403, 'ACCESS_DENIED', 'Permission denied: cannot rename item');
-      }
-      if (error.code === 'ENOENT') {
-        throw new AppError(404, 'NOT_FOUND', 'Source path not found');
-      }
       throw new AppError(500, 'RENAME_FAILED', `Failed to rename: ${error.message}`);
     }
   }
@@ -288,7 +286,7 @@ export class FilesService {
       throw new AppError(400, 'INVALID_PERMISSIONS', 'Invalid permission mode');
     }
     try {
-      await chmod(targetPath, modeNum);
+      await sudoFs.chmod(targetPath, mode);
 
       auditService.log({
         userId,
@@ -300,12 +298,6 @@ export class FilesService {
 
       return { path: relativePath, mode };
     } catch (error: any) {
-      if (error.code === 'EACCES') {
-        throw new AppError(403, 'ACCESS_DENIED', 'Permission denied: cannot change permissions');
-      }
-      if (error.code === 'ENOENT') {
-        throw new AppError(404, 'NOT_FOUND', 'File not found');
-      }
       throw new AppError(500, 'CHMOD_FAILED', `Failed to change permissions: ${error.message}`);
     }
   }
@@ -347,7 +339,7 @@ export class FilesService {
       ? this.safePath(homeDir, targetDir)
       : path.dirname(archivePath);
 
-    await mkdir(extractDir, { recursive: true });
+    await sudoFs.mkdir(extractDir);
 
     // List archive contents first to check for path traversal (Zip Slip)
     const listResult = await run('tar', ['-tzf', archivePath], { sudo: true, timeout: 60_000 });
@@ -393,14 +385,13 @@ export class FilesService {
     // Read first 8KB to check for binary content
     const buffer = Buffer.alloc(8192);
     const fd = await open(targetPath, 'r');
-    await fd.read(buffer, 0, 8192, 0);
+    const { bytesRead } = await fd.read(buffer, 0, 8192, 0);
     await fd.close();
 
-    // Check for null bytes (binary file indicator)
-    for (let i = 0; i < buffer.length; i++) {
-      if (buffer[i] === 0) {
-        throw new AppError(400, 'BINARY_FILE', 'Binary files cannot be edited in the text editor');
-      }
+    // Check for null bytes only in the actual bytes read (binary file indicator)
+    const actualData = buffer.subarray(0, bytesRead);
+    if (actualData.includes(0x00)) {
+      throw new AppError(400, 'BINARY_FILE', 'Binary files cannot be edited in the text editor');
     }
 
     return readFile(targetPath, 'utf-8');
@@ -412,7 +403,7 @@ export class FilesService {
   async saveFileContent(homeDir: string, relativePath: string, content: string, userId?: string, ipAddress?: string) {
     const targetPath = this.safePath(homeDir, relativePath);
     try {
-      await writeFile(targetPath, content, 'utf-8');
+      await sudoFs.writeFile(targetPath, content);
 
       auditService.log({
         userId,
@@ -423,12 +414,6 @@ export class FilesService {
 
       return { saved: true };
     } catch (error: any) {
-      if (error.code === 'EACCES') {
-        throw new AppError(403, 'ACCESS_DENIED', 'Permission denied: cannot save file');
-      }
-      if (error.code === 'ENOENT') {
-        throw new AppError(404, 'NOT_FOUND', 'File not found');
-      }
       throw new AppError(500, 'SAVE_FAILED', `Failed to save file: ${error.message}`);
     }
   }
@@ -450,7 +435,7 @@ export class FilesService {
         ? path.join(targetPath, path.basename(sourcePath))
         : targetPath;
 
-      await cp(sourcePath, finalTargetPath, { recursive: true });
+      await sudoFs.copy(sourcePath, finalTargetPath, { recursive: true });
       logger.info({ source: sourcePath, target: finalTargetPath }, 'Item copied');
 
       auditService.log({
@@ -463,12 +448,6 @@ export class FilesService {
 
       return { sourcePath: sourceRelativePath, targetPath: finalTargetPath };
     } catch (error: any) {
-      if (error.code === 'EACCES') {
-        throw new AppError(403, 'ACCESS_DENIED', 'Permission denied: cannot copy item');
-      }
-      if (error.code === 'ENOENT') {
-        throw new AppError(404, 'NOT_FOUND', 'Source path not found');
-      }
       throw new AppError(500, 'COPY_FAILED', `Failed to copy: ${error.message}`);
     }
   }
@@ -490,7 +469,7 @@ export class FilesService {
         ? path.join(targetPath, path.basename(sourcePath))
         : targetPath;
 
-      await rename(sourcePath, finalTargetPath);
+      await sudoFs.rename(sourcePath, finalTargetPath);
       logger.info({ source: sourcePath, target: finalTargetPath }, 'Item moved');
 
       auditService.log({
@@ -503,12 +482,6 @@ export class FilesService {
 
       return { sourcePath: sourceRelativePath, targetPath: finalTargetPath };
     } catch (error: any) {
-      if (error.code === 'EACCES') {
-        throw new AppError(403, 'ACCESS_DENIED', 'Permission denied: cannot move item');
-      }
-      if (error.code === 'ENOENT') {
-        throw new AppError(404, 'NOT_FOUND', 'Source path not found');
-      }
       throw new AppError(500, 'MOVE_FAILED', `Failed to move: ${error.message}`);
     }
   }

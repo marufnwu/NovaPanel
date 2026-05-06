@@ -156,27 +156,24 @@ export class MariaDbService implements SystemService {
   }
 
   /**
-   * Run a read-only SQL query
+   * Run a read-only SQL query.
+   * Omits -N so the first row of output contains column headers.
    */
   async runQuery(name: string, sql: string): Promise<{ columns: string[]; rows: Record<string, unknown>[]; rowCount: number }> {
-    const result = await run('mysql', ['-u', 'root', '-N', '-e', sql, name], { sudo: true });
+    const result = await run('mysql', ['-u', 'root', '-e', sql, name], { sudo: true });
     const lines = result.stdout.split('\n').filter(l => l.trim());
     if (lines.length === 0) return { columns: [], rows: [], rowCount: 0 };
 
-    const rows = lines.map(line => {
-      const cols = line.split('\t');
-      return cols;
+    // First line is column headers (tab-separated)
+    const columns = lines[0].split('\t');
+    const rows = lines.slice(1).map(line => {
+      const values = line.split('\t');
+      const obj: Record<string, unknown> = {};
+      columns.forEach((col, i) => { obj[col] = values[i] ?? null; });
+      return obj;
     });
 
-    return {
-      columns: [],
-      rows: rows.map(cols => {
-        const obj: Record<string, unknown> = {};
-        cols.forEach((v, i) => { obj[`col_${i}`] = v; });
-        return obj;
-      }),
-      rowCount: rows.length,
-    };
+    return { columns, rows, rowCount: rows.length };
   }
 }
 

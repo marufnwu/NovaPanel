@@ -448,7 +448,8 @@ export class SslService {
         lastRenewedAt: new Date(),
       }).where(eq(sslCertificates.id, cert.id));
 
-      await nginxService.reload();
+      // Test nginx config before reloading (uses sudo internally)
+      await nginxService.reloadNginx();
 
       auditService.log({
         userId,

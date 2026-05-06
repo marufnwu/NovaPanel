@@ -2,8 +2,14 @@ import { z } from 'zod';
 
 const phpVersionSchema = z.string().regex(/^\d+\.\d+$/, 'Invalid PHP version format');
 
+// Domain name validation: 1-253 chars, lowercase letters, numbers, hyphens, dots
+const domainNameSchema = z.string()
+  .min(1, 'Domain name is required')
+  .max(253, 'Domain name must be 253 characters or fewer')
+  .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/, 'Invalid domain name format');
+
 export const createDomainSchema = z.object({
-  name: z.string().min(1).regex(/^[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,}$/, 'Invalid domain name'),
+  name: domainNameSchema,
   type: z.enum(['primary', 'subdomain', 'alias', 'redirect']).default('primary'),
   parentDomainId: z.string().optional(),
   redirectTarget: z.string().optional(),
@@ -37,7 +43,7 @@ export const createSubdomainSchema = z.object({
 });
 
 export const createAliasSchema = z.object({
-  alias: z.string().min(1).regex(/^[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,}$/, 'Invalid domain name'),
+  alias: domainNameSchema,
 });
 
 export const createRedirectSchema = z.object({

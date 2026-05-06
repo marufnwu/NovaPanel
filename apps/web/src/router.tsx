@@ -32,6 +32,7 @@ import { NotificationsPage } from './pages/notifications/NotificationsPage';
 import { InstallerPage } from './pages/installer/InstallerPage';
 import { WebsitesPage } from './pages/websites/WebsitesPage';
 import { WebsiteDetailPage } from './pages/websites/WebsiteDetailPage';
+import { CloudflarePage } from './pages/cloudflare/CloudflarePage';
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -203,6 +204,12 @@ const installerRoute = createRoute({
   component: InstallerPage,
 });
 
+const cloudflareRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/cloudflare',
+  component: CloudflarePage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   protectedRoute.addChildren([
@@ -218,6 +225,7 @@ const routeTree = rootRoute.addChildren([
     databasesRoute,
     ftpRoute,
     tunnelsRoute,
+    cloudflareRoute,
     filesRoute,
     terminalRoute,
     cronRoute,

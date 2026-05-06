@@ -137,7 +137,8 @@ export class StatsService {
 
     const statuses: ServiceStatusItem[] = [];
     for (const svc of services) {
-      const result = await run('systemctl', ['is-active', svc.name], { sudo: true });
+      const result = await run('systemctl', ['is-active', svc.name], { sudo: false });
+      logger.debug({ service: svc.name, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode }, 'systemctl is-active result');
       const active = result.stdout.trim() === 'active';
       statuses.push({
         ...svc,
@@ -170,7 +171,8 @@ export class StatsService {
     let active = false;
     for (let i = 0; i < 5; i++) {
       await new Promise((r) => setTimeout(r, 1000));
-      const check = await run('systemctl', ['is-active', serviceName], { sudo: true });
+      const check = await run('systemctl', ['is-active', serviceName], { sudo: false });
+      logger.debug({ service: serviceName, stdout: check.stdout, stderr: check.stderr, exitCode: check.exitCode }, 'systemctl is-active check during restart');
       if (check.stdout.trim() === 'active') {
         active = true;
         break;
@@ -188,7 +190,8 @@ export class StatsService {
 
     if (!active) {
       // Get last 20 journal lines for debugging
-      const journal = await run('journalctl', ['-u', serviceName, '-n', '20', '--no-pager'], { sudo: true });
+      const journal = await run('journalctl', ['-u', serviceName, '-n', '20', '--no-pager'], { sudo: false });
+      logger.debug({ service: serviceName, stdout: journal.stdout, stderr: journal.stderr, exitCode: journal.exitCode }, 'journalctl result for failed restart');
       return { success: false, log: journal.stdout };
     }
 

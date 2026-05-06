@@ -95,7 +95,8 @@ export class NotificationsService {
   }
 
   /**
-   * List notifications for a user
+   * List notifications for a user.
+   * Maps DB rows to a consistent shape with serialisable date strings.
    */
   async listNotifications(userId: string, limit: number = 50, offset: number = 0) {
     const results = await db.select().from(notifications)
@@ -109,7 +110,19 @@ export class NotificationsService {
       .where(eq(notifications.userId, userId));
     const total = result[0]?.total ?? 0;
 
-    return { notifications: results, total };
+    // Map to plain objects with consistent field names and serialised dates
+    const mapped = results.map((row) => ({
+      id: row.id,
+      userId: row.userId,
+      type: row.type,
+      title: row.title,
+      message: row.message,
+      isRead: row.isRead,
+      readAt: row.readAt instanceof Date ? row.readAt.toISOString() : row.readAt,
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+    }));
+
+    return { notifications: mapped, total };
   }
 
   /**

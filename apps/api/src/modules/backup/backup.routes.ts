@@ -1,7 +1,9 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import fs from 'node:fs';
 import { BackupService } from './backup.service.js';
 import { createBackupSchema, restoreBackupSchema, createScheduleSchema, updateStorageConfigSchema } from './backup.schema.js';
 import { requireAuth } from '../auth/auth.middleware.js';
+import { logger } from '../../config/logger.js';
 
 export default async function backupRoutes(fastify: FastifyInstance) {
   const service = new BackupService();
@@ -58,11 +60,32 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     return { success: true, data: null };
   });
 
-  // GET /backups/:id/download — Get backup download URL/path
-  fastify.get('/backups/:id/download', async (req) => {
+  // GET /backups/:id/download — Stream backup file with proper headers
+  fastify.get('/backups/:id/download', async (req, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
-    const url = await service.getDownloadUrl(id);
-    return { success: true, data: url };
+    try {
+      const { tmpPath, filename, sizeBytes } = await service.prepareDownload(id);
+
+      const stream = fs.createReadStream(tmpPath);
+      reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+      reply.header('Content-Type', 'application/octet-stream');
+      if (sizeBytes > 0) {
+        reply.header('Content-Length', sizeBytes);
+      }
+
+      // Clean up temp file after streaming completes
+      stream.on('end', () => {
+        fs.unlink(tmpPath, () => {});
+      });
+      stream.on('error', () => {
+        fs.unlink(tmpPath, () => {});
+      });
+
+      return reply.send(stream);
+    } catch (err) {
+      logger.error({ err, backupId: id }, 'Backup download failed');
+      throw err;
+    }
   });
 
   // POST /backups/:id/verify — Verify backup integrity

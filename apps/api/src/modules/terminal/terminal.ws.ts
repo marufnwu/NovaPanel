@@ -1,9 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { db } from '../../db/index.js';
-import { users, sessions } from '../../db/schema/users.js';
-import { eq, gt } from 'drizzle-orm';
 import { logger } from '../../config/logger.js';
-import { hashToken } from '../../utils/crypto.js';
 import { authService } from '../auth/auth.service.js';
 
 interface TerminalSession {
@@ -26,8 +22,10 @@ export async function registerTerminalWs(fastify: FastifyInstance) {
 
     const isAdmin = user.role === 'admin';
     const shell = isAdmin ? '/bin/bash' : '/bin/rbash';
-    const homeDir = isAdmin ? '/root' : `/var/www/vhosts/${user.username}`;
-    const username = isAdmin ? 'root' : user.username;
+    // For admin users, use /opt/novapanel as home dir since /root is not accessible to the novapanel service user
+    const homeDir = isAdmin ? '/opt/novapanel' : `/var/www/vhosts/${user.username}`;
+    // Use 'novapanel' as username instead of 'root' since node-pty runs as novapanel user
+    const username = isAdmin ? 'novapanel' : user.username;
 
     logger.info({ userId: user.id, username, role: user.role }, 'Terminal session opened');
 
@@ -136,12 +134,9 @@ async function validateTerminalAuth(req: any): Promise<any | null> {
 
   // 3. Try query param token (API token)
   const token = (req.query as any)?.token as string;
-  if (!token) return null;
-
-  const tokenHash = hashToken(token);
-  const allUsers = await db.select().from(users);
-  for (const user of allUsers) {
-    if ((user as any).apiTokenHash === tokenHash && user.isActive) {
+  if (token) {
+    const user = await authService.validateApiToken(token);
+    if (user && user.isActive) {
       return user;
     }
   }

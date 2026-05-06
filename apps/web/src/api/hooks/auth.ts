@@ -218,11 +218,5 @@ export function useForgotPassword() {
   });
 }
 
-// --- API Token ---
-
-export function useGenerateApiToken() {
-  return useMutation({
-    mutationFn: (data: { name: string; expiresAt?: string }) =>
-      api.post<ApiTokenResponse>('/auth/token', data),
-  });
-}
+// NOTE: useGenerateApiToken was removed - API tokens are now managed via
+// the dedicated /tokens endpoint. Use useCreateToken from './tokens' instead.

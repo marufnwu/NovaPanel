@@ -1,5 +1,6 @@
 import { db } from '../../db/index.js';
 import { backups, backupSchedules } from '../../db/schema/backups.js';
+import { databases } from '../../db/schema/databases.js';
 import { domains } from '../../db/schema/domains.js';
 import { eq, lte, and, desc } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
@@ -7,10 +8,11 @@ import { run } from '../../services/executor.js';
 import { AppError } from '../../errors.js';
 import { env } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
-import { stat } from 'node:fs/promises';
 import * as sudoFs from '../../services/sudo-fs.js';
 import { auditService } from '../audit/audit.service.js';
 import { encrypt, decrypt } from '../../utils/crypto.js';
+import { mariadbService } from '../../services/mariadb.service.js';
+import { postgresService } from '../../services/postgres.service.js';
 
 export class BackupService {
   /**
@@ -18,6 +20,15 @@ export class BackupService {
    */
   async listBackups() {
     return db.select().from(backups);
+  }
+
+  /**
+   * Get a single backup record by ID
+   */
+  async getBackup(backupId: string) {
+    const [backup] = await db.select().from(backups).where(eq(backups.id, backupId)).limit(1);
+    if (!backup) throw new AppError(404, 'BACKUP_NOT_FOUND', 'Backup not found');
+    return backup;
   }
 
   /**
@@ -65,6 +76,24 @@ export class BackupService {
         }
       }
 
+      // Backup databases
+      if (data.type === 'full' || data.type === 'database') {
+        const dbList = await db.select().from(databases);
+        for (const database of dbList) {
+          try {
+            let dump: string;
+            if (database.engine === 'mariadb') {
+              dump = await mariadbService.exportDatabase(database.name);
+            } else {
+              dump = await postgresService.exportDatabase(database.name);
+            }
+            await sudoFs.writeFile(`${stagingDir}/db_${database.name}.sql`, dump);
+          } catch (err) {
+            logger.warn({ database: database.name, err }, 'Failed to backup database');
+          }
+        }
+      }
+
       // Backup DNS zones
       if (data.type === 'full' || data.type === 'dns') {
         await sudoFs.mkdir(`${stagingDir}/dns`);
@@ -74,7 +103,9 @@ export class BackupService {
           try {
             const zoneContent = await sudoFs.readFile(zonePath);
             await sudoFs.writeFile(`${stagingDir}/dns/db.${domain.name}`, zoneContent);
-          } catch {}
+          } catch {
+            logger.warn({ domain: domain.name }, 'Failed to backup DNS zone');
+          }
         }
       }
 
@@ -94,26 +125,28 @@ export class BackupService {
       const checksumResult = await run('sha256sum', [backupPath], { sudo: true });
       const checksum = checksumResult.stdout.trim().split(' ')[0];
 
-      const stats = await stat(backupPath);
+      // Get file size via sudo (wc -c) since backup files are root-owned
+      const sizeResult = await run('wc', ['-c', backupPath], { sudo: true });
+      const sizeBytes = parseInt(sizeResult.stdout.trim().split(/\s+/)[0], 10) || 0;
 
       await db.update(backups).set({
-        sizeBytes: stats.size,
+        sizeBytes,
         checksum,
         status: 'completed',
         completedAt: new Date(),
       }).where(eq(backups.id, backupId));
 
-      logger.info({ backupId, filename, size: stats.size }, 'Backup completed');
+      logger.info({ backupId, filename, size: sizeBytes }, 'Backup completed');
 
       auditService.log({
         userId,
         action: 'backup.create',
         resource: `backup:${backupId}`,
-        details: JSON.stringify({ type: data.type, sizeBytes: stats.size }),
+        details: JSON.stringify({ type: data.type, sizeBytes }),
         ipAddress,
       }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-      return { id: backupId, filename, sizeBytes: stats.size };
+      return { id: backupId, filename, sizeBytes };
     } catch (error) {
       await db.update(backups).set({
         status: 'failed',
@@ -147,6 +180,9 @@ export class BackupService {
       const stagingDir = `${env.BACKUP_DIR}/.restore-${backupId}`;
       await sudoFs.mkdir(stagingDir);
 
+      // Extract backup archive with sudo
+      await run('tar', ['-xzf', backup.storagePath!, '-C', stagingDir], { sudo: true, timeout: 300_000 });
+
       // Create pre-restore snapshots for each domain
       if (options.files !== false) {
         const domainList = await db.select().from(domains);
@@ -163,8 +199,7 @@ export class BackupService {
         }
       }
 
-      await run('tar', ['-xzf', backup.storagePath!, '-C', stagingDir], { timeout: 300_000 });
-
+      // Restore files
       if (options.files !== false) {
         const domainList = await db.select().from(domains);
 
@@ -175,7 +210,9 @@ export class BackupService {
             await run('tar', ['-xzf', archivePath, '-C', domainDir], {
               sudo: true, timeout: 300_000,
             });
-          } catch {}
+          } catch {
+            logger.warn({ domain: domain.name }, 'Failed to restore files for domain');
+          }
         }
 
         // Fix ownership after restore
@@ -187,6 +224,39 @@ export class BackupService {
             } catch (e) {
               logger.warn({ err: e, domain: domain.name }, 'Failed to fix ownership after restore');
             }
+          }
+        }
+      }
+
+      // Restore databases
+      if (options.databases !== false) {
+        const dbList = await db.select().from(databases);
+        for (const database of dbList) {
+          const dumpPath = `${stagingDir}/db_${database.name}.sql`;
+          try {
+            const sql = await sudoFs.readFile(dumpPath);
+            if (database.engine === 'mariadb') {
+              await mariadbService.importDatabase(database.name, sql);
+            } else {
+              await postgresService.importDatabase(database.name, sql);
+            }
+            logger.info({ database: database.name }, 'Database restored from backup');
+          } catch (err) {
+            logger.warn({ database: database.name, err }, 'Failed to restore database from backup');
+          }
+        }
+      }
+
+      // Restore DNS zones
+      if (options.dns !== false) {
+        const domainList = await db.select().from(domains);
+        for (const domain of domainList) {
+          const zonePath = `${stagingDir}/dns/db.${domain.name}`;
+          try {
+            const zoneContent = await sudoFs.readFile(zonePath);
+            await sudoFs.writeFile(`${env.BIND_ZONES_DIR}/db.${domain.name}`, zoneContent);
+          } catch {
+            logger.warn({ domain: domain.name }, 'Failed to restore DNS zone');
           }
         }
       }
@@ -237,11 +307,22 @@ export class BackupService {
    */
   async listSchedules() {
     const schedules = await db.select().from(backupSchedules);
-    // Decrypt storage configs for client consumption
-    return schedules.map(schedule => ({
-      ...schedule,
-      storageConfig: schedule.storageConfig ? JSON.parse(decrypt(schedule.storageConfig)) : null,
-    }));
+    // Decrypt storage configs for client consumption (wrap in try/catch)
+    return schedules.map(schedule => {
+      let storageConfig: Record<string, string> | null = null;
+      if (schedule.storageConfig) {
+        try {
+          storageConfig = JSON.parse(decrypt(schedule.storageConfig));
+        } catch {
+          logger.warn({ scheduleId: schedule.id }, 'Failed to decrypt storage config');
+          storageConfig = null;
+        }
+      }
+      return {
+        ...schedule,
+        storageConfig,
+      };
+    });
   }
 
   /**
@@ -255,6 +336,16 @@ export class BackupService {
     storageConfig?: Record<string, string>;
   }, userId?: string, ipAddress?: string) {
     const scheduleId = nanoid();
+
+    // Validate cron expression format (basic check)
+    const parts = data.cronExpression.trim().split(/\s+/);
+    if (parts.length < 5 || parts.length > 6) {
+      throw new AppError(400, 'INVALID_CRON', 'Invalid cron expression: must have 5 or 6 fields');
+    }
+
+    // Calculate initial next run time
+    const nextRun = this.calculateNextRun(data.cronExpression);
+
     await db.insert(backupSchedules).values({
       id: scheduleId,
       cronExpression: data.cronExpression,
@@ -263,6 +354,7 @@ export class BackupService {
       storageType: data.storageType as any,
       storageConfig: data.storageConfig ? encrypt(JSON.stringify(data.storageConfig)) : null,
       isActive: true,
+      nextRunAt: nextRun,
     });
 
     auditService.log({
@@ -273,7 +365,7 @@ export class BackupService {
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return { id: scheduleId, cronExpression: data.cronExpression };
+    return { id: scheduleId, cronExpression: data.cronExpression, nextRunAt: nextRun };
   }
 
   /**
@@ -311,11 +403,27 @@ export class BackupService {
   }
 
   /**
+   * Prepare a backup file for download.
+   * Copies the file to a temp location with world-readable permissions
+   * so it can be streamed by the Node.js process.
+   */
+  async prepareDownload(backupId: string): Promise<{ tmpPath: string; filename: string; sizeBytes: number }> {
+    const backup = await this.getBackup(backupId);
+    if (!backup.storagePath) throw new AppError(400, 'NO_STORAGE_PATH', 'Backup has no storage path');
+    if (backup.status !== 'completed') throw new AppError(400, 'BACKUP_NOT_READY', 'Backup is not in completed state');
+
+    const tmpPath = `/tmp/novapanel-dl-${backupId}`;
+    await run('cp', [backup.storagePath, tmpPath], { sudo: true });
+    await run('chmod', ['644', tmpPath], { sudo: true });
+
+    return { tmpPath, filename: backup.filename, sizeBytes: backup.sizeBytes };
+  }
+
+  /**
    * Get download URL/path for a backup
    */
   async getDownloadUrl(backupId: string): Promise<string> {
-    const [backup] = await db.select().from(backups).where(eq(backups.id, backupId)).limit(1);
-    if (!backup) throw new AppError(404, 'BACKUP_NOT_FOUND', 'Backup not found');
+    const backup = await this.getBackup(backupId);
     return backup.storagePath || '';
   }
 

@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Waypoints, Plus, Play, Square, Trash2, Globe, ToggleLeft, ToggleRight, Server, Check, AlertCircle, FileText, Activity, Edit, RefreshCw, ExternalLink, Zap, Info } from 'lucide-react';
+import { toast } from '../../lib/toast';
 
 type SetupStep = 'token' | 'zone' | 'name' | 'creating';
 
@@ -48,7 +49,19 @@ function SetupModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = () => {
     setStep('creating');
-    setup.mutate({ name: form.name, apiToken: form.apiToken, accountId: form.zoneId }, { onSuccess: onClose });
+    setup.mutate(
+      { name: form.name, apiToken: form.apiToken, zoneId: form.zoneId || undefined },
+      {
+        onSuccess: () => {
+          toast.success('Tunnel created successfully');
+          onClose();
+        },
+        onError: (error: any) => {
+          toast.error(error.message || 'Failed to create tunnel');
+          setStep('name');
+        },
+      }
+    );
   };
 
   return (
@@ -85,7 +98,7 @@ function SetupModal({ onClose }: { onClose: () => void }) {
                 placeholder="cf_xxxxxxxxxxxxx"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
-              <p className="mt-1 text-xs text-muted-foreground">Token needs Zone - DNS - Edit permissions</p>
+              <p className="mt-1 text-xs text-muted-foreground">Token needs Account - Cloudflare Tunnel - Edit and Zone - DNS - Edit permissions</p>
             </div>
             {validation.error && (
               <div className="flex items-center gap-2 rounded-md bg-red-500/10 p-3 text-red-500">
@@ -114,7 +127,7 @@ function SetupModal({ onClose }: { onClose: () => void }) {
 
         {step === 'zone' && (
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">Select a zone (domain) from your Cloudflare account</p>
+            <p className="text-sm text-muted-foreground">Select a zone (domain) from your Cloudflare account. You can skip this if you don't need DNS management.</p>
             <div className="max-h-64 space-y-2 overflow-y-auto">
               {zones.map(zone => (
                 <button
@@ -133,6 +146,7 @@ function SetupModal({ onClose }: { onClose: () => void }) {
               ))}
             </div>
             <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => { setForm({ ...form, zoneId: '' }); setStep('name'); }} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Skip (optional)</button>
               <button onClick={() => setStep('token')} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Back</button>
             </div>
           </div>
@@ -176,9 +190,7 @@ function SetupModal({ onClose }: { onClose: () => void }) {
 
 function AddRouteModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onClose: () => void }) {
   const addRoute = useAddTunnelRoute();
-  const createDns = useCreateDnsCname();
-  const [form, setForm] = useState({ hostname: '', service: 'http://localhost:8080' });
-  const [autoCreateDns, setAutoCreateDns] = useState(false);
+  const [form, setForm] = useState({ hostname: '', service: 'http://localhost:8080', noTlsVerify: false });
 
   const presets = [
     { label: 'HTTP', value: 'http://localhost:80' },
@@ -188,17 +200,15 @@ function AddRouteModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onClose:
 
   const handleSubmit = () => {
     addRoute.mutate(
-      { tunnelId: tunnel.id, hostname: form.hostname, service: form.service },
+      { tunnelId: tunnel.id, hostname: form.hostname, service: form.service, noTlsVerify: form.noTlsVerify },
       {
         onSuccess: () => {
-          if (autoCreateDns && form.hostname) {
-            createDns.mutate({
-              zoneId: tunnel.id,
-              hostname: form.hostname,
-              target: `${tunnel.tunnelId}.cfargotunnel.com`,
-            });
-          }
+          // DNS CNAME is auto-created by the backend
+          toast.success('Route added successfully');
           onClose();
+        },
+        onError: (error: any) => {
+          toast.error(error.message || 'Failed to add route');
         },
       }
     );
@@ -242,18 +252,13 @@ function AddRouteModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onClose:
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
-              checked={autoCreateDns}
-              onChange={(e) => setAutoCreateDns(e.target.checked)}
+              checked={form.noTlsVerify}
+              onChange={(e) => setForm({ ...form, noTlsVerify: e.target.checked })}
               className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
             />
-            <span className="text-sm">Auto-create DNS record (CNAME)</span>
+            <span className="text-sm">Skip TLS verification (for self-signed certs)</span>
           </label>
-          {autoCreateDns && (
-            <p className="text-xs text-muted-foreground">
-              A CNAME record pointing <span className="font-mono">{form.hostname || 'hostname'}</span> →{' '}
-              <span className="font-mono">{tunnel.tunnelId}.cfargotunnel.com</span> will be created.
-            </p>
-          )}
+          <p className="text-xs text-muted-foreground">DNS CNAME record is auto-created when route is added</p>
         </div>
         <div className="mt-6 flex justify-end gap-3">
           <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
@@ -272,12 +277,24 @@ function AddRouteModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onClose:
 
 function EditRouteModal({ route, onClose }: { route: TunnelRoute; onClose: () => void }) {
   const editRoute = useEditTunnelRoute();
-  const [form, setForm] = useState({ hostname: route.hostname, service: route.service });
+  const [form, setForm] = useState({ 
+    hostname: route.hostname, 
+    service: route.service,
+    noTlsVerify: route.noTlsVerify ?? false 
+  });
 
   const handleSubmit = () => {
     editRoute.mutate(
-      { routeId: route.id, hostname: form.hostname, service: form.service },
-      { onSuccess: onClose }
+      { routeId: route.id, hostname: form.hostname, service: form.service, noTlsVerify: form.noTlsVerify },
+      {
+        onSuccess: () => {
+          toast.success('Route updated successfully');
+          onClose();
+        },
+        onError: (error: any) => {
+          toast.error(error.message || 'Failed to update route');
+        },
+      }
     );
   };
 
@@ -303,6 +320,16 @@ function EditRouteModal({ route, onClose }: { route: TunnelRoute; onClose: () =>
               placeholder="http://localhost:8080"
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="noTlsVerify"
+              checked={form.noTlsVerify}
+              onChange={(e) => setForm({ ...form, noTlsVerify: e.target.checked })}
+              className="h-4 w-4 rounded border-input"
+            />
+            <label htmlFor="noTlsVerify" className="text-sm font-medium">Skip TLS verification (for self-signed certs)</label>
           </div>
         </div>
         <div className="mt-6 flex justify-end gap-3">
@@ -350,7 +377,15 @@ function DeleteTunnelModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onCl
   const deleteTunnel = useDeleteTunnel();
 
   const handleDelete = () => {
-    deleteTunnel.mutate(tunnel.id, { onSuccess: onClose });
+    deleteTunnel.mutate(tunnel.id, {
+      onSuccess: () => {
+        toast.success('Tunnel deleted successfully');
+        onClose();
+      },
+      onError: (error: any) => {
+        toast.error(error.message || 'Failed to delete tunnel');
+      },
+    });
   };
 
   return (
@@ -435,7 +470,7 @@ function TunnelCard({ tunnel, routes, onAddRoute, onToggle, onDelete, onEditRout
           </button>
           {isRunning ? (
             <button
-              onClick={() => stop.mutate()}
+              onClick={() => stop.mutate(undefined, { onError: (error: any) => toast.error(error.message || 'Failed to stop tunnel') })}
               disabled={stop.isPending}
               className="rounded p-1.5 text-red-500 hover:bg-red-500/10 disabled:opacity-50"
               title="Stop tunnel"
@@ -444,7 +479,7 @@ function TunnelCard({ tunnel, routes, onAddRoute, onToggle, onDelete, onEditRout
             </button>
           ) : (
             <button
-              onClick={() => start.mutate()}
+              onClick={() => start.mutate(undefined, { onError: (error: any) => toast.error(error.message || 'Failed to start tunnel') })}
               disabled={start.isPending}
               className="rounded p-1.5 text-green-500 hover:bg-green-500/10 disabled:opacity-50"
               title="Start tunnel"
@@ -575,8 +610,16 @@ function ExposePanelModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onClo
   const handleSubmit = () => {
     if (!hostname.trim()) return;
     addRoute.mutate(
-      { tunnelId: tunnel.id, hostname, service: 'http://localhost:3000' },
-      { onSuccess: onClose }
+      { tunnelId: tunnel.id, hostname, service: 'http://localhost:8443' },
+      {
+        onSuccess: () => {
+          toast.success('Panel exposed successfully');
+          onClose();
+        },
+        onError: (error: any) => {
+          toast.error(error.message || 'Failed to expose panel');
+        },
+      }
     );
   };
 
@@ -599,13 +642,13 @@ function ExposePanelModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onClo
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
             <p className="mt-1 text-xs text-muted-foreground">
-              This hostname will route to <span className="font-mono">localhost:3000</span> (NovaPanel)
+              This hostname will route to <span className="font-mono">localhost:8443</span> (NovaPanel)
             </p>
           </div>
           <div className="rounded-md bg-muted/50 p-3">
             <div className="flex items-center gap-2 text-sm">
               <Server className="h-4 w-4 text-primary" />
-              <span>Target: <span className="font-mono">http://localhost:3000</span></span>
+              <span>Target: <span className="font-mono">http://localhost:8443</span></span>
             </div>
             <div className="flex items-center gap-2 text-sm mt-1">
               <Globe className="h-4 w-4 text-primary" />
@@ -666,11 +709,22 @@ export function TunnelsPage() {
 
   const handleExposeDomain = (domainName: string) => {
     if (!activeTunnel) return;
-    addRoute.mutate({
-      tunnelId: activeTunnel.id,
-      hostname: domainName,
-      service: 'http://localhost:80',
-    });
+    // Check if domain has SSL enabled and use HTTPS if so
+    const domain = domains?.find(d => d.name === domainName);
+    const service = domain?.sslEnabled ? 'https://localhost:443' : 'http://localhost:80';
+    const noTlsVerify = domain?.sslEnabled ?? false;
+    addRoute.mutate(
+      {
+        tunnelId: activeTunnel.id,
+        hostname: domainName,
+        service,
+        noTlsVerify,
+        domainId: domain?.id,
+      },
+      {
+        onError: (error: any) => toast.error(error.message || 'Failed to expose domain'),
+      }
+    );
   };
 
   return (
@@ -709,8 +763,8 @@ export function TunnelsPage() {
               tunnel={tunnel}
               routes={routes?.filter(r => r.tunnelId === tunnel.id) || []}
               onAddRoute={() => setShowAddRoute(tunnel)}
-              onToggle={(routeId) => toggleRoute.mutate(routeId)}
-              onDelete={(routeId) => deleteRoute.mutate(routeId)}
+              onToggle={(routeId) => toggleRoute.mutate(routeId, { onError: (error: any) => toast.error(error.message || 'Failed to toggle route') })}
+              onDelete={(routeId) => deleteRoute.mutate(routeId, { onError: (error: any) => toast.error(error.message || 'Failed to delete route') })}
               onEditRoute={(route) => setShowEditRoute(route)}
               onShowConfig={() => setShowConfig(tunnel)}
               onDeleteTunnel={() => setShowDeleteTunnel(tunnel)}

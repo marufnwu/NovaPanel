@@ -74,4 +74,7 @@ export async function registerRoutes(fastify: FastifyInstance) {
 
   // API Token Management
   await fastify.register(import('./modules/tokens/tokens.routes.js'), { prefix: '/api/v1' });
+
+  // Cloudflare Full Integration
+  await fastify.register(import('./modules/cloudflare/cloudflare.routes.js'), { prefix: '/api/v1' });
 }

@@ -4,7 +4,7 @@ import { logger } from '../config/logger.js';
 // Strict allowlist of permitted commands
 const ALLOWED_COMMANDS: ReadonlySet<string> = new Set([
   // User management
-  'useradd', 'userdel', 'passwd', 'chown', 'chmod', 'chgrp',
+  'useradd', 'userdel', 'passwd', 'chpasswd', 'chown', 'chmod', 'chgrp',
   // File operations (for system-level, not file manager)
   'mkdir', 'ln', 'rm', 'cp', 'mv',
   // Nginx
@@ -53,6 +53,10 @@ const ALLOWED_COMMANDS: ReadonlySet<string> = new Set([
   'apt-get',
   // Misc
   'hostname', 'ip', 'cat', 'echo', 'test', 'id', 'which', 'tee', 'bash', 'sed', 'grep', 'timedatectl', 'uname', 'shutdown',
+  // Directory listing
+  'ls',
+  // System info
+  'nproc', 'free', 'lscpu',
 ]);
 
 export interface ExecResult {
@@ -67,6 +71,8 @@ export interface ExecOptions {
   env?: Record<string, string>;
   timeout?: number;
   sudo?: boolean;
+  /** When sudo is true, run the command as this user (e.g. 'postgres') via sudo -u */
+  sudoUser?: string;
   input?: string;
 }
 
@@ -103,7 +109,11 @@ export async function run(
 
   // Build final command array
   const finalCmd = options.sudo ? 'sudo' : command;
-  const adjustedArgs = options.sudo ? [baseCmd, ...safeArgs] : safeArgs;
+  const sudoFlags: string[] = [];
+  if (options.sudo && options.sudoUser) {
+    sudoFlags.push('-u', options.sudoUser);
+  }
+  const adjustedArgs = options.sudo ? [...sudoFlags, baseCmd, ...safeArgs] : safeArgs;
 
   logger.debug({ command: baseCmd, args: safeArgs }, 'Executing command');
 

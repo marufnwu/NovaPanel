@@ -578,18 +578,7 @@ export function BackupsPage() {
   if (isLoading) return <LoadingSpinner />;
 
   const handleDownload = (backup: Backup) => {
-    downloadBackup.mutate({ id: backup.id }, {
-      onSuccess: (data: any) => {
-        const content = typeof data === 'string' ? data : data?.data || '';
-        const blob = new Blob([content]);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = backup.filename;
-        a.click();
-        URL.revokeObjectURL(url);
-      },
-    });
+    downloadBackup.mutate({ id: backup.id, filename: backup.filename });
   };
 
   const handleVerify = (backup: Backup) => {

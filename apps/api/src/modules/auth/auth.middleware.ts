@@ -1,19 +1,27 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { authService } from './auth.service.js';
+import { tokensService } from '../tokens/tokens.service.js';
 import { AppError } from '../../errors.js';
+import { db } from '../../db/index.js';
+import { users } from '../../db/schema/index.js';
+import { eq } from 'drizzle-orm';
 import type { User } from '../../db/schema/users.js';
 
-// Extend FastifyRequest to include user
+// Extend FastifyRequest to include user and token auth metadata
 declare module 'fastify' {
   interface FastifyRequest {
     user: User;
     sessionId: string;
+    authMethod?: 'session' | 'token';
+    tokenPermissions?: string[];
   }
 }
 
 export async function requireAuth(req: FastifyRequest, _reply: FastifyReply) {
   let user: User | null = null;
   let sessionId: string | null = null;
+  let authMethod: 'session' | 'token' | undefined;
+  let tokenPermissions: string[] | undefined;
 
   // 1. Try session cookie
   const sessionCookie = req.cookies.sf_session;
@@ -22,6 +30,7 @@ export async function requireAuth(req: FastifyRequest, _reply: FastifyReply) {
     if (result) {
       user = result.user;
       sessionId = result.session.id;
+      authMethod = 'session';
     }
   }
 
@@ -30,7 +39,37 @@ export async function requireAuth(req: FastifyRequest, _reply: FastifyReply) {
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.slice(7);
-      user = await authService.validateApiToken(token);
+
+      // 2a. Try the new token system first (dynamic API tokens stored in api_tokens table)
+      const tokenResult = await tokensService.validateToken(token);
+      if (tokenResult.valid && tokenResult.user && tokenResult.token) {
+        // Fetch the full user record so downstream code gets a complete User object.
+        const [fullUser] = await db.select().from(users).where(eq(users.id, tokenResult.user.id)).limit(1);
+        if (fullUser && fullUser.isActive) {
+          user = fullUser;
+          authMethod = 'token';
+          tokenPermissions = tokenResult.token.permissions;
+
+          // Record token usage (fire-and-forget)
+          tokensService.recordUsage(
+            tokenResult.token.id,
+            req.method,
+            req.url,
+            200, // will be updated by response hook if needed
+            req.ip,
+            req.headers['user-agent'] || '',
+          );
+        }
+      }
+
+      // 2b. Fall back to the legacy single-token check (users.apiTokenHash) for backward compat
+      if (!user) {
+        user = await authService.validateApiToken(token);
+        if (user) {
+          authMethod = 'token';
+          tokenPermissions = undefined; // legacy tokens have no scoped permissions
+        }
+      }
     }
   }
 
@@ -39,6 +78,9 @@ export async function requireAuth(req: FastifyRequest, _reply: FastifyReply) {
   }
 
   req.user = user;
+  req.authMethod = authMethod;
+  req.tokenPermissions = tokenPermissions;
+
   if (sessionId) {
     req.sessionId = sessionId;
     // Update session activity timestamp (fire-and-forget)

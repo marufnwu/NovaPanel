@@ -10,6 +10,9 @@ function escapeSqlString(val: string): string {
   return val.replace(/\\/g, '\\\\').replace(/'/g, "''");
 }
 
+/** Shared exec options for running commands as the postgres OS user */
+const pgSudo = { sudo: true as const, sudoUser: 'postgres' };
+
 export class PostgresService implements SystemService {
   readonly name = 'postgresql';
   readonly displayName = 'PostgreSQL';
@@ -42,27 +45,27 @@ export class PostgresService implements SystemService {
   }
 
   async createDatabase(name: string): Promise<void> {
-    await run('createdb', ['-U', 'postgres', name], { sudo: true });
+    await run('createdb', [name], pgSudo);
     logger.info({ database: name }, 'PostgreSQL database created');
   }
 
   async dropDatabase(name: string): Promise<void> {
-    await run('dropdb', ['-U', 'postgres', '--if-exists', name], { sudo: true });
+    await run('dropdb', ['--if-exists', name], pgSudo);
     logger.info({ database: name }, 'PostgreSQL database dropped');
   }
 
   async createUser(username: string, password: string): Promise<void> {
-    await run('psql', ['-U', 'postgres', '-c', `CREATE USER "${escapeSqlString(username)}" WITH PASSWORD '${escapeSqlString(password)}';`], { sudo: true });
+    await run('psql', ['-c', `CREATE USER "${escapeSqlString(username)}" WITH PASSWORD '${escapeSqlString(password)}';`], pgSudo);
     logger.info({ username }, 'PostgreSQL user created');
   }
 
   async dropUser(username: string): Promise<void> {
-    await run('dropuser', ['-U', 'postgres', '--if-exists', username], { sudo: true });
+    await run('dropuser', ['--if-exists', username], pgSudo);
     logger.info({ username }, 'PostgreSQL user dropped');
   }
 
   async grantPrivileges(username: string, database: string): Promise<void> {
-    await run('psql', ['-U', 'postgres', '-c', `GRANT ALL PRIVILEGES ON DATABASE "${escapeSqlString(database)}" TO "${escapeSqlString(username)}";`], { sudo: true });
+    await run('psql', ['-c', `GRANT ALL PRIVILEGES ON DATABASE "${escapeSqlString(database)}" TO "${escapeSqlString(username)}";`], pgSudo);
     logger.info({ username, database }, 'PostgreSQL privileges granted');
   }
 
@@ -70,7 +73,7 @@ export class PostgresService implements SystemService {
    * Change a user's password
    */
   async changePassword(username: string, password: string): Promise<void> {
-    await run('psql', ['-U', 'postgres', '-c', `ALTER USER "${escapeSqlString(username)}" WITH PASSWORD '${escapeSqlString(password)}';`], { sudo: true });
+    await run('psql', ['-c', `ALTER USER "${escapeSqlString(username)}" WITH PASSWORD '${escapeSqlString(password)}';`], pgSudo);
     logger.info({ username }, 'PostgreSQL user password changed');
   }
 
@@ -78,7 +81,7 @@ export class PostgresService implements SystemService {
    * Export a database to SQL string
    */
   async exportDatabase(name: string): Promise<string> {
-    const result = await run('pg_dump', ['-U', 'postgres', name], { sudo: true });
+    const result = await run('pg_dump', [name], pgSudo);
     return result.stdout;
   }
 
@@ -86,7 +89,7 @@ export class PostgresService implements SystemService {
    * Import SQL into a database
    */
   async importDatabase(name: string, sql: string): Promise<void> {
-    await run('psql', ['-U', 'postgres', name], { sudo: true, input: sql });
+    await run('psql', [name], { ...pgSudo, input: sql });
     logger.info({ database: name }, 'PostgreSQL database imported');
   }
 
@@ -94,9 +97,9 @@ export class PostgresService implements SystemService {
    * Get database size in bytes
    */
   async getDatabaseSize(name: string): Promise<number> {
-    const result = await run('psql', ['-U', 'postgres', '-d', name, '-t', '-c', 
+    const result = await run('psql', ['-d', name, '-t', '-c',
       `SELECT pg_database_size('${escapeSqlString(name)}');`
-    ], { sudo: true });
+    ], pgSudo);
     const size = parseInt(result.stdout.trim(), 10);
     return isNaN(size) ? 0 : size;
   }
@@ -106,7 +109,7 @@ export class PostgresService implements SystemService {
    */
   async repairDatabase(name: string): Promise<{ success: boolean; output: string }> {
     // PostgreSQL doesn't need repair; instead we run VACUUM ANALYZE
-    const result = await run('psql', ['-U', 'postgres', '-d', name, '-c', 'VACUUM ANALYZE;'], { sudo: true });
+    const result = await run('psql', ['-d', name, '-c', 'VACUUM ANALYZE;'], pgSudo);
     return { success: result.success, output: result.stdout };
   }
 
@@ -114,7 +117,7 @@ export class PostgresService implements SystemService {
    * Optimize database (VACUUM FULL to reclaim space)
    */
   async optimizeDatabase(name: string): Promise<{ success: boolean; output: string }> {
-    const result = await run('psql', ['-U', 'postgres', '-d', name, '-c', 'VACUUM FULL ANALYZE;'], { sudo: true });
+    const result = await run('psql', ['-d', name, '-c', 'VACUUM FULL ANALYZE;'], pgSudo);
     return { success: result.success, output: result.stdout };
   }
 
@@ -122,36 +125,36 @@ export class PostgresService implements SystemService {
    * Clone database using pg_dump + createdb + psql
    */
   async cloneDatabase(sourceName: string, targetName: string): Promise<void> {
-    // Check if target exists, if so drop it
-    await run('dropdb', ['-U', 'postgres', '--if-exists', targetName], { sudo: true });
-    await run('createdb', ['-U', 'postgres', targetName], { sudo: true });
-    const dumpResult = await run('pg_dump', ['-U', 'postgres', sourceName], { sudo: true });
-    await run('psql', ['-U', 'postgres', '-d', targetName], { sudo: true, input: dumpResult.stdout });
+    // Drop target if it exists, then create it
+    await run('dropdb', ['--if-exists', targetName], pgSudo);
+    await run('createdb', [targetName], pgSudo);
+    // Dump source and pipe into target
+    const dumpResult = await run('pg_dump', [sourceName], pgSudo);
+    await run('psql', ['-d', targetName], { ...pgSudo, input: dumpResult.stdout });
     logger.info({ source: sourceName, target: targetName }, 'PostgreSQL database cloned');
   }
 
   /**
    * Run a read-only SQL query (SELECT, SHOW, DESCRIBE)
+   * Returns proper column names by omitting -t flag and disabling footer.
    */
   async runQuery(name: string, sql: string): Promise<{ columns: string[]; rows: Record<string, unknown>[]; rowCount: number }> {
-    const result = await run('psql', ['-U', 'postgres', '-d', name, '-t', '-A', '-F', '\t', '-c', sql], { sudo: true });
+    // -A = unaligned, -F '\t' = tab separator, -P footer=off = no "(N rows)" line
+    // Omit -t so the first row is column headers
+    const result = await run('psql', ['-d', name, '-A', '-F', '\t', '-P', 'footer=off', '-c', sql], pgSudo);
     const lines = result.stdout.split('\n').filter(l => l.trim());
     if (lines.length === 0) return { columns: [], rows: [], rowCount: 0 };
 
-    const rows = lines.map(line => {
-      const cols = line.split('\t');
-      return cols;
+    // First line is column headers
+    const columns = lines[0].split('\t');
+    const rows = lines.slice(1).map(line => {
+      const values = line.split('\t');
+      const obj: Record<string, unknown> = {};
+      columns.forEach((col, i) => { obj[col] = values[i] ?? null; });
+      return obj;
     });
 
-    return {
-      columns: [],
-      rows: rows.map(cols => {
-        const obj: Record<string, unknown> = {};
-        cols.forEach((v, i) => { obj[`col_${i}`] = v; });
-        return obj;
-      }),
-      rowCount: rows.length,
-    };
+    return { columns, rows, rowCount: rows.length };
   }
 }
 

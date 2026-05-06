@@ -12,6 +12,7 @@ import { logger } from '../../config/logger.js';
 import * as sudoFs from '../../services/sudo-fs.js';
 import { auditService } from '../audit/audit.service.js';
 import { DnsService } from '../dns/dns.service.js';
+import { detectNetworkInfo } from '../../utils/network.js';
 
 const dnsService = new DnsService();
 
@@ -328,45 +329,53 @@ export class MailService {
       dkimPrivateKey: encrypt(privateKey),
     }).where(eq(mailDomains.id, mailDomain.id));
 
-    // Write OpenDKIM key files
-    const keyDir = `/etc/opendkim/keys/${domain.name}`;
-    await run('mkdir', ['-p', keyDir], { sudo: true });
-    await sudoFs.writeFile(`${keyDir}/mail.private`, privateKey);
-    await run('chown', ['opendkim:opendkim', `${keyDir}/mail.private`], { sudo: true });
-    await run('chmod', ['600', `${keyDir}/mail.private`], { sudo: true });
-
-    // Add to OpenDKIM KeyTable
-    await sudoFs.appendFile('/etc/opendkim/KeyTable',
-      `mail._domainkey.${domain.name} ${domain.name}:mail:${keyDir}/mail.private\n`);
-
-    // Add to SigningTable
-    await sudoFs.appendFile('/etc/opendkim/SigningTable',
-      `*@${domain.name} mail._domainkey.${domain.name}\n`);
-
-    // Inject DNS TXT record
+    // Compute DKIM DNS record value
     const selectorRecord = publicKey
       .replace('-----BEGIN PUBLIC KEY-----', '')
       .replace('-----END PUBLIC KEY-----', '')
       .replace(/\n/g, '');
 
-    // Add DNS record if zone exists
-    const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
-    if (zone) {
-      await db.insert(dnsRecords).values({
-        id: nanoid(),
-        zoneId: zone.id,
-        type: 'TXT' as any,
-        name: 'mail._domainkey',
-        value: `v=DKIM1; k=rsa; p=${selectorRecord}`,
-        ttl: 3600,
-        isSystem: true,
-      });
+    // Write OpenDKIM key files (best-effort: service may not be available)
+    try {
+      const keyDir = `/etc/opendkim/keys/${domain.name}`;
+      await run('mkdir', ['-p', keyDir], { sudo: true });
+      await sudoFs.writeFile(`${keyDir}/mail.private`, privateKey);
+      await run('chown', ['opendkim:opendkim', `${keyDir}/mail.private`], { sudo: true });
+      await run('chmod', ['600', `${keyDir}/mail.private`], { sudo: true });
 
-      // Regenerate zone file from DB records and reload BIND
-      await dnsService.syncZoneToDisk(zone.id);
+      // Add to OpenDKIM KeyTable
+      await sudoFs.appendFile('/etc/opendkim/KeyTable',
+        `mail._domainkey.${domain.name} ${domain.name}:mail:${keyDir}/mail.private\n`);
+
+      // Add to SigningTable
+      await sudoFs.appendFile('/etc/opendkim/SigningTable',
+        `*@${domain.name} mail._domainkey.${domain.name}\n`);
+
+      await run('systemctl', ['restart', 'opendkim'], { sudo: true });
+    } catch (error: any) {
+      logger.warn({ error: error.message, domain: domain.name }, 'Failed to configure OpenDKIM — DKIM keys saved to DB but not deployed to filesystem');
     }
 
-    await run('systemctl', ['restart', 'opendkim'], { sudo: true });
+    // Add DNS record if zone exists (best-effort)
+    try {
+      const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
+      if (zone) {
+        await db.insert(dnsRecords).values({
+          id: nanoid(),
+          zoneId: zone.id,
+          type: 'TXT' as any,
+          name: 'mail._domainkey',
+          value: `v=DKIM1; k=rsa; p=${selectorRecord}`,
+          ttl: 3600,
+          isSystem: true,
+        });
+
+        // Regenerate zone file from DB records and reload BIND
+        await dnsService.syncZoneToDisk(zone.id);
+      }
+    } catch (error: any) {
+      logger.warn({ error: error.message, domain: domain.name }, 'Failed to add DKIM DNS record');
+    }
 
     logger.info({ domain: domain.name }, 'DKIM keys generated');
 
@@ -402,11 +411,25 @@ export class MailService {
   /**
    * Set SPF record for a domain
    */
-  async setSPF(domainId: string, serverIp: string, userId?: string, ipAddress?: string) {
+  async setSPF(domainId: string, serverIp?: string, userId?: string, ipAddress?: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    const spfRecord = `v=spf1 a mx ip4:${serverIp} ~all`;
+    // Auto-detect server IP if not provided
+    let resolvedIp = serverIp;
+    if (!resolvedIp) {
+      try {
+        const networkInfo = await detectNetworkInfo();
+        resolvedIp = networkInfo.primaryIp;
+      } catch {
+        logger.warn('Failed to auto-detect server IP for SPF record');
+      }
+    }
+    if (!resolvedIp) {
+      throw new AppError(400, 'NO_SERVER_IP', 'Server IP could not be determined. Please provide it explicitly.');
+    }
+
+    const spfRecord = `v=spf1 a mx ip4:${resolvedIp} ~all`;
     await db.update(mailDomains).set({ spfRecord }).where(eq(mailDomains.domainId, domainId));
 
     // Inject/update DNS TXT record
@@ -583,6 +606,9 @@ export class MailService {
 
     // Reload Postfix
     await run('postfix', ['reload'], { sudo: true });
+
+    // Persist catch-all destination to database
+    await db.update(mailDomains).set({ catchAllDestination: destination }).where(eq(mailDomains.id, mailDomain.id));
 
     logger.info({ domain: domain.name, destination }, 'Catch-all destination set');
 

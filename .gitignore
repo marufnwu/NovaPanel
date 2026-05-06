@@ -11,3 +11,4 @@ coverage/
 data/
 /logs/
 !apps/web/src/pages/logs/
+cloudflare-docs/

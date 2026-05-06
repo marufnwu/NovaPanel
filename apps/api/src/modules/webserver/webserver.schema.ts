@@ -21,3 +21,21 @@ export const updateWebServerSchema = z.object({
   customNginxDirectives: z.string().max(10000).optional(),
   customApacheDirectives: z.string().max(10000).optional(),
 });
+
+const errorPageSchema = z.object({
+  code: z.number().int().min(400).max(599),
+  enabled: z.boolean().default(true),
+  content: z.string().max(50000),
+  contentType: z.enum(['text/html', 'text/plain', 'application/json']).default('text/html'),
+});
+
+export const updateErrorPagesSchema = z.object({
+  errorPages: z.array(errorPageSchema).min(0).max(20),
+});
+
+export const updateRateLimitSchema = z.object({
+  enabled: z.boolean().optional(),
+  requestsPerSecond: z.number().min(1).max(10000).optional(),
+  burstSize: z.number().min(1).max(100000).optional(),
+  timeoutSeconds: z.number().min(1).max(3600).optional(),
+});

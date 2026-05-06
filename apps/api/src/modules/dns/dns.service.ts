@@ -94,6 +94,15 @@ export class DnsService {
       });
     }
 
+    // Write zone file to disk and add to named.conf.local
+    try {
+      await this.rewriteZoneFile(zoneId);
+      await bindService.addZoneToConfig(domain.name);
+      await bindService.reload();
+    } catch (e) {
+      logger.warn({ err: e, domainId, domain: domain.name }, 'Failed to write BIND zone file during zone creation — DB records saved');
+    }
+
     logger.info({ domainId, domain: domain.name }, 'DNS zone auto-created with default records');
 
     const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.id, zoneId)).limit(1);
@@ -529,22 +538,10 @@ export class DnsService {
     await db.delete(dnsZones).where(eq(dnsZones.id, zone.id));
 
     // Remove zone file from disk
-    const zonePath = `${env.BIND_ZONES_DIR}/db.${domain.name}`;
-    await run('rm', ['-f', zonePath], { sudo: true }).catch(() => {});
+    await bindService.removeZoneFile(domain.name);
 
-    // Remove entry from named.conf.local (best-effort)
-    try {
-      const namedConf = '/etc/bind/named.conf.local';
-      const content = await sudoFs.readFile(namedConf);
-      const zoneBlockRegex = new RegExp(
-        `\\s*zone\\s+"${domain.name.replace(/\./g, '\\.')}\\.?"\\s*\\{[^}]*\\};?\\s*`,
-        'g'
-      );
-      const updated = content.replace(zoneBlockRegex, '\n');
-      await sudoFs.writeFile(namedConf, updated);
-    } catch {
-      // named.conf.local may not exist or zone block not found
-    }
+    // Remove entry from named.conf.local
+    await bindService.removeZoneFromConfig(domain.name);
 
     // Reload BIND (best-effort)
     await bindService.reload().catch(() => {});

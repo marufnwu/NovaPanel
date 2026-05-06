@@ -10,6 +10,7 @@ import {
   Database,
   FolderUp,
   Waypoints,
+  Cloud,
   FolderOpen,
   Terminal,
   Clock,
@@ -64,6 +65,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
     title: 'Network',
     items: [
       { label: 'Tunnels', path: '/tunnels', icon: Waypoints },
+      { label: 'Cloudflare', path: '/cloudflare', icon: Cloud },
     ],
   },
   {

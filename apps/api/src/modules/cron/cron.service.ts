@@ -33,6 +33,8 @@ export class CronService {
     command: string;
     schedule: string;
     systemUser?: string;
+    domainId?: string;
+    websiteId?: string;
   }, userId?: string, ipAddress?: string) {
     const parts = data.schedule.trim().split(/\s+/);
     if (parts.length !== 5) {
@@ -54,6 +56,8 @@ export class CronService {
 
     await db.insert(cronJobs).values({
       id: jobId,
+      domainId: data.domainId || null,
+      websiteId: data.websiteId || null,
       command: data.command,
       schedule: data.schedule,
       systemUser: sysUser,

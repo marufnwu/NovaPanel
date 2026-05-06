@@ -8,6 +8,8 @@ export class BindService implements SystemService {
   readonly name = 'bind9';
   readonly displayName = 'BIND9';
 
+  private readonly namedConfLocal = '/etc/bind/named.conf.local';
+
   async start(): Promise<void> {
     await run('systemctl', ['start', 'named'], { sudo: true });
   }
@@ -59,6 +61,74 @@ export class BindService implements SystemService {
     // Reload BIND to pick up changes
     await this.reload();
     logger.info({ domain }, 'BIND zone file written');
+  }
+
+  /**
+   * Remove a zone file from disk.
+   */
+  async removeZoneFile(domain: string): Promise<void> {
+    const zonePath = `${env.BIND_ZONES_DIR}/db.${domain}`;
+    await sudoFs.unlink(zonePath).catch(() => {});
+    logger.info({ domain }, 'BIND zone file removed');
+  }
+
+  /**
+   * Add a zone declaration to named.conf.local so BIND serves the zone.
+   * Idempotent — does nothing if the zone block already exists.
+   */
+  async addZoneToConfig(domain: string): Promise<void> {
+    try {
+      const content = await sudoFs.readFile(this.namedConfLocal);
+
+      // Check if zone already exists in config
+      const escapedDomain = domain.replace(/\./g, '\\.');
+      const zoneRegex = new RegExp(`zone\\s+"${escapedDomain}\\.?"\\s*\\{`);
+      if (zoneRegex.test(content)) {
+        logger.debug({ domain }, 'Zone already in named.conf.local — skipping');
+        return;
+      }
+    } catch {
+      // named.conf.local doesn't exist yet — we'll create it below
+    }
+
+    const zoneBlock = `
+zone "${domain}" {
+    type master;
+    file "${env.BIND_ZONES_DIR}/db.${domain}";
+};
+`;
+    await sudoFs.appendFile(this.namedConfLocal, zoneBlock);
+    logger.info({ domain }, 'Zone added to named.conf.local');
+  }
+
+  /**
+   * Remove a zone declaration from named.conf.local.
+   */
+  async removeZoneFromConfig(domain: string): Promise<void> {
+    try {
+      const content = await sudoFs.readFile(this.namedConfLocal);
+      const escapedDomain = domain.replace(/\./g, '\\.');
+      const zoneBlockRegex = new RegExp(
+        `\\s*zone\\s+"${escapedDomain}\\.?"\\s*\\{[^}]*\\};?\\s*`,
+        'g',
+      );
+      const updated = content.replace(zoneBlockRegex, '\n');
+      await sudoFs.writeFile(this.namedConfLocal, updated);
+      logger.info({ domain }, 'Zone removed from named.conf.local');
+    } catch {
+      // named.conf.local may not exist or zone block not found
+    }
+  }
+
+  /**
+   * Reload BIND via systemctl (alternative to rndc reload).
+   */
+  async reloadBind(): Promise<void> {
+    await run('systemctl', ['reload', 'bind9'], { sudo: true }).catch(() => {
+      // Fallback to restart if reload fails
+      return run('systemctl', ['restart', 'bind9'], { sudo: true });
+    });
+    logger.info('BIND reloaded via systemctl');
   }
 }
 

@@ -16,10 +16,50 @@ const DANGEROUS_FUNCTIONS = [
 
 export class PhpService {
   /**
-   * List installed PHP versions
+   * List installed PHP versions with FPM status for each.
+   * Scans /etc/php/ for version directories, then checks FPM service status.
    */
   async listVersions() {
-    const versions = await PhpFpmService.getInstalledVersions();
+    const versionStrings = await PhpFpmService.getInstalledVersions();
+
+    const versions = await Promise.all(versionStrings.map(async (version) => {
+      // Check FPM service status
+      let fpmActive = false;
+      try {
+        const result = await run('systemctl', ['is-active', `php${version}-fpm`], { sudo: true });
+        fpmActive = result.stdout.trim() === 'active';
+      } catch { /* not active */ }
+
+      // Try to determine FPM listen port/socket from pool config
+      let fpmPort: number | null = null;
+      try {
+        const poolDir = `/etc/php/${version}/fpm/pool.d`;
+        const lsResult = await run('ls', ['-1', poolDir], { sudo: true });
+        if (lsResult.success && lsResult.stdout.trim()) {
+          // Check if any pool listens on a TCP port (not socket)
+          const confFiles = lsResult.stdout.trim().split('\n').filter(Boolean);
+          for (const confFile of confFiles) {
+            try {
+              const conf = await sudoFs.readFile(`${poolDir}/${confFile}`);
+              const portMatch = conf.match(/listen\s*=\s*(?:127\.0\.0\.1|::1):(\d+)/);
+              if (portMatch) {
+                fpmPort = parseInt(portMatch[1], 10);
+                break;
+              }
+            } catch { /* skip unreadable config */ }
+          }
+        }
+      } catch { /* no pool dir */ }
+
+      return {
+        version,
+        fpm: {
+          active: fpmActive,
+          port: fpmPort,
+        },
+      };
+    }));
+
     return { versions };
   }
 

@@ -3,6 +3,9 @@ import { AppError } from '../../errors.js';
 import { nanoid } from 'nanoid';
 import { logger } from '../../config/logger.js';
 import { auditService } from '../audit/audit.service.js';
+import { db } from '../../db/index.js';
+import { apiTokens, users } from '../../db/schema/index.js';
+import { eq, and, gt, isNull, or } from 'drizzle-orm';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -35,9 +38,8 @@ interface CreateTokenOptions {
   permissions: string[];
 }
 
-// ─── In-Memory Store ─────────────────────────────────────────────────────────
+// ─── In-Memory Usage Tracking (kept in memory — not critical for auth) ───────
 
-const tokens = new Map<string, ApiToken>();
 const tokenUsage = new Map<string, TokenUsageEntry[]>();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -61,36 +63,39 @@ function parseExpiry(expiresIn: string): Date | null {
 
 export class TokensService {
   /**
-   * List all tokens for a user (excludes the actual token hash)
+   * List all tokens for a user (excludes the actual token hash).
+   * Reads from the database so tokens survive restarts.
    */
-  listTokens(userId: string) {
-    const userTokens: Omit<ApiToken, 'tokenHash'>[] = [];
-    for (const token of tokens.values()) {
-      if (token.userId === userId) {
-        // Check if token is expired
-        if (token.expiresAt && token.expiresAt < new Date()) {
-          continue; // Skip expired tokens
-        }
-        userTokens.push({
-          id: token.id,
-          userId: token.userId,
-          name: token.name,
-          permissions: token.permissions,
-          expiresAt: token.expiresAt,
-          createdAt: token.createdAt,
-          lastUsedAt: token.lastUsedAt,
-        });
-      }
-    }
-    return userTokens.sort(
-      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
-    );
+  async listTokens(userId: string) {
+    const now = new Date();
+    const rows = await db
+      .select({
+        id: apiTokens.id,
+        userId: apiTokens.userId,
+        name: apiTokens.name,
+        permissions: apiTokens.permissions,
+        expiresAt: apiTokens.expiresAt,
+        createdAt: apiTokens.createdAt,
+        lastUsedAt: apiTokens.lastUsedAt,
+      })
+      .from(apiTokens)
+      .where(eq(apiTokens.userId, userId));
+
+    // Filter out expired tokens client-side (SQLite timestamp comparison can be tricky)
+    return rows
+      .filter(t => !t.expiresAt || t.expiresAt > now)
+      .map(t => ({
+        ...t,
+        permissions: JSON.parse(t.permissions),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   /**
-   * Generate a new API token
+   * Generate a new API token.
+   * Stores the SHA-256 hash in the database; returns the plain token only once.
    */
-  generateToken(options: CreateTokenOptions, ipAddress?: string) {
+  async generateToken(options: CreateTokenOptions, ipAddress?: string) {
     const { userId, name, expiresIn, permissions } = options;
 
     // Validate permissions
@@ -107,19 +112,19 @@ export class TokensService {
     const tokenHash = hashToken(rawToken);
     const expiresAt = parseExpiry(expiresIn);
     const id = nanoid();
+    const createdAt = new Date();
 
-    const apiToken: ApiToken = {
+    await db.insert(apiTokens).values({
       id,
       userId,
       name,
       tokenHash,
-      permissions,
+      permissions: JSON.stringify(permissions),
       expiresAt,
-      createdAt: new Date(),
-      lastUsedAt: null,
-    };
+      createdAt,
+    });
 
-    tokens.set(id, apiToken);
+    // Initialise in-memory usage tracker
     tokenUsage.set(id, []);
 
     logger.info({ userId, tokenId: id, tokenName: name }, 'API token generated');
@@ -138,15 +143,20 @@ export class TokensService {
       name,
       permissions,
       expiresAt,
-      createdAt: apiToken.createdAt,
+      createdAt,
     };
   }
 
   /**
-   * Revoke/delete a token
+   * Revoke/delete a token.
    */
-  revokeToken(userId: string, tokenId: string, ipAddress?: string) {
-    const token = tokens.get(tokenId);
+  async revokeToken(userId: string, tokenId: string, ipAddress?: string) {
+    const [token] = await db
+      .select()
+      .from(apiTokens)
+      .where(eq(apiTokens.id, tokenId))
+      .limit(1);
+
     if (!token) {
       throw new AppError(404, 'TOKEN_NOT_FOUND', 'Token not found');
     }
@@ -154,7 +164,7 @@ export class TokensService {
       throw new AppError(403, 'FORBIDDEN', 'You do not own this token');
     }
 
-    tokens.delete(tokenId);
+    await db.delete(apiTokens).where(eq(apiTokens.id, tokenId));
     tokenUsage.delete(tokenId);
 
     logger.info({ userId, tokenId }, 'API token revoked');
@@ -170,10 +180,15 @@ export class TokensService {
   }
 
   /**
-   * Get usage history for a token
+   * Get usage history for a token (in-memory, recent only).
    */
-  getTokenUsage(userId: string, tokenId: string) {
-    const token = tokens.get(tokenId);
+  async getTokenUsage(userId: string, tokenId: string) {
+    const [token] = await db
+      .select()
+      .from(apiTokens)
+      .where(eq(apiTokens.id, tokenId))
+      .limit(1);
+
     if (!token) {
       throw new AppError(404, 'TOKEN_NOT_FOUND', 'Token not found');
     }
@@ -188,53 +203,102 @@ export class TokensService {
   }
 
   /**
-   * Record token usage (called from auth middleware when a Bearer token is used)
+   * Record token usage (called from auth middleware when a Bearer token is used).
    */
-  recordUsage(tokenHash: string, method: string, path: string, statusCode: number, ipAddress: string, userAgent: string) {
-    for (const [tokenId, token] of tokens.entries()) {
-      if (token.tokenHash === tokenHash) {
-        // Update last used
-        token.lastUsedAt = new Date();
+  recordUsage(tokenId: string, method: string, path: string, statusCode: number, ipAddress: string, userAgent: string) {
+    const usage = tokenUsage.get(tokenId) || [];
+    usage.push({
+      id: nanoid(),
+      tokenId,
+      method,
+      path,
+      statusCode,
+      ipAddress,
+      userAgent,
+      timestamp: new Date(),
+    });
 
-        // Record usage entry
-        const usage = tokenUsage.get(tokenId) || [];
-        usage.push({
-          id: nanoid(),
-          tokenId,
-          method,
-          path,
-          statusCode,
-          ipAddress,
-          userAgent,
-          timestamp: new Date(),
-        });
-
-        // Keep only last 100 entries
-        if (usage.length > 100) {
-          usage.splice(0, usage.length - 100);
-        }
-
-        tokenUsage.set(tokenId, usage);
-        break;
-      }
+    // Keep only last 100 entries
+    if (usage.length > 100) {
+      usage.splice(0, usage.length - 100);
     }
+
+    tokenUsage.set(tokenId, usage);
   }
 
   /**
-   * Validate an API token (used by auth middleware)
+   * Validate an API token (used by auth middleware).
+   * Hashes the provided token, looks it up in the DB, updates lastUsedAt,
+   * and returns the token record together with the user info.
    */
-  validateToken(rawToken: string): { valid: boolean; token?: ApiToken } {
+  async validateToken(rawToken: string): Promise<{
+    valid: boolean;
+    token?: ApiToken;
+    user?: {
+      id: string;
+      username: string;
+      email: string;
+      displayName: string | null;
+      role: string;
+      isActive: boolean;
+    };
+  }> {
     const tokenHash = hashToken(rawToken);
-    for (const token of tokens.values()) {
-      if (token.tokenHash === tokenHash) {
-        // Check expiry
-        if (token.expiresAt && token.expiresAt < new Date()) {
-          return { valid: false };
-        }
-        return { valid: true, token };
-      }
+
+    // Look up token by hash
+    const [row] = await db
+      .select()
+      .from(apiTokens)
+      .where(eq(apiTokens.tokenHash, tokenHash))
+      .limit(1);
+
+    if (!row) {
+      return { valid: false };
     }
-    return { valid: false };
+
+    // Check expiry
+    if (row.expiresAt && row.expiresAt < new Date()) {
+      // Clean up expired token
+      await db.delete(apiTokens).where(eq(apiTokens.id, row.id));
+      return { valid: false };
+    }
+
+    // Fetch the associated user
+    const [user] = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        email: users.email,
+        displayName: users.displayName,
+        role: users.role,
+        isActive: users.isActive,
+      })
+      .from(users)
+      .where(eq(users.id, row.userId))
+      .limit(1);
+
+    if (!user || !user.isActive) {
+      return { valid: false };
+    }
+
+    // Update lastUsedAt (fire-and-forget)
+    db.update(apiTokens)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(apiTokens.id, row.id))
+      .catch(err => logger.error({ err }, 'Failed to update token lastUsedAt'));
+
+    const token: ApiToken = {
+      id: row.id,
+      userId: row.userId,
+      name: row.name,
+      tokenHash: row.tokenHash,
+      permissions: JSON.parse(row.permissions),
+      expiresAt: row.expiresAt,
+      createdAt: row.createdAt,
+      lastUsedAt: row.lastUsedAt,
+    };
+
+    return { valid: true, token, user };
   }
 }
 

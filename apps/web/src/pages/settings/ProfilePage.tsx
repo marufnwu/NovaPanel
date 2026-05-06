@@ -26,8 +26,8 @@ import {
   useSessions,
   useRevokeSession,
   useRevokeAllOtherSessions,
-  useGenerateApiToken,
 } from '../../api/hooks/auth';
+import { useCreateToken } from '../../api/hooks/tokens';
 import { PageHeader } from '../../components/ui/PageHeader';
 
 // --- Initials Avatar ---
@@ -599,14 +599,14 @@ function SessionsSection() {
 
 // --- API Token Section ---
 function ApiTokenSection() {
-  const generateToken = useGenerateApiToken();
+  const generateToken = useCreateToken();
   const [tokenName, setTokenName] = useState('');
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const handleGenerate = (e: React.FormEvent) => {
     e.preventDefault();
-    generateToken.mutate({ name: tokenName }, {
+    generateToken.mutate({ name: tokenName, expiresIn: 'never', permissions: ['read'] }, {
       onSuccess: (data) => {
         setGeneratedToken(data.token);
         setTokenName('');

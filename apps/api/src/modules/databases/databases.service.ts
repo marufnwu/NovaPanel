@@ -31,9 +31,31 @@ export class DatabasesService {
   }
 
   /**
-   * Create a database
+   * Get a single database by ID
    */
-  async create(data: { domainId?: string; name: string; engine: 'mariadb' | 'postgresql'; charset?: string }, userId?: string, ipAddress?: string) {
+  async getDatabase(databaseId: string) {
+    const [database] = await db.select().from(databases).where(eq(databases.id, databaseId)).limit(1);
+    if (!database) throw new AppError(404, 'DATABASE_NOT_FOUND', 'Database not found');
+    return database;
+  }
+
+  /**
+   * Create a database, optionally creating a user with access
+   */
+  async create(
+    data: {
+      domainId?: string;
+      name: string;
+      engine: 'mariadb' | 'postgresql';
+      charset?: string;
+      createUser?: boolean;
+      username?: string;
+      password?: string;
+      host?: string;
+    },
+    userId?: string,
+    ipAddress?: string,
+  ) {
     const dbId = nanoid();
     const dbName = `sf_${data.name.replace(/[^a-z0-9_]/gi, '_')}`;
 
@@ -55,15 +77,28 @@ export class DatabasesService {
 
     logger.info({ name: dbName, engine: data.engine }, 'Database created');
 
+    // Optionally create a user with access to this database
+    let createdUser: { id: string; username: string; host: string } | undefined;
+    if (data.createUser && data.username && data.password) {
+      createdUser = await this.createUser(
+        dbId,
+        data.username,
+        data.password,
+        data.host || 'localhost',
+        userId,
+        ipAddress,
+      );
+    }
+
     auditService.log({
       userId,
       action: 'database.create',
       resource: `database:${dbName}`,
-      details: JSON.stringify({ engine: data.engine, charset: data.charset }),
+      details: JSON.stringify({ engine: data.engine, charset: data.charset, createUser: data.createUser }),
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return { id: dbId, name: dbName, engine: data.engine };
+    return { id: dbId, name: dbName, engine: data.engine, user: createdUser || null };
   }
 
   /**
@@ -247,10 +282,14 @@ export class DatabasesService {
 
     const users = await db.select().from(databaseUsers).where(eq(databaseUsers.databaseId, databaseId));
     let sizeBytes = 0;
-    if (database.engine === 'mariadb') {
-      sizeBytes = await mariadbService.getDatabaseSize(database.name);
-    } else {
-      sizeBytes = await postgresService.getDatabaseSize(database.name);
+    try {
+      if (database.engine === 'mariadb') {
+        sizeBytes = await mariadbService.getDatabaseSize(database.name);
+      } else {
+        sizeBytes = await postgresService.getDatabaseSize(database.name);
+      }
+    } catch (err) {
+      logger.warn({ err, database: database.name }, 'Failed to get database size');
     }
 
     return {
@@ -317,10 +356,15 @@ export class DatabasesService {
     const cleanName = newName.replace(/[^a-z0-9_]/gi, '_');
     const clonedName = `sf_${cleanName}`;
 
-    if (database.engine === 'mariadb') {
-      await mariadbService.cloneDatabase(database.name, clonedName);
-    } else {
-      await postgresService.cloneDatabase(database.name, clonedName);
+    try {
+      if (database.engine === 'mariadb') {
+        await mariadbService.cloneDatabase(database.name, clonedName);
+      } else {
+        await postgresService.cloneDatabase(database.name, clonedName);
+      }
+    } catch (err) {
+      logger.error({ err, source: database.name, target: clonedName }, 'Database clone failed');
+      throw new AppError(500, 'CLONE_FAILED', `Failed to clone database: ${(err as Error).message}`);
     }
 
     const newId = nanoid();
@@ -357,10 +401,15 @@ export class DatabasesService {
     const [database] = await db.select().from(databases).where(eq(databases.id, databaseId)).limit(1);
     if (!database) throw new AppError(404, 'DATABASE_NOT_FOUND', 'Database not found');
 
-    if (database.engine === 'mariadb') {
-      return mariadbService.runQuery(database.name, sql);
-    } else {
-      return postgresService.runQuery(database.name, sql);
+    try {
+      if (database.engine === 'mariadb') {
+        return await mariadbService.runQuery(database.name, sql);
+      } else {
+        return await postgresService.runQuery(database.name, sql);
+      }
+    } catch (err) {
+      logger.error({ err, database: database.name, sql }, 'Query execution failed');
+      throw new AppError(500, 'QUERY_FAILED', `Query execution failed: ${(err as Error).message}`);
     }
   }
 

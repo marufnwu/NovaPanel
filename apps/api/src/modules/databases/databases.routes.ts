@@ -23,6 +23,12 @@ export default async function databaseRoutes(fastify: FastifyInstance) {
     return reply.status(201).send({ success: true, data: result });
   });
 
+  // GET /databases/:id — Get single database
+  fastify.get('/databases/:id', async (req) => {
+    const { id } = req.params as { id: string };
+    return { success: true, data: await service.getDatabase(id) };
+  });
+
   // DELETE /databases/:id — Delete database
   fastify.delete('/databases/:id', async (req) => {
     const { id } = req.params as { id: string };

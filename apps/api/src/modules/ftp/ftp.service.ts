@@ -53,6 +53,19 @@ export class FtpService {
       logger.warn({ error: error.message }, 'Failed to reload ProFTPd — skipping');
     }
 
+    // Create system user (best-effort: service may not be available in Docker)
+    try {
+      const checkResult = await run('id', [data.username], { sudo: true });
+      if (!checkResult.success) {
+        await run('useradd', ['-d', data.homeDir, '-s', '/usr/sbin/nologin', data.username], { sudo: true });
+      }
+      await run('chpasswd', [], { sudo: true, input: `${data.username}:${data.password}` });
+      await run('mkdir', ['-p', data.homeDir], { sudo: true });
+      await run('chown', ['-R', `${data.username}:${data.username}`, data.homeDir], { sudo: true });
+    } catch (error: any) {
+      logger.warn({ error: error.message, username: data.username }, 'Failed to create system user — skipping');
+    }
+
     logger.info({ username: data.username }, 'FTP account created');
 
     auditService.log({
@@ -126,6 +139,13 @@ export class FtpService {
       await sudoFs.writeFile('/etc/proftpd/ftpd.passwd', lines.join('\n'));
     } catch { /* file may not exist */ }
 
+    // Update system password (best-effort)
+    try {
+      await run('chpasswd', [], { sudo: true, input: `${account.username}:${newPassword}` });
+    } catch (error: any) {
+      logger.warn({ error: error.message, username: account.username }, 'Failed to update system password — skipping');
+    }
+
     await run('systemctl', ['reload', 'proftpd'], { sudo: true });
     logger.info({ username: account.username }, 'FTP password updated');
 
@@ -148,6 +168,13 @@ export class FtpService {
       await sudoFs.writeFile('/etc/proftpd/ftpd.passwd', updated);
     } catch { /* file may not exist */ }
     await run('systemctl', ['reload', 'proftpd'], { sudo: true });
+
+    // Remove system user (best-effort)
+    try {
+      await run('userdel', [account.username], { sudo: true });
+    } catch (error: any) {
+      logger.warn({ error: error.message, username: account.username }, 'Failed to delete system user — skipping');
+    }
 
     await db.delete(ftpAccounts).where(eq(ftpAccounts.id, ftpId));
     logger.info({ username: account.username }, 'FTP account deleted');

@@ -5,7 +5,7 @@ import { logger } from '../config/logger.js';
 import * as sudoFs from './sudo-fs.js';
 import { db } from '../db/index.js';
 import { websites } from '../db/schema/websites.js';
-import { domains } from '../db/schema/domains.js';
+import { domains, domainAliases } from '../db/schema/domains.js';
 import { eq } from 'drizzle-orm';
 
 export interface VhostContext {
@@ -92,12 +92,23 @@ export class NginxService implements SystemService {
     const phpVersion = website.phpHandler !== 'disabled' ? website.phpVersion : undefined;
 
     for (const domain of attachedDomains) {
+      // Look up domain aliases for this domain
+      let domainAliasNames: string[] = [];
+      try {
+        const aliases = await db.select({ alias: domainAliases.alias })
+          .from(domainAliases)
+          .where(eq(domainAliases.domainId, domain.id));
+        domainAliasNames = aliases.map(a => a.alias);
+      } catch {
+        // domainAliases table may not have entries — that's OK
+      }
+
       config += '\n';
       config += this.renderVhost({
         domain: domain.name,
         documentRoot: website.documentRoot,
         phpVersion,
-        aliases: [`www.${domain.name}`],
+        aliases: [`www.${domain.name}`, ...domainAliasNames],
       });
     }
 

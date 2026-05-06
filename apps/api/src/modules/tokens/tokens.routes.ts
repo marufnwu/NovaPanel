@@ -15,7 +15,7 @@ export default async function tokensRoutes(fastify: FastifyInstance) {
   // GET /tokens — List all tokens for authenticated user
   fastify.get('/tokens', {
     handler: async (req) => {
-      const data = tokensService.listTokens(req.user.id);
+      const data = await tokensService.listTokens(req.user.id);
       return { success: true, data };
     },
   });
@@ -24,7 +24,7 @@ export default async function tokensRoutes(fastify: FastifyInstance) {
   fastify.post('/tokens', {
     handler: async (req) => {
       const body = generateTokenSchema.parse(req.body);
-      const data = tokensService.generateToken({
+      const data = await tokensService.generateToken({
         userId: req.user.id,
         name: body.name,
         expiresIn: body.expiresIn,
@@ -38,7 +38,7 @@ export default async function tokensRoutes(fastify: FastifyInstance) {
   fastify.delete('/tokens/:id', {
     handler: async (req) => {
       const { id } = req.params as { id: string };
-      const data = tokensService.revokeToken(req.user.id, id, req.ip);
+      const data = await tokensService.revokeToken(req.user.id, id, req.ip);
       return { success: true, data };
     },
   });
@@ -47,7 +47,7 @@ export default async function tokensRoutes(fastify: FastifyInstance) {
   fastify.get('/tokens/:id/usage', {
     handler: async (req) => {
       const { id } = req.params as { id: string };
-      const data = tokensService.getTokenUsage(req.user.id, id);
+      const data = await tokensService.getTokenUsage(req.user.id, id);
       return { success: true, data };
     },
   });

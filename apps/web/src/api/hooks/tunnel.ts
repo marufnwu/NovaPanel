@@ -7,6 +7,7 @@ export interface CloudflareTunnel {
   tunnelId: string;
   name: string;
   status: 'active' | 'inactive';
+  accountId?: string; // Cloudflare zone ID stored as accountId
 }
 
 export interface TunnelRoute {
@@ -14,12 +15,13 @@ export interface TunnelRoute {
   tunnelId: string;
   hostname: string;
   service: string;
+  noTlsVerify?: boolean;
   isActive: boolean;
   domainId?: string;
 }
 
 export interface TunnelStatus {
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'degraded';
   tunnels: CloudflareTunnel[];
 }
 
@@ -52,23 +54,32 @@ export function useTunnelStatus() {
   return useQuery({
     queryKey: ['tunnel', 'status'],
     queryFn: async () => {
-      // The API returns { status, processRunning, connectedToEdge, lastConnectedAt, message }
-      // but the frontend expects { status, tunnels: CloudflareTunnel[] }
       const data = await api.get<{
         status: 'active' | 'inactive' | 'degraded';
         processRunning: boolean;
         connectedToEdge: boolean;
         lastConnectedAt: string | null;
         message?: string;
+        tunnels: Array<{
+          id: string;
+          tunnelId: string;
+          name: string;
+          status: 'active' | 'inactive';
+          accountId?: string;
+          zoneId?: string;
+        }>;
       }>('/tunnel/status');
       
-      // Map backend TunnelStatus to frontend TunnelStatus
-      // Note: The backend doesn't provide tunnel list in status endpoint, 
-      // so we return an empty tunnels array
       return {
-        status: data.status as 'active' | 'inactive',
-        tunnels: [] as CloudflareTunnel[],
-      } as TunnelStatus;
+        status: data.status as 'active' | 'inactive' | 'degraded',
+        tunnels: (data.tunnels || []).map(t => ({
+          id: t.id,
+          tunnelId: t.tunnelId,
+          name: t.name,
+          status: t.status,
+          accountId: t.accountId,
+        })),
+      };
     },
   });
 }
@@ -112,7 +123,7 @@ export function useFetchZones() {
 export function useSetupTunnel() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; apiToken: string; accountId?: string }) =>
+    mutationFn: (data: { name: string; apiToken: string; accountId?: string; zoneId?: string }) =>
       api.post('/tunnel/setup', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tunnel'] }),
   });
@@ -145,7 +156,7 @@ export function useStopTunnel() {
 export function useAddTunnelRoute() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { tunnelId: string; hostname: string; service: string; domainId?: string }) =>
+    mutationFn: (data: { tunnelId: string; hostname: string; service: string; noTlsVerify?: boolean; domainId?: string }) =>
       api.post('/tunnel/routes', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tunnel'] }),
   });
@@ -154,8 +165,8 @@ export function useAddTunnelRoute() {
 export function useEditTunnelRoute() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { routeId: string; hostname?: string; service?: string }) =>
-      api.put(`/tunnel/routes/${data.routeId}`, { hostname: data.hostname, service: data.service }),
+    mutationFn: (data: { routeId: string; hostname?: string; service?: string; noTlsVerify?: boolean }) =>
+      api.put(`/tunnel/routes/${data.routeId}`, { hostname: data.hostname, service: data.service, noTlsVerify: data.noTlsVerify }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tunnel'] }),
   });
 }
@@ -194,7 +205,7 @@ export function useTunnelLogs(tunnelId: string) {
 
     // Cookie-based auth: browser automatically sends sf_session cookie on WS upgrade
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/tunnel/logs?tunnelId=${tunnelId}`;
+    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/tunnel/logs?tunnelId=${tunnelId}`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {

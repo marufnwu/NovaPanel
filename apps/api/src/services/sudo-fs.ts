@@ -146,3 +146,59 @@ export async function chmod(path: string, mode: string): Promise<void> {
     throw new Error(`Failed to chmod ${path}: ${error.message}`);
   }
 }
+
+/**
+ * Rename / move a file or directory using sudo mv.
+ */
+export async function rename(oldPath: string, newPath: string): Promise<void> {
+  try {
+    const result = await run('mv', ['-f', oldPath, newPath], { sudo: true });
+    if (!result.success) {
+      throw new Error(`Failed to rename ${oldPath} to ${newPath}: ${result.stderr || result.stdout}`);
+    }
+  } catch (error: any) {
+    logger.error({ oldPath, newPath, error: error.message }, 'sudo-fs rename failed');
+    throw new Error(`Failed to rename ${oldPath} to ${newPath}: ${error.message}`);
+  }
+}
+
+/**
+ * Remove a file or directory using sudo rm.
+ * Supports recursive removal for directories.
+ */
+export async function remove(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
+  try {
+    const args: string[] = [];
+    if (options?.recursive) args.push('-r');
+    if (options?.force) args.push('-f');
+    args.push(path);
+
+    const result = await run('rm', args, { sudo: true });
+    if (!result.success) {
+      throw new Error(`Failed to remove ${path}: ${result.stderr || result.stdout}`);
+    }
+  } catch (error: any) {
+    logger.error({ path, error: error.message }, 'sudo-fs remove failed');
+    throw new Error(`Failed to remove ${path}: ${error.message}`);
+  }
+}
+
+/**
+ * Copy a file or directory using sudo cp.
+ * Supports recursive copying for directories.
+ */
+export async function copy(source: string, destination: string, options?: { recursive?: boolean }): Promise<void> {
+  try {
+    const args: string[] = [];
+    if (options?.recursive) args.push('-r');
+    args.push(source, destination);
+
+    const result = await run('cp', args, { sudo: true });
+    if (!result.success) {
+      throw new Error(`Failed to copy ${source} to ${destination}: ${result.stderr || result.stdout}`);
+    }
+  } catch (error: any) {
+    logger.error({ source, destination, error: error.message }, 'sudo-fs copy failed');
+    throw new Error(`Failed to copy ${source} to ${destination}: ${error.message}`);
+  }
+}

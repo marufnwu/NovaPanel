@@ -34,7 +34,7 @@ import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
 import {
   Globe, Plus, Trash2, Ban, CheckCircle, X, FolderOpen, ExternalLink,
   Search, Shield, Server, ChevronRight, ArrowLeft, Link2, ArrowRightLeft,
-  Edit3, Activity, AlertTriangle, Unplug, Mail, FileText, Info,
+  Edit3, Activity, AlertTriangle, Unplug, Mail, FileText, Info, Cloud,
 } from 'lucide-react';
 import type { ApiError } from '../../api/client';
 import type { Domain } from '../../api/hooks/domains';
@@ -645,6 +645,47 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
             )}
           </div>
 
+          {/* Cloudflare Integration */}
+          <div className="rounded-lg border border-border bg-card p-5">
+            <h3 className="mb-3 flex items-center gap-2 font-semibold">
+              <Cloud className="h-4 w-4 text-orange-500" /> Cloudflare Integration
+            </h3>
+            {domainTunnelRoute ? (
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600">
+                      <CheckCircle className="h-3 w-3" /> Active
+                    </span>
+                    <span className="text-sm">Tunnel route: <code className="rounded bg-muted px-1 text-xs">{domain.name}</code> → <code className="rounded bg-muted px-1 text-xs">{domainTunnelRoute.service}</code></span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    This domain is served through Cloudflare Tunnel. DNS, SSL, and caching are managed via Cloudflare.
+                  </p>
+                </div>
+                <Link
+                  to="/cloudflare"
+                  className="flex items-center gap-1.5 rounded-md border border-orange-300 bg-orange-50 px-4 py-2 text-sm font-medium text-orange-700 hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-900/20 dark:text-orange-400 dark:hover:bg-orange-900/30"
+                >
+                  <Cloud className="h-3.5 w-3.5" /> Manage in Cloudflare
+                </Link>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Unplug className="h-5 w-5 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">No Cloudflare Tunnel route configured for this domain</p>
+                </div>
+                <Link
+                  to="/cloudflare"
+                  className="flex items-center gap-1.5 rounded-md border border-primary px-4 py-2 text-sm font-medium text-primary hover:bg-primary/10"
+                >
+                  <Cloud className="h-3.5 w-3.5" /> Set Up Cloudflare
+                </Link>
+              </div>
+            )}
+          </div>
+
           {/* Domain Info Cards */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="rounded-lg border border-border bg-card p-4">
@@ -1201,6 +1242,16 @@ export function DomainsPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{d.name}</span>
                       {(() => {
+                        const domainRoute = tunnelRoutes?.find(
+                          (r) => r.hostname === d.name || r.hostname === `*.${d.name}`
+                        );
+                        return domainRoute ? (
+                          <span className="inline-flex items-center gap-0.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-400" title="Cloudflare Tunnel active">
+                            <Cloud className="h-2.5 w-2.5" /> CF
+                          </span>
+                        ) : null;
+                      })()}
+                      {(() => {
                         const hasPublicIp = serverContext?.hasPublicIp ?? true;
                         const tunnelActive = serverContext?.tunnelActive ?? false;
                         const tunnelUrl = serverContext?.tunnelUrl ?? null;
@@ -1221,9 +1272,11 @@ export function DomainsPage() {
                             <ExternalLink className="h-3.5 w-3.5" />
                           </a>
                         ) : (
-                          <span className="text-muted-foreground" title="Not externally accessible">
-                            <Info className="h-3.5 w-3.5" />
-                          </span>
+                          !tunnelRoutes?.find((r) => r.hostname === d.name || r.hostname === `*.${d.name}`) ? (
+                            <span className="text-muted-foreground" title="Not externally accessible">
+                              <Info className="h-3.5 w-3.5" />
+                            </span>
+                          ) : null
                         );
                       })()}
                     </div>

@@ -1,13 +1,12 @@
 import { db } from '../../db/index.js';
 import { cloudflareTunnels, tunnelRoutes } from '../../db/schema/tunnels.js';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { run } from '../../services/executor.js';
 import { encrypt, decrypt } from '../../utils/crypto.js';
 import { AppError } from '../../errors.js';
 import { logger } from '../../config/logger.js';
 import * as sudoFs from '../../services/sudo-fs.js';
-import YAML from 'yaml';
 import { auditService } from '../audit/audit.service.js';
 import { isPrivateUrl } from '../../utils/network.js';
 import { env } from '../../config/env.js';
@@ -25,6 +24,7 @@ interface TunnelInfo {
   id: string;
   name: string;
   created_at: string;
+  status: string;
   connections: {
     id: string;
     colo: string;
@@ -42,31 +42,64 @@ export interface TunnelStatus {
   connectedToEdge: boolean;
   lastConnectedAt: string | null;
   message?: string;
+  tunnels: Array<{
+    id: string;
+    tunnelId: string;
+    name: string;
+    status: 'active' | 'inactive';
+    accountId?: string;
+    zoneId?: string;
+  }>;
 }
 
 export class TunnelService {
   /**
-   * Full tunnel setup: create tunnel, configure, install as service
+   * Full tunnel setup using Cloudflare API-based (remote config) approach.
+   * 
+   * This replaces the old CLI-based approach with:
+   * 1. POST /accounts/{id}/cfd_tunnel to create tunnel via API
+   * 2. Store tunnelToken (not credentials file) for service installation
+   * 3. cloudflared service install with tunnel token (no config file needed)
+   * 
+   * Route configuration is stored remotely on Cloudflare's side and updated via API.
    */
-  async setup(name: string, apiToken: string, accountId?: string, userId?: string, ipAddress?: string) {
-    // 1. Create tunnel via cloudflared
-    const createResult = await run('cloudflared', ['tunnel', 'create', name], {
-      sudo: true,
-      timeout: 60_000,
-    });
-    if (!createResult.success) {
-      throw createTunnelError(createResult.stderr, 'TUNNEL_CREATE_FAILED');
+  async setup(name: string, apiToken: string, accountId?: string, zoneId?: string, userId?: string, ipAddress?: string) {
+    // 1. Determine account ID if not provided
+    let resolvedAccountId = accountId;
+    if (!resolvedAccountId) {
+      const accounts = await this.getAccounts(apiToken);
+      if (accounts.length === 0) {
+        throw new AppError(400, 'NO_ACCOUNTS', 'No Cloudflare accounts found for this API token');
+      }
+      resolvedAccountId = accounts[0].id;
     }
 
-    // Parse tunnel ID from output
-    const tunnelId = this.parseTunnelId(createResult.stdout);
-    if (!tunnelId) {
-      throw new AppError(422, 'TUNNEL_ID_PARSE_FAILED', 'Could not parse tunnel ID from cloudflared output');
+    // 2. Create tunnel via Cloudflare API
+    const createResponse = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${resolvedAccountId}/cfd_tunnel`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name,
+          config_src: 'cloudflare',  // Use remote config approach
+        }),
+      }
+    );
+
+    const createData = await createResponse.json() as any;
+    
+    if (!createData.success) {
+      const errorMsg = createData.errors?.[0]?.message || 'Failed to create Cloudflare tunnel';
+      throw createTunnelError(errorMsg, 'TUNNEL_CREATE_FAILED');
     }
 
-    // 2. Read credentials JSON
-    const credsPath = `/root/.cloudflared/${tunnelId}.json`;
-    const credentialsJson = await sudoFs.readFile(credsPath);
+    const tunnelResult = createData.result;
+    const tunnelId = tunnelResult.id;
+    const tunnelToken = tunnelResult.token;  // This is different from credentials file!
 
     // 3. Store in DB
     const tunnelDbId = nanoid();
@@ -74,80 +107,127 @@ export class TunnelService {
       id: tunnelDbId,
       name,
       tunnelId,
-      accountId: accountId || null,
+      tunnelToken: encrypt(tunnelToken),
+      accountId: resolvedAccountId,
+      zoneId: zoneId || null,
       apiToken: encrypt(apiToken),
-      credentialsJson: encrypt(credentialsJson),
+      credentialsJson: null,  // Not needed for remote config approach
       status: 'inactive',
     });
 
-    // 4. Generate initial config
-    await this.writeConfigFile(tunnelId, []);
-
-    // 4b. Write credentials file to /etc/cloudflared/ with restricted permissions
-    const credsTargetPath = `/etc/cloudflared/${tunnelId}.json`;
-    await sudoFs.writeFile(credsTargetPath, credentialsJson);
-    await sudoFs.chmod(credsTargetPath, '600');
-
-    // 5. Install as systemd service
-    await run('cloudflared', ['service', 'install'], { sudo: true });
+    // 4. Install cloudflared as systemd service using tunnel token
+    // This is the key difference: no config file, just the token
+    await run('cloudflared', ['--protocol', 'http2', 'service', 'install', tunnelToken], { sudo: true });
     await run('systemctl', ['enable', 'cloudflared'], { sudo: true });
+    await run('systemctl', ['start', 'cloudflared'], { sudo: true });
 
-    logger.info({ name, tunnelId }, 'Cloudflare tunnel created');
+    logger.info({ name, tunnelId, accountId: resolvedAccountId }, 'Cloudflare tunnel created via API');
 
     auditService.log({
       userId,
       action: 'tunnel.setup',
       resource: `tunnel:${name}`,
-      details: JSON.stringify({ tunnelId }),
+      details: JSON.stringify({ tunnelId, accountId: resolvedAccountId }),
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return { id: tunnelDbId, name, tunnelId, status: 'inactive' };
+    return { 
+      id: tunnelDbId, 
+      name, 
+      tunnelId, 
+      accountId: resolvedAccountId,
+      zoneId: zoneId || null,
+      status: 'inactive' 
+    };
+  }
+
+  /**
+   * Get list of Cloudflare accounts for a token
+   */
+  private async getAccounts(apiToken: string): Promise<Array<{ id: string; name: string }>> {
+    const response = await fetch('https://api.cloudflare.com/client/v4/accounts', {
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+      },
+    });
+    const data = await response.json() as any;
+    if (!data.success) return [];
+    return data.result.map((a: any) => ({ id: a.id, name: a.name }));
   }
 
   /**
    * Validate Cloudflare API Token
+   * 
+   * Handles both token types:
+   * - User tokens (cfut_ prefix): Use /user/tokens/verify endpoint
+   * - Account tokens (cfat_ prefix): Verify via account-scoped API call
    */
   async validateToken(apiToken: string) {
+    const isAccountToken = apiToken.startsWith('cfat_');
+    
+    if (isAccountToken) {
+      return this.validateAccountToken(apiToken);
+    } else {
+      return this.validateUserToken(apiToken);
+    }
+  }
+
+  private async validateUserToken(apiToken: string) {
     try {
       const response = await fetch('https://api.cloudflare.com/client/v4/user/tokens/verify', {
+        method: 'GET',
         headers: {
           Authorization: `Bearer ${apiToken}`,
-          'Content-Type': 'application/json',
         },
       });
 
       const data = await response.json() as any;
       
       if (!data.success) {
-        throw new AppError(401, 'INVALID_TOKEN', 'Invalid Cloudflare API token');
-      }
-
-      // Check for required permissions
-      const hasTunnelPerm = data.result?.policies?.some((p: any) =>
-        p.effect === 'allow' && p.permission_groups?.some((g: any) =>
-          g.key === 'com.cloudflare.api.account.tunnel'
-        )
-      );
-      const hasDnsPerm = data.result?.policies?.some((p: any) =>
-        p.effect === 'allow' && p.permission_groups?.some((g: any) =>
-          g.key === 'com.cloudflare.api.account.dns'
-        )
-      );
-
-      if (!hasTunnelPerm || !hasDnsPerm) {
-        throw new AppError(403, 'INSUFFICIENT_PERMISSIONS',
-          'Token requires tunnel and DNS edit permissions');
+        throw new AppError(400, 'INVALID_TOKEN', 'Invalid Cloudflare API token');
       }
 
       return {
         valid: true,
-        email: data.result?.email,
-        username: data.result?.username,
+        status: data.result?.status || 'active',
+        type: 'user',
       };
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(500, 'VALIDATION_FAILED', 'Failed to validate token with Cloudflare API');
+    }
+  }
+
+  private async validateAccountToken(apiToken: string) {
+    try {
+      const response = await fetch('https://api.cloudflare.com/client/v4/accounts', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+        },
+      });
+
+      const data = await response.json() as any;
+      
+      if (!data.success) {
+        const errorCode = data.errors?.[0]?.code;
+        const errorMsg = data.errors?.[0]?.message || 'Invalid Cloudflare API token';
+        
+        if (errorCode === 1000) {
+          throw new AppError(400, 'INVALID_TOKEN', errorMsg);
+        }
+        throw new AppError(400, 'INSUFFICIENT_PERMISSIONS', errorMsg);
+      }
+
+      return {
+        valid: true,
+        status: 'active',
+        type: 'account',
+        accounts: data.result,
+      };
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError(500, 'VALIDATION_FAILED', 'Failed to validate account token with Cloudflare API');
     }
   }
 
@@ -189,7 +269,7 @@ export class TunnelService {
   }
 
   /**
-   * Get detailed tunnel information
+   * Get detailed tunnel information via Cloudflare API
    */
   async getTunnelInfo(tunnelDbId: string) {
     const [tunnel] = await db.select().from(cloudflareTunnels)
@@ -199,14 +279,30 @@ export class TunnelService {
       throw new AppError(404, 'TUNNEL_NOT_FOUND', 'Tunnel not found');
     }
 
-    try {
-      const result = await run('cloudflared', ['tunnel', 'info', tunnel.tunnelId!, '--output', 'json'], {
-        sudo: true,
-        timeout: 30_000,
-      });
+    if (!tunnel.apiToken || !tunnel.accountId || !tunnel.tunnelId) {
+      logger.warn({ tunnelId: tunnel.tunnelId }, 'Missing required tunnel data for API call');
+      return {
+        id: tunnel.tunnelId || 'unknown',
+        name: tunnel.name,
+        status: tunnel.status || 'inactive',
+        connections: [],
+      };
+    }
 
-      if (!result.success) {
-        // If cloudflared is not running, return basic info
+    try {
+      const apiToken = decrypt(tunnel.apiToken);
+      const response = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${tunnel.accountId}/cfd_tunnel/${tunnel.tunnelId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${apiToken}`,
+          },
+        }
+      );
+
+      const data = await response.json() as any;
+      
+      if (!data.success) {
         return {
           id: tunnel.tunnelId,
           name: tunnel.name,
@@ -215,17 +311,27 @@ export class TunnelService {
         };
       }
 
-      const info: TunnelInfo = JSON.parse(result.stdout);
-      
+      const info = data.result;
+      // Map Cloudflare API status to panel status values
+      const apiStatus = info.status as string;
+      let panelStatus: 'active' | 'inactive' | 'degraded' = 'inactive';
+      if (apiStatus === 'healthy') {
+        panelStatus = 'active';
+      } else if (apiStatus === 'degraded') {
+        panelStatus = 'degraded';
+      } else if (apiStatus === 'down') {
+        panelStatus = 'inactive';
+      }
+      // else 'inactive' stays 'inactive'
       return {
         id: info.id,
-        name: tunnel.name,
-        status: tunnel.status,
+        name: info.name,
+        status: panelStatus,
         connections: info.connections || [],
         createdAt: info.created_at,
       };
     } catch (error) {
-      logger.warn({ tunnelDbId, error }, 'Failed to get tunnel info');
+      logger.warn({ tunnelDbId, error }, 'Failed to get tunnel info from API');
       return {
         id: tunnel.tunnelId,
         name: tunnel.name,
@@ -236,7 +342,7 @@ export class TunnelService {
   }
 
   /**
-   * Delete a tunnel
+   * Delete a tunnel using Cloudflare API
    */
   async deleteTunnel(tunnelDbId: string, userId?: string, ipAddress?: string) {
     const [tunnel] = await db.select().from(cloudflareTunnels)
@@ -249,26 +355,71 @@ export class TunnelService {
     // Stop the tunnel if running
     await this.stop();
 
-    // Delete from Cloudflare
-    try {
-      await run('cloudflared', ['tunnel', 'delete', tunnel.tunnelId!], {
-        sudo: true,
-        timeout: 60_000,
-      });
-    } catch (error) {
-      logger.warn({ tunnelDbId, error }, 'Failed to delete tunnel from Cloudflare');
+    // Delete from Cloudflare via API
+    if (tunnel.apiToken && tunnel.accountId && tunnel.tunnelId) {
+      try {
+        const apiToken = decrypt(tunnel.apiToken);
+        const response = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${tunnel.accountId}/cfd_tunnel/${tunnel.tunnelId}`,
+          {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${apiToken}`,
+            },
+          }
+        );
+
+        const data = await response.json() as any;
+        if (!data.success) {
+          logger.warn({ tunnelDbId, errors: data.errors }, 'Failed to delete tunnel from Cloudflare API');
+        }
+      } catch (error) {
+        logger.warn({ tunnelDbId, error }, 'Failed to delete tunnel from Cloudflare');
+      }
     }
 
-    // Delete credentials file
+    // Uninstall cloudflared service
     try {
-      await sudoFs.unlink(`/root/.cloudflared/${tunnel.tunnelId}.json`);
+      await run('cloudflared', ['service', 'uninstall'], { sudo: true });
     } catch (error) {
-      logger.warn({ tunnelDbId, error }, 'Failed to delete credentials file');
+      logger.warn({ tunnelDbId, error }, 'Failed to uninstall cloudflared service');
+    }
+
+    // Delete credentials file if it exists
+    if (tunnel.tunnelId) {
+      try {
+        await sudoFs.unlink(`/etc/cloudflared/${tunnel.tunnelId}.json`);
+      } catch {
+        // May not exist
+      }
+      try {
+        await sudoFs.unlink(`/root/.cloudflared/${tunnel.tunnelId}.json`);
+      } catch {
+        // May not exist
+      }
+    }
+
+    // Delete config file
+    try {
+      await sudoFs.unlink('/etc/cloudflared/config.yml');
+    } catch {
+      // May not exist
+    }
+
+    // Delete DNS CNAME records for all routes before deleting from DB (Fix 7)
+    const routes = await db.select().from(tunnelRoutes)
+      .where(eq(tunnelRoutes.tunnelId, tunnelDbId));
+    for (const route of routes) {
+      if (route.hostname) {
+        await this.deleteDnsCname(tunnel, route.hostname).catch(err => {
+          logger.warn({ routeId: route.id, hostname: route.hostname, err }, 'Failed to delete DNS CNAME for route');
+        });
+      }
     }
 
     // Delete from database
-    await db.delete(cloudflareTunnels).where(eq(cloudflareTunnels.id, tunnelDbId));
     await db.delete(tunnelRoutes).where(eq(tunnelRoutes.tunnelId, tunnelDbId));
+    await db.delete(cloudflareTunnels).where(eq(cloudflareTunnels.id, tunnelDbId));
 
     logger.info({ tunnelDbId, tunnelId: tunnel.tunnelId }, 'Cloudflare tunnel deleted');
 
@@ -283,7 +434,8 @@ export class TunnelService {
   }
 
   /**
-   * Get tunnel configuration as YAML
+   * Get tunnel configuration as JSON (for display/debugging)
+   * With remote config, there's no local config.yml - we return the remote config
    */
   async getTunnelConfig(tunnelDbId: string) {
     const [tunnel] = await db.select().from(cloudflareTunnels)
@@ -298,25 +450,27 @@ export class TunnelService {
 
     const activeRoutes = routes.filter(r => r.isActive);
 
-    const config = {
+    // Return the ingress configuration that would be sent to Cloudflare API
+    return {
       tunnel: tunnel.tunnelId,
-      'credentials-file': `/etc/cloudflared/${tunnel.tunnelId}.json`,
-      ingress: [
-        ...activeRoutes.map((r) => ({
-          hostname: r.hostname,
-          service: r.service,
-        })),
-        { service: 'http_status:404' },
-      ],
+      accountId: tunnel.accountId,
+      ingress: activeRoutes.map((r) => ({
+        hostname: r.hostname,
+        service: r.service,
+        originRequest: r.noTlsVerify ? { noTLSVerify: true } : undefined,
+      })),
+      catchAll: { service: 'http_status:404' },
     };
-
-    return YAML.stringify(config);
   }
 
   /**
    * Get tunnel status with enhanced connectivity information
+   * Uses Cloudflare API for health information
    */
   async getStatus(): Promise<TunnelStatus> {
+    // Query tunnels first so they're available in all return paths
+    const tunnels = await db.select().from(cloudflareTunnels);
+
     // Check if process is running
     const processResult = await run('systemctl', ['is-active', 'cloudflared']);
     const processRunning = processResult.stdout.trim() === 'active';
@@ -328,47 +482,47 @@ export class TunnelService {
         connectedToEdge: false,
         lastConnectedAt: null,
         message: 'Cloudflared process is not running',
+        tunnels: tunnels.map(t => ({
+          id: t.id,
+          tunnelId: t.tunnelId || '',
+          name: t.name,
+          status: t.status as 'active' | 'inactive',
+          accountId: t.accountId || undefined,
+          zoneId: t.zoneId || undefined,
+        })),
       };
     }
 
-    // Process is running, check connectivity
-    const tunnels = await db.select().from(cloudflareTunnels);
+    // Process is running, check connectivity via Cloudflare API
     let connectedToEdge = false;
     let lastConnectedAt: string | null = null;
 
-    // Try to get connectivity info from each tunnel
     for (const tunnel of tunnels) {
+      if (!tunnel.apiToken || !tunnel.accountId || !tunnel.tunnelId) continue;
+      
       try {
-        const infoResult = await run('cloudflared', ['tunnel', 'info', tunnel.tunnelId!, '--output', 'json'], {
-          sudo: true,
-          timeout: 10_000,
-        });
+        const apiToken = decrypt(tunnel.apiToken);
+        const response = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${tunnel.accountId}/cfd_tunnel/${tunnel.tunnelId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${apiToken}`,
+            },
+          }
+        );
 
-        if (infoResult.success) {
-          const info: TunnelInfo = JSON.parse(infoResult.stdout);
-          if (info.connections && info.connections.length > 0) {
+        const data = await response.json() as any;
+        if (data.success && data.result) {
+          const connections = data.result.connections || [];
+          if (connections.length > 0) {
             connectedToEdge = true;
-            lastConnectedAt = info.created_at;
+            // Use conns_active_at for last connection time, not created_at (Fix 4)
+            lastConnectedAt = data.result.conns_active_at || data.result.created_at || null;
             break;
           }
         }
       } catch {
         // Continue checking other tunnels
-      }
-    }
-
-    // Also try to get metrics if available
-    if (!connectedToEdge) {
-      try {
-        const metricsResult = await run('curl', ['-s', 'http://localhost:9100/metrics'], {
-          timeout: 5_000,
-        });
-        if (metricsResult.success && metricsResult.stdout.includes('cloudflared')) {
-          // Metrics endpoint is responding, tunnel is likely connected
-          connectedToEdge = true;
-        }
-      } catch {
-        // Metrics not available, rely on tunnel info
       }
     }
 
@@ -389,6 +543,14 @@ export class TunnelService {
       connectedToEdge,
       lastConnectedAt,
       message,
+      tunnels: tunnels.map(t => ({
+        id: t.id,
+        tunnelId: t.tunnelId || '',
+        name: t.name,
+        status: t.status as 'active' | 'inactive',
+        accountId: t.accountId || undefined,
+        zoneId: t.zoneId || undefined,
+      })),
     };
   }
 
@@ -448,14 +610,15 @@ export class TunnelService {
 
   /**
    * Add a tunnel route
+   * Uses remote config API - no service reload needed!
    */
   async addRoute(data: {
     tunnelId: string;
     hostname: string;
     service: string;
+    noTlsVerify?: boolean;
     domainId?: string;
   }, userId?: string, ipAddress?: string) {
-    // Fetch tunnel for zone validation
     const [tunnel] = await db.select().from(cloudflareTunnels)
       .where(eq(cloudflareTunnels.id, data.tunnelId)).limit(1);
     if (!tunnel) {
@@ -475,15 +638,13 @@ export class TunnelService {
       tunnelId: data.tunnelId,
       hostname: data.hostname,
       service: data.service,
+      noTlsVerify: data.noTlsVerify || false,
       domainId: data.domainId || null,
       isActive: true,
     });
 
-    // Regenerate config
-    const allRoutes = await db.select().from(tunnelRoutes)
-      .where(eq(tunnelRoutes.tunnelId, data.tunnelId));
-    await this.writeConfigFile(tunnel.tunnelId!, allRoutes);
-    await this.reloadDaemon();
+    // Update remote config via Cloudflare API (no reload needed!)
+    await this.updateRemoteConfig(tunnel, data.tunnelId);
 
     // Create DNS CNAME via Cloudflare API
     if (tunnel.apiToken) {
@@ -499,36 +660,40 @@ export class TunnelService {
       userId,
       action: 'tunnel.route.add',
       resource: `route:${data.hostname}`,
-      details: JSON.stringify({ service: data.service }),
+      details: JSON.stringify({ service: data.service, noTlsVerify: data.noTlsVerify }),
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return { id: routeId, hostname: data.hostname, service: data.service };
+    return { 
+      id: routeId, 
+      hostname: data.hostname, 
+      service: data.service,
+      noTlsVerify: data.noTlsVerify || false,
+    };
   }
 
   /**
    * Edit a tunnel route
    */
-  async editRoute(routeId: string, data: { hostname?: string; service?: string }, userId?: string, ipAddress?: string) {
+  async editRoute(routeId: string, data: { hostname?: string; service?: string; noTlsVerify?: boolean }, userId?: string, ipAddress?: string) {
     const [route] = await db.select().from(tunnelRoutes).where(eq(tunnelRoutes.id, routeId)).limit(1);
     if (!route) throw new AppError(404, 'ROUTE_NOT_FOUND', 'Route not found');
 
     const updateData: any = {};
-    if (data.hostname) updateData.hostname = data.hostname;
-    if (data.service) updateData.service = data.service;
+    if (data.hostname !== undefined) updateData.hostname = data.hostname;
+    if (data.service !== undefined) updateData.service = data.service;
+    if (data.noTlsVerify !== undefined) updateData.noTlsVerify = data.noTlsVerify;
 
     await db.update(tunnelRoutes).set(updateData).where(eq(tunnelRoutes.id, routeId));
 
     const [tunnel] = await db.select().from(cloudflareTunnels)
       .where(eq(cloudflareTunnels.id, route.tunnelId)).limit(1);
     if (tunnel) {
-      const allRoutes = await db.select().from(tunnelRoutes)
-        .where(eq(tunnelRoutes.tunnelId, route.tunnelId));
-      await this.writeConfigFile(tunnel.tunnelId!, allRoutes);
-      await this.reloadDaemon();
+      await this.updateRemoteConfig(tunnel, route.tunnelId);
 
       // Update DNS if hostname changed
       if (data.hostname && data.hostname !== route.hostname && tunnel?.apiToken) {
+        await this.deleteDnsCname(tunnel, route.hostname).catch(() => {});
         await this.createDnsCname(tunnel, data.hostname);
       }
     }
@@ -553,7 +718,6 @@ export class TunnelService {
     const [route] = await db.select().from(tunnelRoutes).where(eq(tunnelRoutes.id, routeId)).limit(1);
     if (!route) throw new AppError(404, 'ROUTE_NOT_FOUND', 'Route not found');
 
-    // Fetch tunnel for DNS cleanup
     const [tunnel] = await db.select().from(cloudflareTunnels)
       .where(eq(cloudflareTunnels.id, route.tunnelId)).limit(1);
 
@@ -565,10 +729,7 @@ export class TunnelService {
     await db.delete(tunnelRoutes).where(eq(tunnelRoutes.id, routeId));
 
     if (tunnel) {
-      const allRoutes = await db.select().from(tunnelRoutes)
-        .where(eq(tunnelRoutes.tunnelId, route.tunnelId));
-      await this.writeConfigFile(tunnel.tunnelId!, allRoutes);
-      await this.reloadDaemon();
+      await this.updateRemoteConfig(tunnel, route.tunnelId);
     }
 
     logger.info({ routeId }, 'Tunnel route deleted');
@@ -594,10 +755,7 @@ export class TunnelService {
     const [tunnel] = await db.select().from(cloudflareTunnels)
       .where(eq(cloudflareTunnels.id, route.tunnelId)).limit(1);
     if (tunnel) {
-      const allRoutes = await db.select().from(tunnelRoutes)
-        .where(eq(tunnelRoutes.tunnelId, route.tunnelId));
-      await this.writeConfigFile(tunnel.tunnelId!, allRoutes);
-      await this.reloadDaemon();
+      await this.updateRemoteConfig(tunnel, route.tunnelId);
     }
 
     auditService.log({
@@ -613,68 +771,112 @@ export class TunnelService {
 
   // --- Private Helpers ---
 
-  private async writeConfigFile(tunnelUuid: string, routes: any[]) {
-    const configDir = '/etc/cloudflared';
-    await sudoFs.mkdir(configDir);
-
-    const activeRoutes = routes.filter(r => r.isActive);
-
-    const config = {
-      tunnel: tunnelUuid,
-      'credentials-file': `${configDir}/${tunnelUuid}.json`,
-      ingress: [
-        ...activeRoutes.map((r: any) => ({
-          hostname: r.hostname,
-          service: r.service,
-        })),
-        { service: 'http_status:404' },
-      ],
-    };
-
-    const yamlContent = YAML.stringify(config);
-    await sudoFs.writeFile(`${configDir}/config.yml`, yamlContent);
-
-    // Ensure credentials file has restrictive permissions
-    const credsPath = `${configDir}/${tunnelUuid}.json`;
-    try {
-      await sudoFs.chmod(credsPath, '600');
-    } catch {
-      // Credentials file may not exist yet (e.g., initial config generation before setup writes it)
+  /**
+   * Update tunnel ingress configuration via Cloudflare API (remote config)
+   * This replaces the old writeConfigFile + reloadDaemon approach
+   * 
+   * Key benefit: NO service reload needed! cloudflared picks up config automatically
+   */
+  private async updateRemoteConfig(tunnel: any, tunnelDbId: string) {
+    if (!tunnel.apiToken || !tunnel.accountId || !tunnel.tunnelId) {
+      logger.warn({ tunnelId: tunnel.tunnelId }, 'Missing required data for remote config update');
+      return;
     }
-  }
 
-  private async reloadDaemon() {
-    await run('systemctl', ['reload', 'cloudflared'], { sudo: true }).catch(() => {
-      return run('systemctl', ['restart', 'cloudflared'], { sudo: true });
+    const apiToken = decrypt(tunnel.apiToken);
+    const accountId = tunnel.accountId;
+    const tunnelId = tunnel.tunnelId;
+
+    const allRoutes = await db.select().from(tunnelRoutes)
+      .where(eq(tunnelRoutes.tunnelId, tunnelDbId));
+    
+    const activeRoutes = allRoutes.filter(r => r.isActive);
+
+    const ingress = activeRoutes.map(r => {
+      const rule: any = {
+        hostname: r.hostname,
+        service: r.service,
+      };
+      // Add originRequest settings for self-signed certs
+      if (r.noTlsVerify) {
+        rule.originRequest = { noTLSVerify: true };
+      }
+      return rule;
     });
-  }
+    
+    // Mandatory catch-all at the end
+    ingress.push({ service: 'http_status:404' });
 
-  private parseTunnelId(output: string): string | null {
-    const match = output.match(/id\s+([a-f0-9-]{36})/i);
-    return match ? match[1] : null;
-  }
-
-  private async createDnsCname(tunnel: any, hostname: string) {
     try {
-      const apiToken = decrypt(tunnel.apiToken);
-      const tunnelId = tunnel.tunnelId;
-
-      const domain = hostname.split('.').slice(-2).join('.');
-      const zonesResponse = await fetch(
-        `https://api.cloudflare.com/client/v4/zones?name=${domain}`,
+      const response = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`,
         {
+          method: 'PUT',
           headers: {
             Authorization: `Bearer ${apiToken}`,
             'Content-Type': 'application/json',
           },
+          body: JSON.stringify({ config: { ingress } }),
         }
       );
-      const zonesData = await zonesResponse.json() as any;
-      const zoneId = zonesData.result?.[0]?.id;
+
+      const data = await response.json() as any;
+      if (!data.success) {
+        const errorMsg = data.errors?.[0]?.message || 'Failed to update tunnel configuration';
+        logger.error({ error: data.errors }, 'Remote config update failed');
+        throw new AppError(500, 'CONFIG_UPDATE_FAILED', errorMsg);
+      }
+
+      logger.info({ tunnelId, activeRoutes: activeRoutes.length }, 'Tunnel configuration updated via API');
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      logger.error({ error, tunnelId }, 'Failed to update remote config');
+      throw new AppError(500, 'CONFIG_UPDATE_FAILED', 'Failed to update tunnel configuration');
+    }
+  }
+
+  private async createDnsCname(tunnel: any, hostname: string) {
+    if (!tunnel.apiToken || !tunnel.tunnelId) return;
+
+    try {
+      const apiToken = decrypt(tunnel.apiToken);
+      const tunnelId = tunnel.tunnelId;
+
+      // Use stored zoneId if available, otherwise look up by domain
+      let zoneId = tunnel.zoneId;
+      if (!zoneId) {
+        const domain = hostname.split('.').slice(-2).join('.');
+        const zonesResponse = await fetch(
+          `https://api.cloudflare.com/client/v4/zones?name=${domain}`,
+          {
+            headers: {
+              Authorization: `Bearer ${apiToken}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        const zonesData = await zonesResponse.json() as any;
+        zoneId = zonesData.result?.[0]?.id;
+      }
 
       if (!zoneId) {
-        logger.warn({ hostname, domain }, 'Could not find Cloudflare zone for hostname');
+        logger.warn({ hostname, domain: tunnel.zoneId ? 'stored' : 'lookup' }, 'Could not find Cloudflare zone for hostname');
         return;
+      }
+
+      // Check for existing CNAME record and delete if found
+      const listRes = await fetch(
+        `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records?name=${hostname}&type=CNAME`,
+        { headers: { Authorization: `Bearer ${apiToken}` } }
+      );
+      const listData = await listRes.json() as any;
+      if (listData.result?.length > 0) {
+        for (const record of listData.result) {
+          await fetch(
+            `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records/${record.id}`,
+            { method: 'DELETE', headers: { Authorization: `Bearer ${apiToken}` } }
+          );
+        }
       }
 
       await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records`, {
@@ -699,10 +901,8 @@ export class TunnelService {
 
   /**
    * Validate that a hostname's root domain is an active Cloudflare zone.
-   * Throws AppError if the zone is not found or not active.
    */
   private async validateHostnameZone(apiToken: string, hostname: string): Promise<void> {
-    // Extract root domain from hostname (e.g., "example.com" from "sub.example.com")
     const parts = hostname.split('.');
     const rootDomain = parts.length >= 2 ? parts.slice(-2).join('.') : hostname;
 
@@ -738,6 +938,8 @@ export class TunnelService {
    * Delete a DNS CNAME record for a tunnel route via Cloudflare API.
    */
   private async deleteDnsCname(tunnel: any, hostname: string) {
+    if (!tunnel.apiToken || !tunnel.tunnelId) return;
+
     try {
       const apiToken = decrypt(tunnel.apiToken);
       const tunnelId = tunnel.tunnelId;
@@ -760,7 +962,6 @@ export class TunnelService {
         return;
       }
 
-      // Find existing CNAME record for this tunnel
       const recordsResponse = await fetch(
         `https://api.cloudflare.com/client/v4/zones/${zoneId}/dns_records?type=CNAME&name=${hostname}`,
         {
@@ -797,19 +998,14 @@ export class TunnelService {
   private async updatePanelUrlIfNeeded(hostname: string): Promise<void> {
     const currentUrl = env.PANEL_URL;
 
-    // Check if current PANEL_URL is private (private IP or localhost)
     if (!isPrivateUrl(currentUrl)) {
       logger.debug({ hostname, currentUrl }, 'PANEL_URL is not private, skipping update');
       return;
     }
 
-    // Check if the hostname matches the panel's domain
-    // We use a simple heuristic: if the hostname looks like a panel hostname
-    // (e.g., contains "panel" or is the primary domain), we update
     try {
       const envPath = path.resolve(process.cwd(), '.env');
       
-      // Read current .env content
       let envContent = '';
       try {
         envContent = await fs.readFile(envPath, 'utf-8');
@@ -818,10 +1014,8 @@ export class TunnelService {
         return;
       }
 
-      // Determine the protocol (https for tunnel routes)
       const newUrl = `https://${hostname}`;
 
-      // Check if PANEL_URL is already set to the same value
       const currentMatch = currentUrl.match(/^https?:\/\/[^\/]+/);
       const newMatch = newUrl.match(/^https?:\/\/[^\/]+/);
       if (currentMatch && newMatch && currentMatch[0] === newMatch[0]) {
@@ -829,23 +1023,15 @@ export class TunnelService {
         return;
       }
 
-      // Update PANEL_URL in .env content
       const newEnvContent = envContent.replace(
         /^PANEL_URL=.*$/m,
         `PANEL_URL=${newUrl}`
       );
 
-      // Write updated .env file
       await sudoFs.writeFile(envPath, newEnvContent);
-
-      // Update process.env for the running process
       process.env.PANEL_URL = newUrl;
 
-      logger.info({ 
-        hostname, 
-        oldUrl: currentUrl, 
-        newUrl 
-      }, `PANEL_URL updated from ${currentUrl} to ${newUrl} due to tunnel route`);
+      logger.info({ hostname, oldUrl: currentUrl, newUrl }, `PANEL_URL updated from ${currentUrl} to ${newUrl} due to tunnel route`);
 
     } catch (error) {
       logger.warn({ hostname, error }, 'Failed to update PANEL_URL in .env file');
@@ -856,7 +1042,6 @@ export class TunnelService {
    * Create a DNS CNAME record via Cloudflare API (public endpoint)
    */
   async createPublicDnsCname(zoneId: string, hostname: string, target: string) {
-    // Find a tunnel to get the API token
     const tunnels = await db.select().from(cloudflareTunnels).limit(1);
     const tunnel = tunnels[0];
     if (!tunnel?.apiToken) {
@@ -880,7 +1065,12 @@ export class TunnelService {
     });
 
     const data = await response.json() as any;
+    if (!data.success) {
+      const errorMsg = data.errors?.map((e: any) => e.message).join('; ') || 'Cloudflare API returned failure';
+      logger.error({ hostname, zoneId, target, errors: data.errors }, 'DNS CNAME creation failed');
+      throw new AppError(422, 'DNS_CNAME_FAILED', `Failed to create DNS CNAME: ${errorMsg}`);
+    }
     logger.info({ hostname, zoneId, target }, 'DNS CNAME created via public endpoint');
-    return { success: data.success, record: data.result };
+    return { success: true, record: data.result };
   }
 }

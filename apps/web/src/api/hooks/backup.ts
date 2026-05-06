@@ -90,9 +90,26 @@ export function useDeleteBackup() {
 
 export function useDownloadBackup() {
   return useMutation({
-    mutationFn: async ({ id }: { id: string }) => {
-      const data = await api.get<string>(`/backups/${id}/download`);
-      return data;
+    mutationFn: async ({ id, filename }: { id: string; filename: string }) => {
+      // Backend streams binary file directly, so we need to use fetch directly
+      const response = await fetch(`/api/v1/backups/${id}/download`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error?.message || `Download failed: ${response.status}`);
+      }
+
+      // Get the blob and create download link
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
     },
   });
 }

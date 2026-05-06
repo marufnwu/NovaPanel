@@ -1,5 +1,5 @@
 import { db } from '../../db/index.js';
-import { domains, subdomains, domainAliases, domainRedirects, databases, ftpAccounts, cronJobs, mailDomains, mailboxes, sslCertificates, websites } from '../../db/schema/index.js';
+import { domains, subdomains, domainAliases, domainRedirects, databases, ftpAccounts, cronJobs, mailDomains, mailboxes, sslCertificates, websites, dnsZones, dnsRecords, cloudflareZones, cloudflareTunnels, tunnelRoutes } from '../../db/schema/index.js';
 import { eq, and, like, count, sql } from 'drizzle-orm';
 import { AppError } from '../../errors.js';
 import { run } from '../../services/executor.js';
@@ -18,6 +18,7 @@ import { CronService } from '../cron/cron.service.js';
 import { SslService } from '../ssl/ssl.service.js';
 import { DnsService } from '../dns/dns.service.js';
 import { WebsitesService } from '../websites/websites.service.js';
+import { TunnelService } from '../tunnel/tunnel.service.js';
 
 // Create service instances for cascade operations
 const mailService = new MailService();
@@ -27,6 +28,7 @@ const cronService = new CronService();
 const sslService = new SslService();
 const dnsService = new DnsService();
 const websitesService = new WebsitesService();
+const tunnelService = new TunnelService();
 
 interface ListOptions {
   page?: number;
@@ -90,6 +92,127 @@ export class DomainsService {
     const [domain] = await db.select().from(domains).where(eq(domains.id, id)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
     return domain;
+  }
+
+  /**
+   * Find an active Cloudflare Tunnel that can serve the given domain.
+   * Looks for a tunnel with an API token (can manage DNS) and active status.
+   */
+  private async findActiveTunnel(): Promise<typeof cloudflareTunnels.$inferSelect | null> {
+    const [tunnel] = await db.select().from(cloudflareTunnels)
+      .where(eq(cloudflareTunnels.status, 'active'))
+      .limit(1);
+    return tunnel && tunnel.apiToken ? tunnel : null;
+  }
+
+  /**
+   * Find a linked Cloudflare zone for the given domain name.
+   * Matches by zoneName (exact) or by checking if the domain ends with a zone name.
+   */
+  private async findLinkedZoneForDomain(domainName: string): Promise<typeof cloudflareZones.$inferSelect | null> {
+    // Exact match first
+    const [exact] = await db.select().from(cloudflareZones)
+      .where(eq(cloudflareZones.zoneName, domainName))
+      .limit(1);
+    if (exact) return exact;
+
+    // Parent zone match (e.g. sub.example.com → example.com zone)
+    const allZones = await db.select().from(cloudflareZones);
+    const match = allZones.find(z => domainName.endsWith(`.${z.zoneName}`));
+    return match || null;
+  }
+
+  /**
+   * Auto-create a tunnel route + Cloudflare CNAME for a domain/subdomain.
+   * This is called after domain creation to automatically wire up Cloudflare Tunnel.
+   * Best-effort: logs warnings on failure but doesn't block domain creation.
+   */
+  private async autoCreateTunnelRoute(hostname: string, domainId: string, userId?: string, ipAddress?: string): Promise<void> {
+    try {
+      // 1. Check if a Cloudflare zone is linked for this domain
+      const linkedZone = await this.findLinkedZoneForDomain(hostname);
+      if (!linkedZone) {
+        logger.debug({ hostname }, 'No linked Cloudflare zone found — skipping auto tunnel route');
+        return;
+      }
+
+      // 2. Find an active tunnel
+      const tunnel = await this.findActiveTunnel();
+      if (!tunnel) {
+        logger.debug({ hostname }, 'No active Cloudflare tunnel found — skipping auto tunnel route');
+        return;
+      }
+
+      // 3. Check if a route already exists for this hostname on this tunnel
+      const [existingRoute] = await db.select().from(tunnelRoutes).where(
+        and(eq(tunnelRoutes.tunnelId, tunnel.id), eq(tunnelRoutes.hostname, hostname))
+      ).limit(1);
+      if (existingRoute) {
+        logger.info({ hostname, tunnelId: tunnel.id }, 'Tunnel route already exists — skipping auto creation');
+        return;
+      }
+
+      // 4. Determine the local service URL
+      // Default: http://localhost:80 (nginx listens on 80, proxies to apache/php-fpm)
+      const service = 'http://localhost:80';
+
+      // 5. Add the route (this also creates DNS CNAME + updates remote config)
+      await tunnelService.addRoute({
+        tunnelId: tunnel.id,
+        hostname,
+        service,
+        domainId,
+      }, userId, ipAddress);
+
+      logger.info({ hostname, domainId, tunnelId: tunnel.id, service }, 'Auto-created tunnel route + CNAME for domain');
+
+      auditService.log({
+        userId,
+        action: 'domain.cloudflare.auto_route_create',
+        resource: `domain:${hostname}`,
+        details: JSON.stringify({ domainId, tunnelId: tunnel.id, hostname, service }),
+        ipAddress,
+      }).catch(err => logger.error({ err }, 'Audit log failed'));
+    } catch (e) {
+      logger.warn({ err: e, hostname, domainId }, 'Auto tunnel route creation failed — domain created without Cloudflare tunnel integration');
+    }
+  }
+
+  /**
+   * Auto-remove tunnel routes + Cloudflare CNAMEs for a domain.
+   * Called during domain/subdomain deletion to clean up Cloudflare resources.
+   * Best-effort: logs warnings on failure but doesn't block deletion.
+   */
+  private async autoRemoveTunnelRoutes(domainId: string, hostname?: string, userId?: string, ipAddress?: string): Promise<void> {
+    try {
+      // Find all tunnel routes linked to this domain
+      const conditions = [eq(tunnelRoutes.domainId, domainId)];
+      if (hostname) {
+        conditions.push(eq(tunnelRoutes.hostname, hostname));
+      }
+      const routes = await db.select().from(tunnelRoutes).where(and(...conditions));
+
+      for (const route of routes) {
+        try {
+          await tunnelService.deleteRoute(route.id, userId, ipAddress);
+          logger.info({ routeId: route.id, hostname: route.hostname, domainId }, 'Auto-removed tunnel route + CNAME for domain');
+        } catch (e) {
+          logger.warn({ err: e, routeId: route.id, hostname: route.hostname }, 'Failed to auto-remove tunnel route — continuing');
+        }
+      }
+
+      if (routes.length > 0) {
+        auditService.log({
+          userId,
+          action: 'domain.cloudflare.auto_route_remove',
+          resource: `domain:${domainId}`,
+          details: JSON.stringify({ domainId, removedRoutes: routes.length, hostnames: routes.map(r => r.hostname) }),
+          ipAddress,
+        }).catch(err => logger.error({ err }, 'Audit log failed'));
+      }
+    } catch (e) {
+      logger.warn({ err: e, domainId }, 'Auto tunnel route removal failed — continuing with domain deletion');
+    }
   }
 
   /**
@@ -184,9 +307,16 @@ export class DomainsService {
         status: 'active',
       });
 
-      // 5. If attaching to existing website, call attachDomain to regenerate nginx config
-      if (websiteMode === 'existing' && websiteId) {
-        await websitesService.attachDomain(websiteId, domainId, data.userId, data.ipAddress);
+      // 5. Regenerate website nginx config to include the new domain
+      //    (both 'create' and 'existing' modes need this since the domain
+      //     was inserted with websiteId already set, so attachDomain() would
+      //     be a no-op)
+      if (websiteId) {
+        try {
+          await nginxService.generateWebsiteConfig(websiteId);
+        } catch (e) {
+          logger.warn({ err: e, websiteId, domainId }, 'Failed to regenerate website nginx config after domain creation');
+        }
       }
 
       // 6. Create DNS zone if requested
@@ -206,6 +336,9 @@ export class DomainsService {
           logger.warn({ err: e, domain: name }, 'Mail enablement failed — continuing');
         }
       }
+
+      // 8. Auto-create Cloudflare Tunnel route + CNAME if zone is linked
+      await this.autoCreateTunnelRoute(name, domainId, data.userId, data.ipAddress);
 
       logger.info({ domainId, name, documentRoot, websiteId, websiteMode }, 'Domain created successfully');
 
@@ -404,6 +537,9 @@ export class DomainsService {
       }
     }
 
+    // --- Cloudflare Tunnel route cleanup ---
+    await this.autoRemoveTunnelRoutes(id, undefined, userId, ipAddress);
+
     // --- DB record cleanup (always performed) ---
     await db.delete(domainRedirects).where(eq(domainRedirects.domainId, id));
     await db.delete(domainAliases).where(eq(domainAliases.domainId, id));
@@ -546,6 +682,52 @@ export class DomainsService {
       phpVersion: data.phpVersion || domain.phpVersion,
     });
 
+    // Create DNS A record for the subdomain if a DNS zone exists for the parent domain
+    try {
+      const [zone] = await db.select().from(dnsZones)
+        .where(eq(dnsZones.domainId, domainId))
+        .limit(1);
+
+      if (zone) {
+        // Get server IP
+        let serverIp = '127.0.0.1';
+        try {
+          const ipResult = await run('hostname', ['-I']);
+          serverIp = ipResult.stdout.trim().split(' ')[0] || '127.0.0.1';
+        } catch { /* use default */ }
+
+        await db.insert(dnsRecords).values({
+          id: nanoid(),
+          zoneId: zone.id,
+          type: 'A',
+          name: data.name,
+          value: serverIp,
+          ttl: 3600,
+          priority: null,
+          isSystem: true,
+        });
+
+        // Sync zone file to disk
+        await dnsService.syncZoneToDisk(zone.id);
+        logger.info({ subdomain: fullSubdomain, ip: serverIp }, 'DNS A record created for subdomain');
+      }
+    } catch (e) {
+      logger.warn({ err: e, subdomain: fullSubdomain }, 'Failed to create DNS record for subdomain — continuing');
+    }
+
+    // Auto-create Cloudflare Tunnel route + CNAME for subdomain
+    await this.autoCreateTunnelRoute(fullSubdomain, domainId, userId, ipAddress);
+
+    // If parent domain is attached to a website, regenerate nginx config
+    // so the subdomain can be served (best-effort)
+    if (domain.websiteId) {
+      try {
+        await nginxService.generateWebsiteConfig(domain.websiteId);
+      } catch (e) {
+        logger.warn({ err: e, websiteId: domain.websiteId }, 'Failed to regenerate website nginx config for new subdomain');
+      }
+    }
+
     auditService.log({
       userId,
       action: 'domain.subdomain.create',
@@ -558,8 +740,36 @@ export class DomainsService {
   }
 
   async deleteSubdomain(domainId: string, subdomainId: string, userId?: string, ipAddress?: string) {
+    const [sub] = await db.select().from(subdomains).where(eq(subdomains.id, subdomainId)).limit(1);
+
+    // Auto-remove Cloudflare Tunnel route + CNAME for this subdomain
+    if (sub?.name) {
+      await this.autoRemoveTunnelRoutes(domainId, sub.name, userId, ipAddress);
+    }
+
     await db.delete(subdomains).where(eq(subdomains.id, subdomainId));
     logger.info({ subdomainId }, 'Subdomain deleted');
+
+    // Clean up document root directory (best-effort)
+    if (sub?.documentRoot) {
+      try {
+        await run('rm', ['-rf', sub.documentRoot], { sudo: true });
+      } catch (e) {
+        logger.warn({ err: e, path: sub.documentRoot }, 'Failed to remove subdomain document root');
+      }
+    }
+
+    // If parent domain is attached to a website, regenerate nginx config
+    if (sub) {
+      const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+      if (domain?.websiteId) {
+        try {
+          await nginxService.generateWebsiteConfig(domain.websiteId);
+        } catch (e) {
+          logger.warn({ err: e, websiteId: domain.websiteId }, 'Failed to regenerate website nginx config after subdomain deletion');
+        }
+      }
+    }
 
     auditService.log({
       userId,
@@ -576,8 +786,21 @@ export class DomainsService {
   }
 
   async createAlias(domainId: string, alias: string, userId?: string, ipAddress?: string) {
+    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+
     const aliasId = nanoid();
     await db.insert(domainAliases).values({ id: aliasId, domainId, alias });
+
+    // If domain is attached to a website, regenerate nginx config
+    // so the alias appears in server_name
+    if (domain.websiteId) {
+      try {
+        await nginxService.generateWebsiteConfig(domain.websiteId);
+      } catch (e) {
+        logger.warn({ err: e, websiteId: domain.websiteId, alias }, 'Failed to regenerate website nginx config after alias creation');
+      }
+    }
 
     auditService.log({
       userId,
@@ -591,7 +814,19 @@ export class DomainsService {
   }
 
   async deleteAlias(domainId: string, aliasId: string, userId?: string, ipAddress?: string) {
+    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+
     await db.delete(domainAliases).where(eq(domainAliases.id, aliasId));
+
+    // If domain is attached to a website, regenerate nginx config
+    // to remove the alias from server_name
+    if (domain?.websiteId) {
+      try {
+        await nginxService.generateWebsiteConfig(domain.websiteId);
+      } catch (e) {
+        logger.warn({ err: e, websiteId: domain.websiteId }, 'Failed to regenerate website nginx config after alias deletion');
+      }
+    }
 
     auditService.log({
       userId,

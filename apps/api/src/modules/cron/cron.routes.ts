@@ -20,12 +20,14 @@ export default async function cronRoutes(fastify: FastifyInstance) {
 
   // POST /cron
   fastify.post('/cron', async (req, reply: FastifyReply) => {
-    const body = req.body as { command?: string; schedule?: string; systemUser?: string };
+    const body = req.body as { command?: string; schedule?: string; systemUser?: string; domainId?: string; websiteId?: string };
     const { command, schedule } = createCronJobSchema.parse(req.body);
     const job = await service.createJob({
       command,
       schedule,
       systemUser: body.systemUser,
+      domainId: body.domainId,
+      websiteId: body.websiteId,
     }, req.user.id, req.ip);
     return reply.status(201).send({ success: true, data: job });
   });

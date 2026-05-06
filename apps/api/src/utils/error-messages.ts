@@ -236,14 +236,20 @@ export function transformDnsError(rawError: string): DnsErrorResult {
 }
 
 /**
- * Create a structured error with transformed error information
+ * Create a structured error with transformed error information.
+ * When the error type is specific (not 'unknown'), uses a descriptive code
+ * and preserves the original error message alongside the human-readable one.
  */
 export function createSslError(rawError: string, code: string = 'SSL_ERROR'): StructuredError {
 	const transformed = transformSslError(rawError);
+	const isUnknown = transformed.errorType === 'unknown';
+	const errorCode = isUnknown ? `${code}_UNKNOWN` : `${code}_${transformed.errorType.toUpperCase()}`;
+	// Preserve original message for specific errors; use transformed for unknown
+	const message = isUnknown ? transformed.message : `${transformed.message} (Original: ${rawError})`;
 	return new StructuredError(
 		422,
-		`${code}_${transformed.errorType.toUpperCase()}`,
-		transformed.message,
+		errorCode,
+		message,
 		transformed.title,
 		transformed.suggestion,
 		rawError
@@ -251,14 +257,20 @@ export function createSslError(rawError: string, code: string = 'SSL_ERROR'): St
 }
 
 /**
- * Create tunnel error structure
+ * Create tunnel error structure.
+ * When the error type is specific (not 'unknown'), uses a descriptive code
+ * and preserves the original error message alongside the human-readable one.
  */
 export function createTunnelError(rawError: string, code: string = 'TUNNEL_ERROR'): StructuredError {
 	const transformed = transformTunnelError(rawError);
+	const isUnknown = transformed.errorType === 'unknown';
+	const errorCode = isUnknown ? `${code}_UNKNOWN` : `${code}_${transformed.errorType.toUpperCase()}`;
+	// Preserve original message for specific errors; use transformed for unknown
+	const message = isUnknown ? transformed.message : `${transformed.message} (Original: ${rawError})`;
 	return new StructuredError(
 		422,
-		`${code}_${transformed.errorType.toUpperCase()}`,
-		transformed.message,
+		errorCode,
+		message,
 		transformed.title,
 		transformed.suggestion,
 		rawError
@@ -266,14 +278,20 @@ export function createTunnelError(rawError: string, code: string = 'TUNNEL_ERROR
 }
 
 /**
- * Create DNS error structure
+ * Create DNS error structure.
+ * When the error type is specific (not 'unknown'), uses a descriptive code
+ * and preserves the original error message alongside the human-readable one.
  */
 export function createDnsError(rawError: string, code: string = 'DNS_ERROR'): StructuredError {
 	const transformed = transformDnsError(rawError);
+	const isUnknown = transformed.errorType === 'unknown';
+	const errorCode = isUnknown ? `${code}_UNKNOWN` : `${code}_${transformed.errorType.toUpperCase()}`;
+	// Preserve original message for specific errors; use transformed for unknown
+	const message = isUnknown ? transformed.message : `${transformed.message} (Original: ${rawError})`;
 	return new StructuredError(
 		422,
-		`${code}_${transformed.errorType.toUpperCase()}`,
-		transformed.message,
+		errorCode,
+		message,
 		transformed.title,
 		transformed.suggestion,
 		rawError

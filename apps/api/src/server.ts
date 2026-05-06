@@ -11,6 +11,7 @@ import { AppError } from './errors.js';
 import { registerRoutes } from './routes.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ZodError } from 'zod';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,7 +28,19 @@ export async function createServer() {
   });
 
   await fastify.register(cors, {
-    origin: env.NODE_ENV === 'development' ? true : env.PANEL_URL,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, server-side, etc.)
+      if (!origin) return callback(null, true);
+      // For a self-hosted single-admin panel, allow any valid origin
+      // This ensures CORS works regardless of how the panel is accessed
+      // (localhost, IP address, domain name, etc.)
+      try {
+        new URL(origin);
+        callback(null, true);
+      } catch {
+        callback(new Error('Not allowed by CORS'), false);
+      }
+    },
     credentials: true,
   });
 
@@ -52,6 +65,20 @@ export async function createServer() {
 
   await fastify.register(websocket);
 
+  // Handle empty JSON bodies (Content-Type: application/json with Content-Length: 0)
+  fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    const bodyStr = typeof body === 'string' ? body : body.toString();
+    if (!bodyStr || bodyStr.trim() === '') {
+      done(null, {});
+      return;
+    }
+    try {
+      done(null, JSON.parse(bodyStr));
+    } catch (err) {
+      done(err as Error | null);
+    }
+  });
+
   // Global error handler
   fastify.setErrorHandler((error, req, reply) => {
     if (error instanceof AppError) {
@@ -61,6 +88,21 @@ export async function createServer() {
           code: error.code,
           message: error.message,
           field: error.field,
+        },
+      });
+    }
+
+    // Zod validation errors
+    if (error instanceof ZodError) {
+      return reply.status(400).send({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: error.errors.map(e => ({
+            field: e.path.join('.'),
+            message: e.message,
+          })),
         },
       });
     }

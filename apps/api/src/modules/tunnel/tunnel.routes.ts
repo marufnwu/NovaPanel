@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { TunnelService } from './tunnel.service.js';
-import { setupTunnelSchema, addRouteSchema } from './tunnel.schema.js';
+import { setupTunnelSchema, addRouteSchema, editRouteSchema } from './tunnel.schema.js';
 import { requireAuth, requireRole } from '../auth/auth.middleware.js';
 
 export default async function tunnelRoutes(fastify: FastifyInstance) {
@@ -30,7 +30,7 @@ export default async function tunnelRoutes(fastify: FastifyInstance) {
     return { success: true, data: await service.getTunnelInfo(id) };
   });
 
-  // GET /tunnel/:id/config — Get tunnel configuration as YAML
+  // GET /tunnel/:id/config — Get tunnel configuration as JSON
   fastify.get('/tunnel/:id/config', async (req) => {
     const { id } = req.params as { id: string };
     return { success: true, data: await service.getTunnelConfig(id) };
@@ -41,7 +41,7 @@ export default async function tunnelRoutes(fastify: FastifyInstance) {
     preHandler: [requireRole('admin')],
     handler: async (req) => {
       const data = setupTunnelSchema.parse(req.body);
-      return { success: true, data: await service.setup(data.name, data.apiToken, data.accountId, req.user.id, req.ip) };
+      return { success: true, data: await service.setup(data.name, data.apiToken, data.accountId, data.zoneId, req.user.id, req.ip) };
     },
   });
 
@@ -84,7 +84,7 @@ export default async function tunnelRoutes(fastify: FastifyInstance) {
   // PUT /tunnel/routes/:id — Edit route
   fastify.put('/tunnel/routes/:id', async (req) => {
     const { id } = req.params as { id: string };
-    const data = req.body as { hostname?: string; service?: string };
+    const data = editRouteSchema.parse(req.body);
     return { success: true, data: await service.editRoute(id, data, req.user.id, req.ip) };
   });
 
@@ -102,12 +102,14 @@ export default async function tunnelRoutes(fastify: FastifyInstance) {
   });
 
   // POST /tunnel/dns/cname — Create DNS CNAME record
-  fastify.post('/tunnel/dns/cname', async (req) => {
+  fastify.post('/tunnel/dns/cname', async (req, reply) => {
     const { zoneId, hostname, target } = req.body as { zoneId: string; hostname: string; target: string };
     try {
-      return { success: true, data: await service.createPublicDnsCname(zoneId, hostname, target) };
+      const result = await service.createPublicDnsCname(zoneId, hostname, target);
+      return { success: true, data: result };
     } catch (error: any) {
-      return { success: false, error: error.message || 'Failed to create DNS CNAME' };
+      const statusCode = error.statusCode || 500;
+      return reply.status(statusCode).send({ success: false, error: error.message || 'Failed to create DNS CNAME' });
     }
   });
 }

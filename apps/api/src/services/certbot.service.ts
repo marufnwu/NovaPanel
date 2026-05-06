@@ -177,7 +177,7 @@ export class CertbotService {
   async getCertExpiry(certPath: string): Promise<Date> {
     const result = await run('openssl', [
       'x509', '-enddate', '-noout', '-in', certPath,
-    ]);
+    ], { sudo: true });
     // Output format: notAfter=Mon DD HH:MM:SS YYYY GMT
     const match = result.stdout.match(/notAfter=(.+)/);
     if (!match) throw new Error('Could not parse certificate expiry date');

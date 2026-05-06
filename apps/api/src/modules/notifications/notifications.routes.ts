@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { requireAuth } from '../auth/auth.middleware.js';
 import { notificationsService } from './notifications.service.js';
+import { updatePreferencesSchema } from './notifications.schema.js';
 
 export default async function notificationsRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
@@ -12,10 +13,17 @@ export default async function notificationsRoutes(fastify: FastifyInstance) {
   });
 
   // PUT /notifications/preferences
-  fastify.put('/notifications/preferences', async (req) => {
-    const data = req.body as any;
-    const prefs = await notificationsService.updatePreferences(req.user.id, data);
-    return { success: true, data: prefs };
+  fastify.put('/notifications/preferences', async (req, reply) => {
+    try {
+      const data = updatePreferencesSchema.parse(req.body);
+      const prefs = await notificationsService.updatePreferences(req.user.id, data);
+      return { success: true, data: prefs };
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return reply.status(400).send({ success: false, error: 'Invalid preferences data', details: error.errors });
+      }
+      return reply.status(500).send({ success: false, error: error.message || 'Failed to update preferences' });
+    }
   });
 
   // GET /notifications
@@ -71,4 +79,3 @@ export default async function notificationsRoutes(fastify: FastifyInstance) {
     }
   });
 }
-

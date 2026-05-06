@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { WebServerService } from './webserver.service.js';
-import { updateWebServerSchema } from './webserver.schema.js';
+import { updateWebServerSchema, updateErrorPagesSchema, updateRateLimitSchema } from './webserver.schema.js';
 import { requireAuth } from '../auth/auth.middleware.js';
 import { nginxService } from '../../services/nginx.service.js';
 import { apacheService } from '../../services/apache.service.js';
@@ -95,13 +95,16 @@ export default async function webServerRoutes(fastify: FastifyInstance) {
   });
 
   // PUT /webserver/vhost/:domain/error-pages — Update custom error pages
-  fastify.put('/webserver/vhost/:domain/error-pages', async (req) => {
+  fastify.put('/webserver/vhost/:domain/error-pages', async (req, reply) => {
     const { domain } = req.params as { domain: string };
-    const { errorPages } = req.body as { errorPages: Array<{ code: number; enabled: boolean; content: string; contentType: string }> };
     try {
-      const result = await service.updateErrorPages(domain, errorPages, req.user.id);
+      const parsed = updateErrorPagesSchema.parse(req.body);
+      const result = await service.updateErrorPages(domain, parsed.errorPages, req.user.id);
       return { success: true, data: result };
     } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return reply.status(400).send({ success: false, error: 'Invalid error pages data', details: error.errors });
+      }
       return { success: false, error: error.message };
     }
   });
@@ -118,13 +121,16 @@ export default async function webServerRoutes(fastify: FastifyInstance) {
   });
 
   // PUT /webserver/vhost/:domain/rate-limit — Update rate limiting config
-  fastify.put('/webserver/vhost/:domain/rate-limit', async (req) => {
+  fastify.put('/webserver/vhost/:domain/rate-limit', async (req, reply) => {
     const { domain } = req.params as { domain: string };
-    const data = req.body as { enabled?: boolean; requestsPerSecond?: number; burstSize?: number; timeoutSeconds?: number };
     try {
+      const data = updateRateLimitSchema.parse(req.body);
       const result = await service.updateRateLimitConfig(domain, data, req.user.id);
       return { success: true, data: result };
     } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return reply.status(400).send({ success: false, error: 'Invalid rate limit data', details: error.errors });
+      }
       return { success: false, error: error.message };
     }
   });
