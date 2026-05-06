@@ -89,6 +89,8 @@ export function CloudflarePage() {
   const [activeTab, setActiveTab] = useState<TopTab>('overview');
   const [selectedZone, setSelectedZone] = useState<LinkedZone | null>(null);
   const [domainTab, setDomainTab] = useState<DomainTab>('overview');
+  // Shared API token — entered once in SetupModal, reused in LinkZoneModal
+  const [sharedApiToken, setSharedApiToken] = useState('');
 
   const handleSelectZone = (zone: LinkedZone) => {
     setSelectedZone(zone);
@@ -100,12 +102,15 @@ export function CloudflarePage() {
     setDomainTab('overview');
   };
 
+  // Share API token between SetupModal and LinkZoneModal
+  const [showLinkModal, setShowLinkModal] = useState(false);
+
   // If a zone is selected, show zone detail (only in domains tab)
   if (selectedZone) {
     return (
       <div>
         <PageHeader title="Cloudflare" description="Manage tunnels, domains, DNS, SSL, and security" />
-        <TopTabs activeTab="domains" onTabChange={(t) => { if (t !== 'domains') handleBackFromZone(); setActiveTab(t); }} />
+        <TopTabs activeTab="domains" onTabChange={(t) => { if (t !== 'domains') handleBackFromZone(); setActiveTab(t); }} sharedApiToken={sharedApiToken} onConnectDomain={() => setShowLinkModal(true)} />
         <ZoneDetail zone={selectedZone} onBack={handleBackFromZone} activeTab={domainTab} onTabChange={setDomainTab} />
       </div>
     );
@@ -114,12 +119,15 @@ export function CloudflarePage() {
   return (
     <div>
       <PageHeader title="Cloudflare" description="Manage tunnels, domains, DNS, SSL, and security" />
-      <TopTabs activeTab={activeTab} onTabChange={setActiveTab} />
+      <TopTabs activeTab={activeTab} onTabChange={setActiveTab} sharedApiToken={sharedApiToken} onConnectDomain={() => setShowLinkModal(true)} />
       <div className="mt-4">
         {activeTab === 'overview' && <OverviewSection />}
-        {activeTab === 'tunnels' && <TunnelsSection />}
+        {activeTab === 'tunnels' && <TunnelsSection sharedApiToken={sharedApiToken} onSetupTunnel={() => setShowLinkModal(true)} onTokenSaved={(token) => setSharedApiToken(token)} />}
         {activeTab === 'domains' && <DomainsSection onSelectZone={handleSelectZone} />}
       </div>
+
+      {/* Shared link modal — pre-filled with token from SetupModal, or empty if user goes straight to Domains tab */}
+      {showLinkModal && <LinkZoneModal initialApiToken={sharedApiToken} onClose={() => setShowLinkModal(false)} onLinked={() => { setShowLinkModal(false); }} />}
     </div>
   );
 }
@@ -128,7 +136,7 @@ export function CloudflarePage() {
 // Top-Level Tab Navigation
 // ============================================================
 
-function TopTabs({ activeTab, onTabChange }: { activeTab: TopTab; onTabChange: (t: TopTab) => void }) {
+function TopTabs({ activeTab, onTabChange, sharedApiToken, onConnectDomain }: { activeTab: TopTab; onTabChange: (t: TopTab) => void; sharedApiToken?: string; onConnectDomain?: () => void }) {
   const tabs: Array<{ id: TopTab; label: string; icon: any }> = [
     { id: 'overview', label: 'Overview', icon: Cloud },
     { id: 'tunnels', label: 'Tunnels', icon: Waypoints },
@@ -136,20 +144,39 @@ function TopTabs({ activeTab, onTabChange }: { activeTab: TopTab; onTabChange: (
   ];
 
   return (
-    <div className="flex gap-1 overflow-x-auto border-b border-border pb-px">
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          onClick={() => onTabChange(tab.id)}
-          className={`inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-5 py-3 text-sm font-medium transition-colors ${
-            activeTab === tab.id
-              ? 'border-primary text-primary'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          <tab.icon className="h-4 w-4" /> {tab.label}
-        </button>
-      ))}
+    <div className="flex items-center justify-between gap-4 overflow-x-auto border-b border-border pb-px">
+      <div className="flex gap-1">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => onTabChange(tab.id)}
+            className={`inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-5 py-3 text-sm font-medium transition-colors ${
+              activeTab === tab.id
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <tab.icon className="h-4 w-4" /> {tab.label}
+          </button>
+        ))}
+      </div>
+      {/* Quick action: show token status + Connect Domain button */}
+      <div className="flex items-center gap-2 pr-2">
+        {sharedApiToken ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-600">
+            <CheckCircle className="h-3 w-3" /> Cloudflare Connected
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+            <XCircle className="h-3 w-3" /> Not Connected
+          </span>
+        )}
+        {onConnectDomain && (
+          <button onClick={onConnectDomain} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">
+            <Plus className="h-3 w-3" /> Connect Domain
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -361,7 +388,7 @@ function StatCard({ icon, iconBg, iconColor, label, value, subtext }: {
 // Tunnels Section
 // ============================================================
 
-function TunnelsSection() {
+function TunnelsSection({ sharedApiToken, onSetupTunnel, onTokenSaved }: { sharedApiToken?: string; onSetupTunnel?: () => void; onTokenSaved?: (token: string) => void }) {
   const { data: status, isLoading, isError, refetch } = useTunnelStatus();
   const { data: routes } = useTunnelRoutes();
   const { data: domains } = useDomains();
@@ -518,7 +545,7 @@ function TunnelsSection() {
       )}
 
       {/* Modals */}
-      {showSetup && <SetupModal onClose={() => setShowSetup(false)} />}
+      {showSetup && <SetupModal onClose={() => setShowSetup(false)} onTokenSaved={onTokenSaved} />}
       {showAddRoute && <AddRouteModal tunnel={showAddRoute} onClose={() => setShowAddRoute(null)} />}
       {showEditRoute && <EditRouteModal route={showEditRoute} onClose={() => setShowEditRoute(null)} />}
       {showConfig && <ConfigPreviewModal tunnel={showConfig} onClose={() => setShowConfig(null)} />}
@@ -1546,15 +1573,24 @@ function WildcardTab({ zoneDbId, zoneName }: { zoneDbId: string; zoneName: strin
 // Connect Domain Modal
 // ============================================================
 
-function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: () => void }) {
-  const [step, setStep] = useState<'token' | 'validating' | 'select' | 'linking'>('token');
-  const [apiToken, setApiToken] = useState('');
+function LinkZoneModal({ onClose, onLinked, initialApiToken }: { onClose: () => void; onLinked: () => void; initialApiToken?: string }) {
+  const [step, setStep] = useState<'token' | 'validating' | 'select' | 'linking'>(initialApiToken ? 'validating' : 'token');
+  const [apiToken, setApiToken] = useState(initialApiToken || '');
   const [cfZones, setCfZones] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [tokenInfo, setTokenInfo] = useState<{ valid: boolean; status: string; type: string } | null>(null);
   const [zoneFilter, setZoneFilter] = useState('');
 
+  // Auto-fetch zones if token was pre-filled from SetupModal
+  useEffect(() => {
+    if (initialApiToken && initialApiToken === apiToken && step === 'validating') {
+      handleValidateAndFetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleValidateAndFetch = async () => {
+    if (!apiToken.trim()) return;
     setLoading(true);
     try {
       const validateData = await api.post<{ valid: boolean; status: string; type: string }>('/tunnel/validate-token', { apiToken });
@@ -1708,7 +1744,7 @@ function ToggleSetting({ label, description, checked, onChange }: {
 // Tunnel Setup Modal
 // ============================================================
 
-function SetupModal({ onClose }: { onClose: () => void }) {
+function SetupModal({ onClose, onTokenSaved }: { onClose: () => void; onTokenSaved?: (token: string) => void }) {
   const validateToken = useValidateToken();
   const fetchZones = useFetchZones();
   const setup = useSetupTunnel();
@@ -1735,6 +1771,8 @@ function SetupModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = () => {
     setStep('creating');
+    // Tell parent to save token so LinkZoneModal can reuse it without re-entering
+    if (onTokenSaved) onTokenSaved(form.apiToken);
     setup.mutate({ name: form.name, apiToken: form.apiToken, zoneId: form.zoneId || undefined }, {
       onSuccess: () => { toast.success('Tunnel created successfully'); onClose(); },
       onError: (error: any) => { toast.error(error.message || 'Failed to create tunnel'); setStep('name'); },
