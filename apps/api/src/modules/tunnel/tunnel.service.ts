@@ -37,7 +37,7 @@ interface TunnelInfo {
  * Enhanced tunnel status with connectivity information
  */
 export interface TunnelStatus {
-  status: 'active' | 'inactive' | 'degraded';
+  status: 'active' | 'inactive' | 'degraded' | 'down';
   processRunning: boolean;
   connectedToEdge: boolean;
   connectionCount: number;
@@ -47,7 +47,7 @@ export interface TunnelStatus {
     id: string;
     tunnelId: string;
     name: string;
-    status: 'active' | 'inactive';
+    status: 'active' | 'inactive' | 'degraded' | 'down';
     accountId?: string;
     zoneId?: string;
   }>;
@@ -117,8 +117,10 @@ export class TunnelService {
     });
 
     // 4. Install cloudflared as systemd service using tunnel token
-    // This is the key difference: no config file, just the token
-    await run('cloudflared', ['--protocol', 'http2', 'service', 'install', tunnelToken], { sudo: true });
+    // cloudflared auto-selects QUIC with HTTP/2 fallback — no --protocol flag needed
+    // Note: only ONE cloudflared service runs per machine regardless of how many
+    // cloudflareTunnels DB rows exist. All tunnels share the same systemd service.
+    await run('cloudflared', ['service', 'install', tunnelToken], { sudo: true });
     await run('systemctl', ['enable', 'cloudflared'], { sudo: true });
     await run('systemctl', ['start', 'cloudflared'], { sudo: true });
 
@@ -315,13 +317,13 @@ export class TunnelService {
       const info = data.result;
       // Map Cloudflare API status to panel status values
       const apiStatus = info.status as string;
-      let panelStatus: 'active' | 'inactive' | 'degraded' = 'inactive';
+      let panelStatus: 'active' | 'inactive' | 'degraded' | 'down' = 'inactive';
       if (apiStatus === 'healthy') {
         panelStatus = 'active';
       } else if (apiStatus === 'degraded') {
         panelStatus = 'degraded';
       } else if (apiStatus === 'down') {
-        panelStatus = 'inactive';
+        panelStatus = 'down';
       }
       // else 'inactive' stays 'inactive'
       return {
@@ -655,7 +657,7 @@ export class TunnelService {
       }
     }
 
-    let status: 'active' | 'inactive' | 'degraded' = 'inactive';
+    let status: 'active' | 'inactive' | 'degraded' | 'down' = 'inactive';
     let message: string | undefined;
 
     if (processRunning && connectedToEdge) {
