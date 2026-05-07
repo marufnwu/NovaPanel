@@ -148,7 +148,6 @@ export async function createServer() {
     await fastify.register(staticPlugin, {
       root: webDist,
       prefix: '/',
-      wildcard: false,
     });
 
     // SPA fallback
