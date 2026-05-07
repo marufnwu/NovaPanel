@@ -46,7 +46,9 @@ function StatusBadge({ status }: { status: Website['status'] }) {
 function CreateWebsiteModal({ onClose }: { onClose: () => void }) {
   const createWebsite = useCreateWebsite();
   const { data: phpData, isLoading: phpLoading } = usePhpVersions();
-  const phpVersions = (phpData?.versions?.length ? phpData.versions : DEFAULT_PHP_VERSIONS);
+  const phpVersions = (phpData?.versions?.length
+    ? phpData.versions.map((v: any) => typeof v === 'string' ? v : v.version)
+    : DEFAULT_PHP_VERSIONS);
   const [form, setForm] = useState<CreateWebsiteInput>({
     name: '',
     phpVersion: phpVersions[0] || '8.1',

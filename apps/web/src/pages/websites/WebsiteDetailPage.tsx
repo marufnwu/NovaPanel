@@ -74,7 +74,9 @@ function StatusBadge({ status }: { status: Website['status'] }) {
 function EditWebsiteModal({ website, onClose }: { website: Website; onClose: () => void }) {
   const updateWebsite = useUpdateWebsite();
   const { data: phpData, isLoading: phpLoading } = usePhpVersions();
-  const phpVersions = (phpData?.versions?.length ? phpData.versions : DEFAULT_PHP_VERSIONS);
+  const phpVersions = (phpData?.versions?.length
+    ? phpData.versions.map((v: any) => typeof v === 'string' ? v : v.version)
+    : DEFAULT_PHP_VERSIONS);
   const [form, setForm] = useState<UpdateWebsiteInput>({
     name: website.name,
     phpVersion: website.phpVersion,

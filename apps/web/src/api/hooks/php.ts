@@ -43,7 +43,7 @@ export interface PhpDomainOption {
 export function usePhpVersions() {
   return useQuery({
     queryKey: ['php', 'versions'],
-    queryFn: () => api.get<{ versions: string[] }>('/php/versions'),
+    queryFn: () => api.get<{ versions: Array<{ version: string; fpm: { active: boolean; port: number | null } }> }>('/php/versions'),
     staleTime: 60_000, // Cache for 1 minute — versions don't change often
   });
 }

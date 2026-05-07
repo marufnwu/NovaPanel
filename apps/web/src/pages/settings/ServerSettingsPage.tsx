@@ -347,7 +347,7 @@ function PhpSettingsSection() {
   const [selectedVersion, setSelectedVersion] = useState('');
 
   const versions: string[] = phpData?.versions?.length
-    ? phpData.versions
+    ? phpData.versions.map((v: any) => typeof v === 'string' ? v : v.version)
     : DEFAULT_PHP_VERSIONS;
 
   useEffect(() => {
