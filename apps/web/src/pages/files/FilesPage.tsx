@@ -1408,7 +1408,8 @@ export function FilesPage() {
         </button>
       </div>
 
-      {/* Action buttons */}
+      {/* Action buttons - only show when context is selected */}
+      {hasContext && (
       <div className="mb-4 flex gap-3 flex-wrap">
         <button onClick={() => setShowNewFolder(true)} className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">
           <FolderPlus className="h-4 w-4" /> New Folder
@@ -1437,17 +1438,31 @@ export function FilesPage() {
           </>
         )}
       </div>
-
-      {/* No context selected - show empty state */}
-      {!hasContext && (
-        <EmptyState
-          icon={Globe}
-          title="No website or domain selected"
-          description="Select a website or domain above to browse files"
-        />
       )}
 
-      {/* Main content area with tree and file list */}
+      {/* No context selected - show integrated welcome panel */}
+      {!hasContext && (
+        <div className="rounded-lg border border-border bg-card p-8">
+          <div className="max-w-md mx-auto text-center">
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+              <Folder className="h-8 w-8 text-primary" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2">File Manager</h3>
+            <p className="text-muted-foreground text-sm mb-6">
+              Select a website or domain above to browse and manage server files
+            </p>
+            <div className="flex justify-center gap-3">
+              <div className="text-sm text-muted-foreground flex items-center gap-2">
+                <Globe className="h-4 w-4" />
+                <span>Choose from websites or domains</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main content area with tree and file list - only show when context is selected */}
+      {hasContext && (
       <div className="flex gap-4 h-[calc(100vh-20rem)]">
         {/* Left panel - Tree view */}
         <div className="w-64 flex-shrink-0 rounded-lg border border-border bg-card overflow-hidden flex flex-col">
@@ -1645,6 +1660,7 @@ export function FilesPage() {
           <DetailsPanel entry={selectedEntry} currentPath={currentPath} onClose={() => setShowDetails(false)} />
         )}
       </div>
+      )}
 
       {/* Modals — pass context (websiteId or domainId) */}
       {showUpload && hasContext && (
