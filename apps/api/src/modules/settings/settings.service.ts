@@ -647,6 +647,31 @@ export class SettingsService {
     return this.getSslEmail();
   }
 
+  // ============================================================
+  // Cloudflare central config (API token + account ID)
+  // Stored once — reused by both tunnel setup and zone linking
+  // ============================================================
+
+  async getCloudflareConfig(): Promise<{ apiToken: string; accountId: string } | null> {
+    const apiToken = getSetting('cloudflareApiToken', '');
+    const accountId = getSetting('cloudflareAccountId', '');
+    if (!apiToken) return null;
+    return { apiToken, accountId };
+  }
+
+  async setCloudflareConfig(data: { apiToken: string; accountId: string }, userId?: string, ipAddress?: string): Promise<{ apiToken: string; accountId: string }> {
+    setSetting('cloudflareApiToken', data.apiToken);
+    setSetting('cloudflareAccountId', data.accountId);
+    await auditService.log({
+      userId,
+      ipAddress,
+      action: 'settings.cloudflare.update',
+      details: JSON.stringify({ accountId: data.accountId }),
+    });
+    logger.info({ accountId: data.accountId }, 'Cloudflare config updated');
+    return { apiToken: data.apiToken, accountId: data.accountId };
+  }
+
   // --- Server Power ---
 
   async rebootServer() {

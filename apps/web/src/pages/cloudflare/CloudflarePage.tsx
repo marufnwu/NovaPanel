@@ -4,7 +4,7 @@ import {
   useTunnelStatus, useTunnelRoutes, useSetupTunnel, useStartTunnel, useStopTunnel,
   useAddTunnelRoute, useDeleteTunnelRoute, useToggleTunnelRoute, useEditTunnelRoute,
   useDeleteTunnel, useTunnelInfo, useTunnelConfig, useValidateToken, useFetchZones,
-  useTunnelLogs, useSyncTunnelRoutes,
+  useTunnelLogs, useSyncTunnelRoutes, useCloudflareConfig, useSetCloudflareConfig,
   CloudflareTunnel, TunnelRoute, CloudflareZone,
 } from '../../api/hooks/tunnel';
 import { useDomains } from '../../api/hooks/domains';
@@ -79,7 +79,6 @@ interface FirewallRule {
 
 type TopTab = 'overview' | 'tunnels' | 'domains';
 type DomainTab = 'overview' | 'dns' | 'ssl' | 'settings' | 'firewall' | 'redirects' | 'mail' | 'wildcard';
-type SetupStep = 'token' | 'zone' | 'name' | 'creating';
 
 // ============================================================
 // Main Page Component
@@ -89,8 +88,13 @@ export function CloudflarePage() {
   const [activeTab, setActiveTab] = useState<TopTab>('overview');
   const [selectedZone, setSelectedZone] = useState<LinkedZone | null>(null);
   const [domainTab, setDomainTab] = useState<DomainTab>('overview');
-  // Shared API token — entered once in SetupModal, reused in LinkZoneModal
-  const [sharedApiToken, setSharedApiToken] = useState('');
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
+
+  // Centralized Cloudflare config — loaded once from settings.json on the server
+  const { data: cloudflareConfig } = useCloudflareConfig();
+  const cfConfig = cloudflareConfig && 'apiToken' in cloudflareConfig ? cloudflareConfig : null;
+  const isConnected = !!(cfConfig?.apiToken);
 
   const handleSelectZone = (zone: LinkedZone) => {
     setSelectedZone(zone);
@@ -102,15 +106,23 @@ export function CloudflarePage() {
     setDomainTab('overview');
   };
 
-  // Share API token between SetupModal and LinkZoneModal
-  const [showLinkModal, setShowLinkModal] = useState(false);
+  // Not yet configured — show unified setup card
+  if (!isConnected) {
+    return (
+      <div>
+        <PageHeader title="Cloudflare" description="Manage tunnels, domains, DNS, SSL, and security" />
+        <CloudflareSetupCard onSetup={() => setShowSetup(true)} />
+        {showSetup && <CloudflareSetupModal onClose={() => setShowSetup(false)} />}
+      </div>
+    );
+  }
 
   // If a zone is selected, show zone detail (only in domains tab)
   if (selectedZone) {
     return (
       <div>
         <PageHeader title="Cloudflare" description="Manage tunnels, domains, DNS, SSL, and security" />
-        <TopTabs activeTab="domains" onTabChange={(t) => { if (t !== 'domains') handleBackFromZone(); setActiveTab(t); }} sharedApiToken={sharedApiToken} onConnectDomain={() => setShowLinkModal(true)} />
+        <TopTabs activeTab="domains" onTabChange={(t) => { if (t !== 'domains') handleBackFromZone(); setActiveTab(t); }} isConnected={isConnected} onConnectDomain={() => setShowLinkModal(true)} />
         <ZoneDetail zone={selectedZone} onBack={handleBackFromZone} activeTab={domainTab} onTabChange={setDomainTab} />
       </div>
     );
@@ -119,15 +131,172 @@ export function CloudflarePage() {
   return (
     <div>
       <PageHeader title="Cloudflare" description="Manage tunnels, domains, DNS, SSL, and security" />
-      <TopTabs activeTab={activeTab} onTabChange={setActiveTab} sharedApiToken={sharedApiToken} onConnectDomain={() => setShowLinkModal(true)} />
+      <TopTabs activeTab={activeTab} onTabChange={setActiveTab} isConnected={isConnected} onConnectDomain={() => setShowLinkModal(true)} />
       <div className="mt-4">
         {activeTab === 'overview' && <OverviewSection />}
-        {activeTab === 'tunnels' && <TunnelsSection sharedApiToken={sharedApiToken} onSetupTunnel={() => setShowLinkModal(true)} onTokenSaved={(token) => setSharedApiToken(token)} />}
+        {activeTab === 'tunnels' && <TunnelsSection onSetupTunnel={() => setShowSetup(true)} />}
         {activeTab === 'domains' && <DomainsSection onSelectZone={handleSelectZone} />}
       </div>
 
-      {/* Shared link modal — pre-filled with token from SetupModal, or empty if user goes straight to Domains tab */}
-      {showLinkModal && <LinkZoneModal initialApiToken={sharedApiToken} onClose={() => setShowLinkModal(false)} onLinked={() => { setShowLinkModal(false); }} />}
+      {/* Connect Domain: reads token from server-side settings — no token entry needed */}
+      {showLinkModal && <LinkZoneModal onClose={() => setShowLinkModal(false)} onLinked={() => setShowLinkModal(false)} />}
+    </div>
+  );
+}
+
+// ============================================================
+// Unified Cloudflare Setup Card + Modal
+// ============================================================
+
+function CloudflareSetupCard({ onSetup }: { onSetup: () => void }) {
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <div className="p-10 text-center">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/20">
+          <Cloud className="h-8 w-8 text-orange-500" />
+        </div>
+        <h3 className="mb-2 text-lg font-semibold">Connect Cloudflare</h3>
+        <p className="mb-6 max-w-lg mx-auto text-sm text-muted-foreground">
+          Connect your Cloudflare account to manage tunnels, DNS, SSL, firewall, and security from this panel.
+        </p>
+        <div className="mx-auto max-w-lg grid gap-4 sm:grid-cols-3 text-left">
+          <div className="rounded-lg border border-border p-4">
+            <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-md bg-blue-100 dark:bg-blue-900/20">
+              <span className="text-sm font-bold text-blue-600 dark:text-blue-400">1</span>
+            </div>
+            <h4 className="text-sm font-medium">Get API Token</h4>
+            <p className="mt-1 text-xs text-muted-foreground">Create a Cloudflare API token with DNS and SSL permissions</p>
+          </div>
+          <div className="rounded-lg border border-border p-4">
+            <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-md bg-blue-100 dark:bg-blue-900/20">
+              <span className="text-sm font-bold text-blue-600 dark:text-blue-400">2</span>
+            </div>
+            <h4 className="text-sm font-medium">Enter Token</h4>
+            <p className="mt-1 text-xs text-muted-foreground">Paste your API token below and connect your account</p>
+          </div>
+          <div className="rounded-lg border border-border p-4">
+            <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-md bg-blue-100 dark:bg-blue-900/20">
+              <span className="text-sm font-bold text-blue-600 dark:text-blue-400">3</span>
+            </div>
+            <h4 className="text-sm font-medium">Manage Everything</h4>
+            <p className="mt-1 text-xs text-muted-foreground">Control DNS, SSL, firewall, tunnels, and more</p>
+          </div>
+        </div>
+        <button onClick={onSetup} className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+          <Plus className="h-4 w-4" /> Connect Cloudflare Account
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CloudflareSetupModal({ onClose }: { onClose: () => void }) {
+  const setConfig = useSetCloudflareConfig();
+  const validateToken = useValidateToken();
+  const fetchZones = useFetchZones();
+  const [step, setStep] = useState<'token' | 'account' | 'saving'>('token');
+  const [form, setForm] = useState({ apiToken: '', accountId: '', zoneId: '' });
+  const [validation, setValidation] = useState<{ valid?: boolean; email?: string; error?: string }>({});
+  const [zones, setZones] = useState<CloudflareZone[]>([]);
+  const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([]);
+
+  const handleValidateToken = async () => {
+    if (!form.apiToken) return;
+    validateToken.mutate(form.apiToken, {
+      onSuccess: (data) => {
+        setValidation({ valid: true, email: data.email });
+        // If token has account-level access, fetch accounts
+        if (data.type === 'account') {
+          fetchZones.mutate({ apiToken: form.apiToken }, {
+            onSuccess: (fetchedZones) => {
+              setZones(fetchedZones);
+              setStep('account');
+            },
+            onError: (e: any) => {
+              setValidation(v => ({ ...v, error: e.message }));
+              setStep('account');
+            },
+          });
+        } else {
+          setStep('account');
+        }
+      },
+      onError: (error: any) => { setValidation({ valid: false, error: error.message || 'Invalid token' }); },
+    });
+  };
+
+  const handleSubmit = async () => {
+    if (!form.apiToken) return;
+    setStep('saving');
+    try {
+      await setConfig.mutateAsync({ apiToken: form.apiToken, accountId: form.accountId });
+      toast.success('Cloudflare connected successfully!');
+      onClose();
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to save config');
+      setStep('account');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-lg">
+        <h2 className="mb-4 text-lg font-semibold">Connect Cloudflare Account</h2>
+
+        {step === 'token' && (
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium">Cloudflare API Token</label>
+              <input type="password" value={form.apiToken} onChange={(e) => setForm({ ...form, apiToken: e.target.value })} placeholder="cfat_xxxxxxxxxxxxx" className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              <p className="mt-1 text-xs text-muted-foreground">Token needs Account - Cloudflare Tunnel - Edit and Zone - DNS - Edit permissions</p>
+            </div>
+            {validation.error && <div className="flex items-center gap-2 rounded-lg bg-red-500/10 p-3 text-red-500 text-sm"><AlertTriangle className="h-4 w-4" /><span>{validation.error}</span></div>}
+            {validation.valid && validation.email && <div className="flex items-center gap-2 rounded-lg bg-green-500/10 p-3 text-green-500 text-sm"><CheckCircle className="h-4 w-4" /><span>Valid token for {validation.email}</span></div>}
+            <div className="flex justify-end gap-3">
+              <button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
+              <button onClick={handleValidateToken} disabled={!form.apiToken || validateToken.isPending} className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                {validateToken.isPending ? 'Validating...' : 'Next'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'account' && (
+          <div className="space-y-4">
+            {validation.valid && (
+              <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-900/20 p-2 text-sm text-green-700 dark:text-green-400">
+                <CheckCircle className="h-4 w-4" /> Token verified
+              </div>
+            )}
+            {zones.length > 0 && (
+              <div>
+                <label className="mb-2 block text-sm font-medium">Select Account (required for tunnels)</label>
+                <div className="max-h-48 space-y-2 overflow-y-auto">
+                  {zones.map(zone => (
+                    <button key={zone.id} onClick={() => setForm({ ...form, accountId: zone.id })} className={`w-full rounded-lg border p-3 text-left text-sm ${form.accountId === zone.id ? 'border-primary bg-primary/10' : 'border-border hover:bg-accent'}`}>
+                      <div className="font-medium">{zone.name}</div>
+                      <div className="text-xs text-muted-foreground">{zone.status}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setStep('token')} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Back</button>
+              <button onClick={handleSubmit} disabled={!form.apiToken || setConfig.isPending} className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+                {setConfig.isPending ? 'Saving...' : 'Connect'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 'saving' && (
+          <div className="flex flex-col items-center py-8">
+            <LoadingSpinner />
+            <p className="mt-4 text-sm text-muted-foreground">Connecting your Cloudflare account...</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -136,7 +305,7 @@ export function CloudflarePage() {
 // Top-Level Tab Navigation
 // ============================================================
 
-function TopTabs({ activeTab, onTabChange, sharedApiToken, onConnectDomain }: { activeTab: TopTab; onTabChange: (t: TopTab) => void; sharedApiToken?: string; onConnectDomain?: () => void }) {
+function TopTabs({ activeTab, onTabChange, isConnected, onConnectDomain }: { activeTab: TopTab; onTabChange: (t: TopTab) => void; isConnected: boolean; onConnectDomain?: () => void }) {
   const tabs: Array<{ id: TopTab; label: string; icon: any }> = [
     { id: 'overview', label: 'Overview', icon: Cloud },
     { id: 'tunnels', label: 'Tunnels', icon: Waypoints },
@@ -160,9 +329,8 @@ function TopTabs({ activeTab, onTabChange, sharedApiToken, onConnectDomain }: { 
           </button>
         ))}
       </div>
-      {/* Quick action: show token status + Connect Domain button */}
       <div className="flex items-center gap-2 pr-2">
-        {sharedApiToken ? (
+        {isConnected ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-600">
             <CheckCircle className="h-3 w-3" /> Cloudflare Connected
           </span>
@@ -388,7 +556,7 @@ function StatCard({ icon, iconBg, iconColor, label, value, subtext }: {
 // Tunnels Section
 // ============================================================
 
-function TunnelsSection({ sharedApiToken, onSetupTunnel, onTokenSaved }: { sharedApiToken?: string; onSetupTunnel?: () => void; onTokenSaved?: (token: string) => void }) {
+function TunnelsSection({ onSetupTunnel }: { onSetupTunnel?: () => void }) {
   const { data: status, isLoading, isError, refetch } = useTunnelStatus();
   const { data: routes } = useTunnelRoutes();
   const { data: domains } = useDomains();
@@ -545,7 +713,7 @@ function TunnelsSection({ sharedApiToken, onSetupTunnel, onTokenSaved }: { share
       )}
 
       {/* Modals */}
-      {showSetup && <SetupModal onClose={() => setShowSetup(false)} onTokenSaved={onTokenSaved} />}
+      {showSetup && <CloudflareSetupModal onClose={() => { setShowSetup(false); refetch(); }} />}
       {showAddRoute && <AddRouteModal tunnel={showAddRoute} onClose={() => setShowAddRoute(null)} />}
       {showEditRoute && <EditRouteModal route={showEditRoute} onClose={() => setShowEditRoute(null)} />}
       {showConfig && <ConfigPreviewModal tunnel={showConfig} onClose={() => setShowConfig(null)} />}
@@ -1573,47 +1741,35 @@ function WildcardTab({ zoneDbId, zoneName }: { zoneDbId: string; zoneName: strin
 // Connect Domain Modal
 // ============================================================
 
-function LinkZoneModal({ onClose, onLinked, initialApiToken }: { onClose: () => void; onLinked: () => void; initialApiToken?: string }) {
-  const [step, setStep] = useState<'token' | 'validating' | 'select' | 'linking'>(initialApiToken ? 'validating' : 'token');
-  const [apiToken, setApiToken] = useState(initialApiToken || '');
+function LinkZoneModal({ onClose, onLinked }: { onClose: () => void; onLinked: () => void }) {
+  const { data: cloudflareConfig } = useCloudflareConfig();
+  const cfConfig = cloudflareConfig && 'apiToken' in cloudflareConfig ? cloudflareConfig : null;
+  const [step, setStep] = useState<'select' | 'linking'>('select');
   const [cfZones, setCfZones] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [tokenInfo, setTokenInfo] = useState<{ valid: boolean; status: string; type: string } | null>(null);
+  const [loading, setLoading] = useState(true);
   const [zoneFilter, setZoneFilter] = useState('');
 
-  // Auto-fetch zones if token was pre-filled from SetupModal
+  // Auto-load zones from server-stored token
   useEffect(() => {
-    if (apiToken && step === 'validating') {
-      handleValidateAndFetch();
+    if (cfConfig?.apiToken) {
+      (async () => {
+        setLoading(true);
+        try {
+          const data = await api.post<{ zones: any[] }>('/cloudflare/zones/list', { apiToken: cfConfig.apiToken });
+          setCfZones(data?.zones || []);
+        } catch (e: any) { toast.error(e.message); }
+        finally { setLoading(false); }
+      })();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
-
-  const handleValidateAndFetch = async () => {
-    if (!apiToken.trim()) return;
-    setLoading(true);
-    try {
-      const validateData = await api.post<{ valid: boolean; status: string; type: string }>('/tunnel/validate-token', { apiToken });
-      setTokenInfo(validateData);
-      const data = await api.post<{ zones: any[]; total_count: number }>('/cloudflare/zones/list', { apiToken });
-      const zones = data?.zones || [];
-      if (zones.length === 0) {
-        toast.error('No domains found for this API token.');
-        setStep('token');
-      } else {
-        setCfZones(zones);
-        setStep('select');
-      }
-    } catch (e: any) { toast.error(e.message || 'Invalid API token'); } finally { setLoading(false); }
-  };
+  }, [cfConfig]);
 
   const handleLink = async (zone: any) => {
     setStep('linking');
     try {
-      await api.post('/cloudflare/zones/link', { zoneId: zone.id, apiToken });
+      await api.post('/cloudflare/zones/link', { zoneId: zone.id, apiToken: cfConfig?.apiToken });
       toast.success(`"${zone.name}" connected successfully!`);
       onLinked();
-    } catch (e: any) { toast.error(e.message || 'Failed to connect domain'); setStep('select'); }
+    } catch (e: any) { toast.error(e.message); setStep('select'); }
   };
 
   const filteredZones = zoneFilter ? cfZones.filter(z => z.name.toLowerCase().includes(zoneFilter.toLowerCase())) : cfZones;
@@ -1626,95 +1782,56 @@ function LinkZoneModal({ onClose, onLinked, initialApiToken }: { onClose: () => 
           <button onClick={onClose} className="rounded p-1 hover:bg-accent text-muted-foreground">✕</button>
         </div>
 
-        <div className="mb-6 flex items-center gap-2">
-          {['token', 'validating'].includes(step) && (
-            <div className="flex items-center gap-2 text-sm">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">1</div>
-              <span className="font-medium">Enter API Token</span>
-              <div className="h-px flex-1 bg-border" />
-              <div className="flex h-6 w-6 items-center justify-center rounded-full border border-border text-xs text-muted-foreground">2</div>
-              <span className="text-muted-foreground">Select Domain</span>
-            </div>
-          )}
-          {['select', 'linking'].includes(step) && (
-            <div className="flex items-center gap-2 text-sm">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-green-500 text-xs font-bold text-white">✓</div>
-              <span className="text-green-600">Token Valid</span>
-              <div className="h-px flex-1 bg-border" />
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">2</div>
-              <span className="font-medium">Select Domain</span>
-            </div>
-          )}
-        </div>
-
-        {step === 'token' && (
-          <div className="space-y-4">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium">Cloudflare API Token</label>
-              <input type="password" value={apiToken} onChange={e => setApiToken(e.target.value)} placeholder="cfat_..." className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
-              <div className="mt-2 rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-                <p className="font-medium text-foreground">Required permissions:</p>
-                <ul className="mt-1 space-y-0.5 list-disc list-inside">
-                  <li>Zone → Zone → Read</li>
-                  <li>Zone → DNS → Edit</li>
-                  <li>Zone → Zone Settings → Read & Edit</li>
-                  <li>Zone → SSL and Certificates → Edit</li>
-                </ul>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <button onClick={onClose} className="rounded-lg border border-input px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-              <button onClick={handleValidateAndFetch} disabled={!apiToken || loading} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                {loading ? <><LoadingSpinner /> Validating...</> : <><CheckCircle className="h-4 w-4" /> Validate & Continue</>}
-              </button>
-            </div>
-          </div>
-        )}
-
         {step === 'select' && (
           <div className="space-y-3">
-            {tokenInfo && (
-              <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-900/20 p-2 text-sm text-green-700 dark:text-green-400">
-                <CheckCircle className="h-4 w-4" />
-                <span>Token verified • {cfZones.length} domain{cfZones.length !== 1 ? 's' : ''} found</span>
+            {loading ? (
+              <div className="flex flex-col items-center py-8">
+                <LoadingSpinner />
+                <span className="mt-3 text-sm text-muted-foreground">Loading your domains...</span>
               </div>
-            )}
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <input value={zoneFilter} onChange={e => setZoneFilter(e.target.value)} placeholder="Filter domains..." className="w-full rounded-lg border border-input bg-background pl-9 pr-3 py-2 text-sm" />
-            </div>
-            <div className="max-h-72 space-y-2 overflow-y-auto">
-              {filteredZones.length === 0 ? (
-                <p className="py-4 text-center text-sm text-muted-foreground">No domains match</p>
-              ) : (
-                filteredZones.map((z) => (
-                  <button key={z.id} onClick={() => handleLink(z)} className="w-full rounded-lg border border-input p-4 text-left hover:bg-accent hover:border-primary/50 transition-all group">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium group-hover:text-primary">{z.name}</div>
-                        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                          <span className={`inline-flex rounded-full px-1.5 py-0.5 text-xs font-medium ${
-                            z.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-yellow-100 text-yellow-700'
-                          }`}>{z.status}</span>
-                          <span>{z.plan?.name || 'Free'} plan</span>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-900/20 p-2 text-sm text-green-700 dark:text-green-400">
+                  <CheckCircle className="h-4 w-4" />
+                  <span>Using saved API token • {cfZones.length} domain{cfZones.length !== 1 ? 's' : ''} found</span>
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <input value={zoneFilter} onChange={e => setZoneFilter(e.target.value)} placeholder="Filter domains..." className="w-full rounded-lg border border-input bg-background pl-9 pr-3 py-2 text-sm" />
+                </div>
+                <div className="max-h-72 space-y-2 overflow-y-auto">
+                  {filteredZones.length === 0 ? (
+                    <p className="py-4 text-center text-sm text-muted-foreground">No domains match</p>
+                  ) : (
+                    filteredZones.map((z) => (
+                      <button key={z.id} onClick={() => handleLink(z)} className="w-full rounded-lg border border-input p-4 text-left hover:bg-accent hover:border-primary/50 transition-all group">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-medium group-hover:text-primary">{z.name}</div>
+                            <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                              <span className={`inline-flex rounded-full px-1.5 py-0.5 text-xs font-medium ${
+                                z.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-yellow-100 text-yellow-700'
+                              }`}>{z.status}</span>
+                              <span>{z.plan?.name || 'Free'} plan</span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-            <div className="flex items-center justify-between">
-              <button onClick={() => { setStep('token'); setTokenInfo(null); }} className="text-sm text-muted-foreground hover:text-foreground">← Back</button>
-              <span className="text-xs text-muted-foreground">{filteredZones.length} of {cfZones.length} domains</span>
-            </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+                <div className="flex justify-end">
+                  <span className="text-xs text-muted-foreground">{filteredZones.length} of {cfZones.length} domains</span>
+                </div>
+              </>
+            )}
           </div>
         )}
 
         {step === 'linking' && (
           <div className="flex flex-col items-center justify-center py-8">
             <LoadingSpinner />
-            <span className="mt-3 text-sm">Connecting domain and auto-configuring SSL...</span>
+            <span className="mt-3 text-sm">Connecting domain...</span>
           </div>
         )}
       </div>
@@ -1737,131 +1854,6 @@ function ToggleSetting({ label, description, checked, onChange }: {
         {description && <div className="text-xs text-muted-foreground">{description}</div>}
       </div>
     </label>
-  );
-}
-
-// ============================================================
-// Tunnel Setup Modal
-// ============================================================
-
-function SetupModal({ onClose, onTokenSaved }: { onClose: () => void; onTokenSaved?: (token: string) => void }) {
-  const validateToken = useValidateToken();
-  const fetchZones = useFetchZones();
-  const setup = useSetupTunnel();
-  const [step, setStep] = useState<SetupStep>('token');
-  const [form, setForm] = useState({ name: '', apiToken: '', accountId: '', zoneId: '' });
-  const [validation, setValidation] = useState<{ valid?: boolean; email?: string; error?: string }>({});
-  const [zones, setZones] = useState<CloudflareZone[]>([]);
-
-  const handleValidateToken = async () => {
-    if (!form.apiToken) return;
-    validateToken.mutate(form.apiToken, {
-      onSuccess: (data) => {
-        setValidation({ valid: true, email: data.email });
-        fetchZones.mutate({ apiToken: form.apiToken }, {
-          onSuccess: (zones) => { setZones(zones); setStep('zone'); },
-          onError: () => { setValidation({ valid: true, email: data.email, error: 'Failed to fetch zones' }); setStep('zone'); }
-        });
-      },
-      onError: (error: any) => { setValidation({ valid: false, error: error.message || 'Invalid token' }); }
-    });
-  };
-
-  const handleSelectZone = (zoneId: string) => { setForm({ ...form, zoneId }); setStep('name'); };
-
-  const handleSubmit = () => {
-    setStep('creating');
-    // Tell parent to save token so LinkZoneModal can reuse it without re-entering
-    if (onTokenSaved) onTokenSaved(form.apiToken);
-    setup.mutate({ name: form.name, apiToken: form.apiToken, zoneId: form.zoneId || undefined }, {
-      onSuccess: () => { toast.success('Tunnel created successfully'); onClose(); },
-      onError: (error: any) => { toast.error(error.message || 'Failed to create tunnel'); setStep('name'); },
-    });
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-lg">
-        <h2 className="mb-4 text-lg font-semibold">Setup Cloudflare Tunnel</h2>
-
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${step === 'token' ? 'bg-primary' : 'bg-primary'}`} />
-            <span className="text-xs text-muted-foreground">Token</span>
-          </div>
-          <div className="h-px flex-1 bg-border" />
-          <div className="flex items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${step === 'zone' || step === 'name' || step === 'creating' ? 'bg-primary' : 'bg-muted'}`} />
-            <span className="text-xs text-muted-foreground">Zone</span>
-          </div>
-          <div className="h-px flex-1 bg-border" />
-          <div className="flex items-center gap-2">
-            <div className={`h-2 w-2 rounded-full ${step === 'name' || step === 'creating' ? 'bg-primary' : 'bg-muted'}`} />
-            <span className="text-xs text-muted-foreground">Name</span>
-          </div>
-        </div>
-
-        {step === 'token' && (
-          <div className="space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium">Cloudflare API Token</label>
-              <input type="password" value={form.apiToken} onChange={(e) => setForm({ ...form, apiToken: e.target.value })} placeholder="cf_xxxxxxxxxxxxx" className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-              <p className="mt-1 text-xs text-muted-foreground">Token needs Account - Cloudflare Tunnel - Edit and Zone - DNS - Edit permissions</p>
-            </div>
-            {validation.error && <div className="flex items-center gap-2 rounded-lg bg-red-500/10 p-3 text-red-500"><AlertTriangle className="h-4 w-4" /><span className="text-sm">{validation.error}</span></div>}
-            {validation.valid && validation.email && <div className="flex items-center gap-2 rounded-lg bg-green-500/10 p-3 text-green-500"><CheckCircle className="h-4 w-4" /><span className="text-sm">Valid token for {validation.email}</span></div>}
-            <div className="mt-6 flex justify-end gap-3">
-              <button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-              <button onClick={handleValidateToken} disabled={!form.apiToken || validateToken.isPending} className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                {validateToken.isPending ? 'Validating...' : 'Next'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 'zone' && (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">Select a zone from your Cloudflare account.</p>
-            <div className="max-h-64 space-y-2 overflow-y-auto">
-              {zones.map(zone => (
-                <button key={zone.id} onClick={() => handleSelectZone(zone.id)} className="w-full rounded-lg border border-border p-3 text-left hover:bg-accent">
-                  <div className="flex items-center justify-between">
-                    <div><p className="font-medium">{zone.name}</p><p className="text-xs text-muted-foreground">{zone.status}</p></div>
-                    <Globe className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                </button>
-              ))}
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <button onClick={() => { setForm({ ...form, zoneId: '' }); setStep('name'); }} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Skip (optional)</button>
-              <button onClick={() => setStep('token')} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Back</button>
-            </div>
-          </div>
-        )}
-
-        {step === 'name' && (
-          <div className="space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium">Tunnel Name</label>
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="my-server-tunnel" className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <button onClick={() => setStep('zone')} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Back</button>
-              <button onClick={handleSubmit} disabled={!form.name || setup.isPending} className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                {setup.isPending ? 'Creating...' : 'Create Tunnel'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 'creating' && (
-          <div className="flex flex-col items-center py-8">
-            <LoadingSpinner />
-            <p className="mt-4 text-sm text-muted-foreground">Creating tunnel and installing service...</p>
-          </div>
-        )}
-      </div>
-    </div>
   );
 }
 

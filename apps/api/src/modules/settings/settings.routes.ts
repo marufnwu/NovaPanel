@@ -204,6 +204,20 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
     return { success: true, data: await settingsService.getSslEmail() };
   });
 
+  // GET /settings/cloudflare
+  fastify.get('/settings/cloudflare', async () => {
+    return { success: true, data: await settingsService.getCloudflareConfig() };
+  });
+
+  // PUT /settings/cloudflare
+  fastify.put('/settings/cloudflare', {
+    preHandler: [requireRole('admin')],
+    handler: async (req) => {
+      const data = req.body as { apiToken: string; accountId: string };
+      return { success: true, data: await settingsService.setCloudflareConfig(data, req.user.id, req.ip) };
+    },
+  });
+
   // PUT /settings/ssl-email
   fastify.put('/settings/ssl-email', {
     preHandler: [requireRole('admin')],

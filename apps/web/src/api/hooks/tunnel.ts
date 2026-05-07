@@ -47,12 +47,16 @@ export interface CloudflareZone {
   id: string;
   name: string;
   status: string;
+  accountId?: string;
+  plan?: { id: string; name: string; price: number; frequency: string };
 }
 
 export interface TokenValidation {
   valid: boolean;
   email?: string;
   username?: string;
+  type?: 'account' | 'user';
+  accounts?: Array<{ id: string; name: string }>;
 }
 
 export function useTunnelStatus() {
@@ -128,6 +132,23 @@ export function useFetchZones() {
   return useMutation({
     mutationFn: (data: { apiToken: string; accountId?: string }) =>
       api.post<CloudflareZone[]>('/tunnel/fetch-zones', data),
+  });
+}
+
+export function useCloudflareConfig() {
+  return useQuery({
+    queryKey: ['cloudflare-config'],
+    queryFn: async () => {
+      return api.get<{ apiToken: string; accountId: string } | null>('/settings/cloudflare');
+    },
+  });
+}
+
+export function useSetCloudflareConfig() {
+  return useMutation({
+    mutationFn: async (data: { apiToken: string; accountId: string }) => {
+      return api.put<{ apiToken: string; accountId: string }>('/settings/cloudflare', data);
+    },
   });
 }
 
