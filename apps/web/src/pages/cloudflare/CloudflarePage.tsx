@@ -394,7 +394,7 @@ function OverviewSection() {
         </div>
         <div className="flex-1">
           <h3 className="text-lg font-semibold">
-            {tunnelStatus?.status === 'active' ? 'Tunnel Connected' : 'Tunnel Disconnected'}
+            {tunnelStatus?.status === 'active' ? 'Internet Access: Active' : 'Internet Access: Inactive'}
           </h3>
           <p className="text-sm opacity-80">
             {tunnelStatus?.status === 'active'
@@ -450,7 +450,7 @@ function OverviewSection() {
         <div className="rounded-xl border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border p-4">
             <h3 className="font-semibold flex items-center gap-2">
-              <ArrowRight className="h-4 w-4 text-muted-foreground" /> Active Routes
+              <ArrowRight className="h-4 w-4 text-muted-foreground" /> Internet Access
             </h3>
             <span className="text-xs text-muted-foreground">{allRoutes.length} total</span>
           </div>
@@ -1881,14 +1881,15 @@ function AddRouteModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onClose:
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-lg">
-        <h2 className="mb-4 text-lg font-semibold">Add Tunnel Route</h2>
+        <h2 className="mb-4 text-lg font-semibold">Make Domain Public</h2>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">Public Hostname</label>
+            <label className="mb-1 block text-sm font-medium">Your Domain</label>
             <input value={form.hostname} onChange={(e) => setForm({ ...form, hostname: e.target.value })} placeholder="ssh.example.com" className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Service URL</label>
+            <label className="mb-1 block text-sm font-medium">Points To</label>
+            <p className="mt-0.5 text-xs text-muted-foreground mb-2">Where traffic goes</p>
             <div className="flex gap-2 mb-2">
               {presets.map(p => (
                 <button key={p.label} onClick={() => p.value && setForm({ ...form, service: p.value })} className={`rounded px-2 py-1 text-xs ${form.service === p.value ? 'bg-primary text-primary-foreground' : 'bg-accent'}`}>
@@ -1906,7 +1907,7 @@ function AddRouteModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onClose:
         <div className="mt-6 flex justify-end gap-3">
           <button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
           <button onClick={handleSubmit} disabled={!form.hostname || !form.service || addRoute.isPending} className="rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-            {addRoute.isPending ? 'Adding...' : 'Add Route'}
+            {addRoute.isPending ? 'Making Public...' : 'Make Public'}
           </button>
         </div>
       </div>
@@ -1939,7 +1940,8 @@ function EditRouteModal({ route, onClose }: { route: TunnelRoute; onClose: () =>
             <input value={form.hostname} onChange={(e) => setForm({ ...form, hostname: e.target.value })} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Service URL</label>
+            <label className="mb-1 block text-sm font-medium">Points To</label>
+            <p className="mt-0.5 text-xs text-muted-foreground mb-2">Where traffic goes</p>
             <input value={form.service} onChange={(e) => setForm({ ...form, service: e.target.value })} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
           </div>
           <div className="flex items-center gap-2">
@@ -2134,7 +2136,7 @@ function TunnelCard({ tunnel, routes, onAddRoute, onToggle, onDelete, onEditRout
       {/* Routes */}
       <div className="p-4">
         <div className="flex items-center justify-between mb-3">
-          <h4 className="text-sm font-medium flex items-center gap-2"><Globe className="h-4 w-4 text-muted-foreground" /> Routes ({routes.length})</h4>
+          <h4 className="text-sm font-medium flex items-center gap-2"><Globe className="h-4 w-4 text-muted-foreground" /> Internet Access ({routes.length})</h4>
           <div className="flex items-center gap-2">
             <SyncRoutesButton tunnelId={tunnel.id} />
             <button onClick={onAddRoute} disabled={!isRunning} className="flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs text-primary hover:bg-primary/20 disabled:opacity-50">

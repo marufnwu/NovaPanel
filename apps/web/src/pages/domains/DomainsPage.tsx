@@ -1369,7 +1369,7 @@ function DomainCfDnsTab({
             }}
             className="w-full max-w-md rounded-xl bg-card p-6 shadow-lg space-y-4"
           >
-            <h2 className="text-lg font-semibold">Add DNS Record</h2>
+            <h2 className="text-lg font-semibold">Add Record</h2>
             <div>
               <label className="mb-1 block text-sm font-medium">Type</label>
               <select

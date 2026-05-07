@@ -217,10 +217,10 @@ function AddRouteModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onClose:
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-full max-w-md rounded-lg bg-card p-6 shadow-lg">
-        <h2 className="mb-4 text-lg font-semibold">Add Tunnel Route</h2>
+        <h2 className="mb-4 text-lg font-semibold">Make Domain Public</h2>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">Public Hostname</label>
+            <label className="mb-1 block text-sm font-medium">Your Domain</label>
             <input
               value={form.hostname}
               onChange={(e) => setForm({ ...form, hostname: e.target.value })}
@@ -230,7 +230,7 @@ function AddRouteModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onClose:
             <p className="mt-1 text-xs text-muted-foreground">The public hostname for this route</p>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Service URL</label>
+            <label className="mb-1 block text-sm font-medium">Points To</label>
             <div className="flex gap-2 mb-2">
               {presets.map(p => (
                 <button
@@ -242,6 +242,7 @@ function AddRouteModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onClose:
                 </button>
               ))}
             </div>
+            <p className="mt-0.5 text-xs text-muted-foreground mb-2">Where traffic goes</p>
             <input
               value={form.service}
               onChange={(e) => setForm({ ...form, service: e.target.value })}
@@ -267,7 +268,7 @@ function AddRouteModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onClose:
             disabled={!form.hostname || !form.service || addRoute.isPending}
             className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
-            {addRoute.isPending ? 'Adding...' : 'Add Route'}
+            {addRoute.isPending ? 'Making Public...' : 'Make Public'}
           </button>
         </div>
       </div>
@@ -301,10 +302,10 @@ function EditRouteModal({ route, onClose }: { route: TunnelRoute; onClose: () =>
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-full max-w-md rounded-lg bg-card p-6 shadow-lg">
-        <h2 className="mb-4 text-lg font-semibold">Edit Tunnel Route</h2>
+        <h2 className="mb-4 text-lg font-semibold">Edit Domain Access</h2>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">Public Hostname</label>
+            <label className="mb-1 block text-sm font-medium">Your Domain</label>
             <input
               value={form.hostname}
               onChange={(e) => setForm({ ...form, hostname: e.target.value })}
@@ -313,7 +314,7 @@ function EditRouteModal({ route, onClose }: { route: TunnelRoute; onClose: () =>
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Service URL</label>
+            <label className="mb-1 block text-sm font-medium">Points To</label>
             <input
               value={form.service}
               onChange={(e) => setForm({ ...form, service: e.target.value })}
@@ -529,7 +530,7 @@ function TunnelCard({ tunnel, routes, onAddRoute, onToggle, onDelete, onEditRout
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-sm font-medium flex items-center gap-2">
             <Globe className="h-4 w-4 text-muted-foreground" />
-            Routes ({routes.length})
+            Internet Access ({routes.length})
           </h4>
           <div className="flex items-center gap-2">
             <SyncRoutesButton tunnelId={tunnel.id} />
@@ -672,7 +673,7 @@ function ExposePanelModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onClo
         </div>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">Public Hostname</label>
+            <label className="mb-1 block text-sm font-medium">Your Domain</label>
             <input
               value={hostname}
               onChange={(e) => setHostname(e.target.value)}
