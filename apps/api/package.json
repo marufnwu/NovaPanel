@@ -33,6 +33,7 @@
     "handlebars": "^4.7.0",
     "ioredis": "^5.4.0",
     "nanoid": "^5.0.0",
+    "node-pty": "^1.0.0",
     "node-cron": "^4.2.1",
     "otpauth": "^9.3.0",
     "pino": "^9.6.0",
