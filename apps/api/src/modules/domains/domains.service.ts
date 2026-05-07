@@ -943,6 +943,53 @@ export class DomainsService {
   }
 
   /**
+   * Get Cloudflare status for a domain.
+   * Determines the overall connectivity status based on tunnel route, SSL, and redirect rules.
+   */
+  async getCloudflareStatus(domainId: string) {
+    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+
+    // Check for tunnel route - look for a route matching this domain's hostname
+    const [route] = await db.select().from(tunnelRoutes)
+      .where(eq(tunnelRoutes.hostname, domain.name))
+      .limit(1);
+    const hasTunnelRoute = !!route;
+    const tunnelStatus = hasTunnelRoute
+      ? (route.isActive ? 'active' : 'inactive')
+      : null;
+
+    // Check for SSL (domain has sslEnabled flag)
+    const hasSsl = !!domain.sslEnabled;
+
+    // Check for redirect rules
+    const redirectRules = await db.select().from(domainRedirects)
+      .where(eq(domainRedirects.domainId, domainId));
+    const hasRedirects = redirectRules.length > 0;
+
+    // Determine overall status
+    let overall: 'live' | 'local' | 'down' | 'redirect' | 'suspended';
+
+    if (domain.status === 'suspended') {
+      overall = 'suspended';
+    } else if (hasRedirects) {
+      overall = 'redirect';
+    } else if (hasTunnelRoute && route.isActive) {
+      overall = 'live';
+    } else {
+      overall = 'local';
+    }
+
+    return {
+      hasTunnelRoute,
+      tunnelStatus,
+      hasSsl,
+      hasRedirects,
+      overall,
+    };
+  }
+
+  /**
    * Get error log for a domain
    */
   async getErrorLog(domainId: string, lines: number = 100): Promise<string> {

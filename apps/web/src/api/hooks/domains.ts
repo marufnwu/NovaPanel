@@ -251,3 +251,21 @@ export function useDomainLogStats(domainId: string) {
     refetchInterval: 60_000,
   });
 }
+
+// --- Cloudflare Status ---
+
+export interface DomainCloudflareStatus {
+  hasTunnelRoute: boolean;
+  tunnelStatus: 'active' | 'inactive' | 'degraded' | 'down' | null;
+  hasSsl: boolean;
+  hasRedirects: boolean;
+  overall: 'live' | 'local' | 'down' | 'redirect' | 'suspended';
+}
+
+export function useDomainCloudflareStatus(domainId: string) {
+  return useQuery({
+    queryKey: ['domains', domainId, 'cloudflare-status'],
+    queryFn: () => api.get<DomainCloudflareStatus>(`/domains/${domainId}/cloudflare-status`),
+    enabled: !!domainId,
+  });
+}

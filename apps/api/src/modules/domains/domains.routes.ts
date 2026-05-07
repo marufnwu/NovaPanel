@@ -158,4 +158,11 @@ export default async function domainRoutes(fastify: FastifyInstance) {
       return { success: true, data: { log: '' } };
     }
   });
+
+  // --- Cloudflare Status ---
+  fastify.get('/:id/cloudflare-status', async (req) => {
+    const { id } = req.params as { id: string };
+    const status = await service.getCloudflareStatus(id);
+    return { success: true, data: status };
+  });
 }
