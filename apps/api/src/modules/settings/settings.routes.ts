@@ -18,6 +18,8 @@ import {
   importConfigSchema,
   updateDataRetentionSchema,
 } from './settings.schema.js';
+import { verifyDomainPointsToIp } from '../../utils/network.js';
+import { detectNetworkInfo } from '../../utils/network.js';
 
 export default async function settingsRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
@@ -121,6 +123,36 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
     handler: async (req) => {
       const data = updateNameserversSchema.parse(req.body);
       return { success: true, data: await settingsService.updateNameserverSettings(data, req.user.id, req.ip) };
+    },
+  });
+
+  // POST /settings/nameservers/verify-domain
+  // Verifies that a domain's A record points to this server's IP
+  fastify.post('/settings/nameservers/verify-domain', {
+    preHandler: [requireRole('admin')],
+    handler: async (req) => {
+      const { domain } = req.body as { domain: string };
+      const networkInfo = await detectNetworkInfo();
+      const serverIp = networkInfo.publicIp || networkInfo.primaryIp;
+      
+      if (!serverIp) {
+        return { 
+          success: false, 
+          error: 'Cannot determine server IP address' 
+        };
+      }
+      
+      const result = await verifyDomainPointsToIp(domain, serverIp);
+      return { 
+        success: true, 
+        data: {
+          domain: result.domain,
+          resolvesTo: result.resolvesTo,
+          pointsToServer: result.pointsToServer,
+          serverIp: result.serverIp,
+          error: result.error,
+        }
+      };
     },
   });
 

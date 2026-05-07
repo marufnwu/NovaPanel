@@ -20,6 +20,7 @@ import {
   useUpdatePanelSettings,
   useNameserverSettings,
   useUpdateNameserverSettings,
+  useVerifyNameserverDomain,
   useSessionSettings,
   useUpdateSessionSettings,
   usePasswordPolicy,
@@ -420,8 +421,16 @@ function PhpSettingsSection() {
 function NameserverSettingsSection() {
   const { data, isLoading, isError, refetch } = useNameserverSettings();
   const update = useUpdateNameserverSettings();
+  const verifyDomain = useVerifyNameserverDomain();
   const { data: serverContext } = useServerContext();
   const [form, setForm] = useState({ ns1: '', ns2: '' });
+  const [verificationStatus, setVerificationStatus] = useState<{
+    domain: string;
+    status: 'idle' | 'verifying' | 'success' | 'error';
+    message?: string;
+    resolvesTo?: string[];
+    skipWarningShown?: boolean;
+  }>({ domain: '', status: 'idle' });
 
   useEffect(() => {
     if (data) {
@@ -431,17 +440,87 @@ function NameserverSettingsSection() {
 
   if (isLoading) return <LoadingSpinner />;
 
-  const handleSave = () => {
+  // Extract base domain from nameserver hostname (e.g., "example.com" from "ns1.example.com")
+  const extractBaseDomain = (nameserver: string): string | null => {
+    if (!nameserver || nameserver === 'ns1.example.com') return null;
+    const parts = nameserver.split('.');
+    // Need at least 2 parts for a valid domain (e.g., example.com)
+    if (parts.length >= 2) {
+      // Return the last two parts (domain.com from ns1.ns2.domain.com)
+      return parts.slice(-2).join('.');
+    }
+    return null;
+  };
+
+  const handleVerifyDomain = async (domain: string) => {
+    setVerificationStatus({ domain, status: 'verifying' });
+    try {
+      const result = await verifyDomain.mutateAsync(domain);
+      if (result.pointsToServer) {
+        setVerificationStatus({
+          domain,
+          status: 'success',
+          message: `Domain ${domain} correctly points to this server (${result.serverIp})`,
+          resolvesTo: result.resolvesTo,
+        });
+      } else {
+        setVerificationStatus({
+          domain,
+          status: 'error',
+          message: `Domain ${domain} does not point to this server. Currently points to: ${result.resolvesTo.join(', ') || 'nothing'}`,
+          resolvesTo: result.resolvesTo,
+        });
+      }
+    } catch (error: any) {
+      setVerificationStatus({
+        domain,
+        status: 'error',
+        message: error?.message || 'Failed to verify domain',
+      });
+    }
+  };
+
+  const handleSave = async () => {
+    const baseDomain = extractBaseDomain(form.ns1) || extractBaseDomain(form.ns2);
+    const hasCustomNs = !!(form.ns1 && form.ns1 !== 'ns1.example.com');
+
+    // If no custom nameservers, just save directly
+    if (!hasCustomNs) {
+      update.mutate(form);
+      return;
+    }
+
+    // If already verified for this domain, skip verification
+    if (verificationStatus.domain === baseDomain && verificationStatus.status === 'success') {
+      update.mutate(form);
+      return;
+    }
+
+    // Verify the domain first
+    if (baseDomain && (!verificationStatus.skipWarningShown || verificationStatus.domain !== baseDomain)) {
+      await handleVerifyDomain(baseDomain);
+      // After verification, the user can click save again or we'll auto-proceed based on status
+    }
+  };
+
+  const handleSaveAfterVerification = () => {
+    update.mutate(form);
+  };
+
+  const handleSkipVerification = () => {
+    setVerificationStatus(prev => ({ ...prev, status: 'success', skipWarningShown: true }));
     update.mutate(form);
   };
 
   const hasPublicIp = serverContext?.hasPublicIp ?? false;
   const serverIp = serverContext?.publicIp ?? serverContext?.primaryIp ?? 'your server IP';
   const hasCustomNs = !!(form.ns1 && form.ns1 !== 'ns1.example.com');
+  const baseDomain = extractBaseDomain(form.ns1) || extractBaseDomain(form.ns2);
 
   // Determine guidance based on state
   const showDirectIpGuidance = !hasCustomNs;
   const showGlueRecordGuidance = hasCustomNs && hasPublicIp;
+  const showVerificationSection = hasCustomNs && baseDomain;
 
   return (
     <SettingsSection
@@ -487,7 +566,11 @@ function NameserverSettingsSection() {
               <label className="mb-1 block text-sm font-medium">Primary Nameserver (NS1)</label>
               <input
                 value={form.ns1}
-                onChange={(e) => setForm({ ...form, ns1: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, ns1: e.target.value });
+                  // Reset verification when nameserver changes
+                  setVerificationStatus({ domain: '', status: 'idle' });
+                }}
                 placeholder="ns1.example.com"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
               />
@@ -496,12 +579,77 @@ function NameserverSettingsSection() {
               <label className="mb-1 block text-sm font-medium">Secondary Nameserver (NS2)</label>
               <input
                 value={form.ns2}
-                onChange={(e) => setForm({ ...form, ns2: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, ns2: e.target.value });
+                  // Reset verification when nameserver changes
+                  setVerificationStatus({ domain: '', status: 'idle' });
+                }}
                 placeholder="ns2.example.com"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
               />
             </div>
           </div>
+
+          {/* Domain Verification Section */}
+          {showVerificationSection && (
+            <div className="rounded-md border border-border p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Network className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium">Domain Verification</span>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                The base domain <span className="font-mono font-semibold">{baseDomain}</span> will be verified to ensure it points to this server before saving.
+              </p>
+              
+              {/* Verification Status */}
+              {verificationStatus.status === 'verifying' && (
+                <div className="flex items-center gap-2 rounded-md bg-blue-500/10 px-3 py-2 text-sm text-blue-600">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Verifying domain {baseDomain}...
+                </div>
+              )}
+              
+              {verificationStatus.status === 'success' && verificationStatus.domain === baseDomain && (
+                <div className="flex items-start gap-2 rounded-md border border-green-500/30 bg-green-500/5 p-3">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+                  <div className="text-sm">
+                    <p className="font-medium text-green-600 dark:text-green-400">Domain verified</p>
+                    <p className="text-muted-foreground">{verificationStatus.message}</p>
+                  </div>
+                </div>
+              )}
+              
+              {verificationStatus.status === 'error' && verificationStatus.domain === baseDomain && (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/5 p-3">
+                    <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                    <div className="text-sm">
+                      <p className="font-medium text-red-600 dark:text-red-400">Verification failed</p>
+                      <p className="text-muted-foreground">{verificationStatus.message}</p>
+                      {verificationStatus.resolvesTo && verificationStatus.resolvesTo.length > 0 && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          DNS A records found: {verificationStatus.resolvesTo.join(', ')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" />
+                    <div className="text-sm">
+                      <p className="font-medium text-yellow-600 dark:text-yellow-400">DNS not pointing to this server</p>
+                      <p className="text-muted-foreground">
+                        For custom nameservers to work, the base domain must point to this server. 
+                        Update your DNS A record at your domain registrar to point {baseDomain} to <span className="font-mono font-semibold">{serverIp}</span>.
+                      </p>
+                      <p className="mt-2 text-xs text-yellow-600">
+                        If you're sure you want to proceed without verification, click "Save Anyway" below.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Glue record guidance when custom nameservers are configured */}
           {showGlueRecordGuidance && (
@@ -535,11 +683,46 @@ function NameserverSettingsSection() {
               Failed to save nameserver settings. Please try again.
             </div>
           )}
-          <SaveButton
-            onClick={handleSave}
-            isPending={update.isPending}
-            disabled={!form.ns1 && !form.ns2}
-          />
+          
+          {/* Save Button Logic */}
+          {hasCustomNs && verificationStatus.status === 'error' && verificationStatus.domain === baseDomain ? (
+            <div className="flex gap-2">
+              <button
+                onClick={handleSave}
+                disabled={update.isPending}
+                className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-4 w-4 ${update.isPending ? 'animate-spin' : ''}`} />
+                {update.isPending ? 'Verifying...' : 'Verify Again'}
+              </button>
+              <button
+                onClick={handleSkipVerification}
+                disabled={update.isPending}
+                className="flex items-center gap-2 rounded-md border border-yellow-500 px-4 py-2 text-sm font-medium text-yellow-600 transition-colors hover:bg-yellow-500/10 disabled:opacity-50"
+              >
+                <AlertTriangle className="h-4 w-4" />
+                Save Anyway (Advanced)
+              </button>
+            </div>
+          ) : hasCustomNs && verificationStatus.status !== 'success' ? (
+            <button
+              onClick={handleSave}
+              disabled={update.isPending || verifyDomain.isPending}
+              className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              <Save className="h-4 w-4" />
+              {verifyDomain.isPending ? 'Verifying...' : 'Save & Verify'}
+            </button>
+          ) : (
+            <button
+              onClick={handleSaveAfterVerification}
+              disabled={update.isPending}
+              className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            >
+              <Save className="h-4 w-4" />
+              {update.isPending ? 'Saving...' : 'Save'}
+            </button>
+          )}
         </div>
       )}
     </SettingsSection>

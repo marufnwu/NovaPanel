@@ -41,6 +41,14 @@ export interface NameserverSettings {
   ns2: string;
 }
 
+export interface DomainVerificationResult {
+  domain: string;
+  resolvesTo: string[];
+  pointsToServer: boolean;
+  serverIp: string;
+  error?: string;
+}
+
 export interface SessionSettings {
   timeout: number;
 }
@@ -200,6 +208,13 @@ export function useUpdateNameserverSettings() {
     mutationFn: (data: Partial<NameserverSettings>) =>
       api.put('/settings/nameservers', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['settings', 'nameservers'] }),
+  });
+}
+
+export function useVerifyNameserverDomain() {
+  return useMutation({
+    mutationFn: (domain: string) =>
+      api.post<DomainVerificationResult>('/settings/nameservers/verify-domain', { domain }),
   });
 }
 
