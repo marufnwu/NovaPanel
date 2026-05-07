@@ -887,68 +887,10 @@ POOL
         fi
     done
 
-    # 2d. Nginx frontend configuration
-    log "Configuring Nginx as frontend proxy..."
-    cat > /etc/nginx/sites-available/novapanel << 'NGINXCONF'
-# NovaPanel — Nginx Frontend Reverse Proxy
-#
-# NOTE: The NovaPanel API is directly accessible on port 8732 as a FALLBACK
-# if Nginx is unavailable. This ensures admin access even when Nginx config
-# is broken. Access: http://your-server:8732
-
-upstream panel_api {
-    server 127.0.0.1:8732;
-    keepalive 64;
-}
-
-upstream apache_backend {
-    server 127.0.0.1:8080;
-    keepalive 32;
-}
-
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-
-    root /var/www/html;
-    index index.html index.php;
-
-    # Proxy panel API requests
-    location /api/ {
-        proxy_pass http://panel_api;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-    }
-
-    # Proxy WebSocket connections
-    location /ws/ {
-        proxy_pass http://panel_api;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    # Serve the panel frontend
-    location / {
-        proxy_pass http://panel_api;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-NGINXCONF
-    rm -f /etc/nginx/sites-enabled/default
-    ln -sf /etc/nginx/sites-available/novapanel /etc/nginx/sites-enabled/novapanel
-    nginx -t && systemctl reload nginx
-    ok "Nginx configured as frontend proxy"
+    # 2d. Nginx configuration for website hosting (NOT for panel)
+    # The panel serves on port 8732 directly - no Nginx proxy needed
+    # Website configs are created dynamically by the panel
+    log "Nginx configured for website hosting only"
 
     # 2e. Firewall (UFW)
     log "Configuring UFW firewall..."
