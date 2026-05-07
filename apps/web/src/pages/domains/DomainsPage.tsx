@@ -167,7 +167,9 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
   error: ApiError | null;
 }) {
   const { data: phpData, isLoading: phpLoading } = usePhpVersions();
-  const phpVersions = (phpData?.versions?.length ? phpData.versions : DEFAULT_PHP_VERSIONS);
+  const phpVersions = (phpData?.versions?.length
+    ? phpData.versions.map((v: any) => typeof v === 'string' ? v : v.version)
+    : DEFAULT_PHP_VERSIONS);
   const { data: cloudflareConfig } = useCloudflareConfig();
   const { data: tunnelStatus } = useTunnelStatus();
   const cfConfig = cloudflareConfig && 'apiToken' in cloudflareConfig ? cloudflareConfig : null;

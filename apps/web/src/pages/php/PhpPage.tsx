@@ -292,7 +292,7 @@ export function PhpPage() {
   const [showPhpInfo, setShowPhpInfo] = useState(false);
 
   const versions: string[] = versionsData?.versions?.length
-    ? versionsData.versions
+    ? versionsData.versions.map((v: any) => typeof v === 'string' ? v : v.version)
     : (versionsError ? DEFAULT_PHP_VERSIONS : []);
 
   const selectedDomainObj = domains?.find((d) => d.name === selectedDomain);
