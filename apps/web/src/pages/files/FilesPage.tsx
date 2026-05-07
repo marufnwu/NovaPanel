@@ -49,7 +49,10 @@ import {
   CheckSquare,
   Square,
   Globe,
-  RefreshCw
+  RefreshCw,
+  LayoutGrid,
+  List,
+  Info
 } from 'lucide-react';
 
 function formatSize(bytes: number): string {
@@ -496,6 +499,72 @@ function FileTree({ tree, currentPath, onNavigate, expandedNodes, onToggleExpand
   );
 }
 
+function GridView({ items, currentPath, onSelect, onOpen, onContextMenu, selectedItems }: {
+  items: FileEntry[];
+  currentPath: string;
+  onSelect: (entry: FileEntry) => void;
+  onOpen: (entry: FileEntry, e: React.MouseEvent) => void;
+  onContextMenu: (e: React.MouseEvent, entry: FileEntry) => void;
+  selectedItems: Set<string>;
+}) {
+  return (
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4 p-4">
+      {items.map((entry) => {
+        const entryPath = `${currentPath === '/' ? '' : currentPath}/${entry.name}`;
+        const isSelected = selectedItems.has(entryPath);
+        return (
+          <div
+            key={entry.name}
+            onClick={() => onSelect(entry)}
+            onDoubleClick={(e) => onOpen(entry, e)}
+            onContextMenu={(e) => onContextMenu(e, entry)}
+            className={`flex flex-col items-center p-3 rounded-lg border cursor-pointer hover:bg-accent transition-colors
+              ${isSelected ? 'border-primary bg-primary/10' : 'border-border'}`}
+          >
+            <div className="h-12 w-12 flex items-center justify-center">
+              {getIcon(entry)}
+            </div>
+            <span className="text-xs text-center mt-2 truncate w-full" title={entry.name}>
+              {entry.name}
+            </span>
+            <span className="text-[10px] text-muted-foreground">
+              {entry.isDirectory ? 'Folder' : formatSize(entry.size)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DetailsPanel({ entry, currentPath, onClose }: { entry: FileEntry; currentPath: string; onClose: () => void }) {
+  const entryPath = `${currentPath === '/' ? '' : currentPath}/${entry.name}`;
+  const DetailRow = ({ label, value, mono, breakAll }: { label: string; value: string | number; mono?: boolean; breakAll?: boolean }) => (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <span className={`text-sm ${mono ? 'font-mono' : ''} ${breakAll ? 'break-all' : ''}`}>{value}</span>
+    </div>
+  );
+
+  return (
+    <div className="w-72 border-l border-border bg-card p-4 overflow-y-auto">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="font-semibold">Details</h3>
+        <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-4 w-4" /></button>
+      </div>
+      <div className="space-y-4 text-sm">
+        <DetailRow label="Name" value={entry.name} />
+        <DetailRow label="Type" value={entry.isDirectory ? 'Folder' : (entry.type || 'Unknown')} />
+        <DetailRow label="Size" value={entry.isDirectory ? '-' : formatSize(entry.size)} />
+        <DetailRow label="Modified" value={new Date(entry.modifiedAt).toLocaleString()} />
+        <DetailRow label="Permissions" value={entry.permissions} mono />
+        <DetailRow label="Owner" value={entry.owner && entry.group ? `${entry.owner}:${entry.group}` : '-'} />
+        <DetailRow label="Path" value={entryPath} mono breakAll />
+      </div>
+    </div>
+  );
+}
+
 export function FilesPage() {
   // Read URL query params for websiteId (website-scoped browsing)
   const urlWebsiteId = useMemo(() => {
@@ -529,6 +598,10 @@ export function FilesPage() {
   const [clipboard, setClipboard] = useState<{ items: FileEntry[]; operation: 'copy' | 'cut' } | null>(null);
   const [previewModal, setPreviewModal] = useState<{ type: 'image' | 'video' | 'pdf' | 'archive'; entry: FileEntry } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void }>({ open: false, title: '', message: '', onConfirm: () => {} });
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => (localStorage.getItem('files_viewMode') as 'list' | 'grid') || 'list');
+  const [pathInput, setPathInput] = useState(currentPath);
+  const [showDetails, setShowDetails] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState<FileEntry | null>(null);
 
   const activeWebsiteId = urlWebsiteId || selectedWebsiteId || undefined;
   const activeDomainId = activeWebsiteId ? undefined : (selectedDomainId || undefined);
@@ -552,6 +625,16 @@ export function FilesPage() {
     localStorage.setItem('files_sortBy', sortBy);
     localStorage.setItem('files_sortOrder', sortOrder);
   }, [showHidden, sortBy, sortOrder]);
+
+  // Save viewMode to localStorage
+  useEffect(() => {
+    localStorage.setItem('files_viewMode', viewMode);
+  }, [viewMode]);
+
+  // Sync pathInput when currentPath changes
+  useEffect(() => {
+    setPathInput(currentPath);
+  }, [currentPath]);
 
   const { data: listing, isLoading, refetch } = useDirectoryListing(
     selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}${currentPath}` : currentPath,
@@ -801,6 +884,14 @@ export function FilesPage() {
       newSelected.add(itemPath);
     }
     setSelectedItems(newSelected);
+    // Set selected entry for details panel
+    if (!newSelected.has(itemPath)) {
+      setSelectedEntry(null);
+    } else if (newSelected.size === 1) {
+      setSelectedEntry(item);
+    } else {
+      setSelectedEntry(null);
+    }
   };
 
   const toggleExpandNode = (path: string) => {
@@ -970,6 +1061,24 @@ export function FilesPage() {
           <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
           {isLoading ? 'Loading...' : 'Refresh'}
         </button>
+        {/* View mode toggle */}
+        <button
+          onClick={() => setViewMode(v => v === 'list' ? 'grid' : 'list')}
+          className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent flex items-center gap-1"
+          title={viewMode === 'list' ? 'Switch to Grid View' : 'Switch to List View'}
+        >
+          {viewMode === 'list' ? <LayoutGrid className="h-4 w-4" /> : <List className="h-4 w-4" />}
+          {viewMode === 'list' ? 'Grid' : 'List'}
+        </button>
+        {/* Details panel toggle */}
+        <button
+          onClick={() => setShowDetails(v => !v)}
+          className={`rounded-md border px-3 py-2 text-sm hover:bg-accent flex items-center gap-1 ${showDetails ? 'border-primary bg-primary/5' : 'border-border'}`}
+          title={showDetails ? 'Hide Details' : 'Show Details'}
+        >
+          <Info className="h-4 w-4" />
+          Details
+        </button>
       </div>
 
       {/* Action buttons */}
@@ -1025,24 +1134,48 @@ export function FilesPage() {
 
         {/* Right panel - File list */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Breadcrumb */}
+          {/* Editable Path Bar */}
           <div className="mb-3 flex items-center gap-1 text-sm overflow-x-auto border-b border-border pb-2">
-            <button onClick={() => navigateTo('/')} className="text-muted-foreground hover:text-foreground whitespace-nowrap">/</button>
-            {pathParts.map((part, i) => (
-              <span key={i} className="flex items-center gap-1 whitespace-nowrap">
-                <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                <button onClick={() => navigateTo('/' + pathParts.slice(0, i + 1).join('/'))} className={`${i === pathParts.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                  {part}
-                </button>
-              </span>
-            ))}
-            {selectedDomainId && !activeWebsiteId && <span className="text-muted-foreground ml-2">/ {selectedDomainId}</span>}
+            <Folder className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <input
+              value={pathInput}
+              onChange={(e) => setPathInput(e.target.value)}
+              onBlur={() => {
+                // Validate and navigate on blur
+                const newPath = pathInput.startsWith('/') ? pathInput : '/' + pathInput;
+                navigateTo(newPath);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const newPath = pathInput.startsWith('/') ? pathInput : '/' + pathInput;
+                  navigateTo(newPath);
+                }
+              }}
+              className="flex-1 bg-transparent text-sm font-mono outline-none min-w-0"
+              aria-label="Current path"
+            />
           </div>
 
-          {/* File table */}
+          {/* File table or grid view */}
           {isLoading ? <LoadingSpinner /> : !filtered.length ? (
             <div className="rounded-lg border border-border p-12 text-center text-muted-foreground flex-1 flex items-center justify-center">
               {search ? 'No files match your search' : 'This folder is empty'}
+            </div>
+          ) : viewMode === 'grid' ? (
+            <div className="rounded-lg border border-border overflow-hidden flex-1 overflow-auto">
+              <GridView
+                items={filtered}
+                currentPath={currentPath}
+                onSelect={(entry) => {
+                  toggleSelectItem(entry);
+                  if (selectedItems.size === 0 || selectedItems.size === 1) {
+                    setSelectedEntry(entry);
+                  }
+                }}
+                onOpen={handleDoubleClick}
+                onContextMenu={handleContextMenu}
+                selectedItems={selectedItems}
+              />
             </div>
           ) : (
             <div className="rounded-lg border border-border overflow-hidden flex-1 overflow-auto">
@@ -1121,6 +1254,11 @@ export function FilesPage() {
             </div>
           )}
         </div>
+
+        {/* Details Panel */}
+        {showDetails && selectedEntry && (
+          <DetailsPanel entry={selectedEntry} currentPath={currentPath} onClose={() => setShowDetails(false)} />
+        )}
       </div>
 
       {/* Modals — pass context (websiteId or domainId) */}
