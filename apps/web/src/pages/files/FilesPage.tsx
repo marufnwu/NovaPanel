@@ -48,7 +48,8 @@ import {
   ArrowUpDown,
   CheckSquare,
   Square,
-  Globe
+  Globe,
+  RefreshCw
 } from 'lucide-react';
 
 function formatSize(bytes: number): string {
@@ -516,7 +517,10 @@ export function FilesPage() {
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [permissionsTarget, setPermissionsTarget] = useState<{ path: string; mode: string; isDirectory: boolean } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ entry: FileEntry; x: number; y: number } | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
   const [showHidden, setShowHidden] = useState(false);
   const [sortBy, setSortBy] = useState<'name' | 'size' | 'modified' | 'type'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -549,7 +553,7 @@ export function FilesPage() {
     localStorage.setItem('files_sortOrder', sortOrder);
   }, [showHidden, sortBy, sortOrder]);
 
-  const { data: listing, isLoading } = useDirectoryListing(
+  const { data: listing, isLoading, refetch } = useDirectoryListing(
     selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}${currentPath}` : currentPath,
     activeDomainId,
     activeWebsiteId
@@ -567,13 +571,126 @@ export function FilesPage() {
   const fullPath = selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}${currentPath}` : currentPath;
   const items: FileEntry[] = listing?.items || [];
 
-  const filtered = search
-    ? items.filter((item: FileEntry) => item.name.toLowerCase().includes(search.toLowerCase()))
-    : items;
+  // Available file types for filtering
+  const availableTypes = useMemo(() => {
+    const types = new Set(items
+      .filter(item => !item.isDirectory)
+      .map(item => item.name.split('.').pop()?.toLowerCase())
+      .filter(Boolean) as string[]
+    );
+    return ['', ...Array.from(types).sort()];
+  }, [items]);
+
+  // Filtered items with debounced search and type filter
+  const filtered = useMemo(() => {
+    let result = items;
+    if (debouncedSearch) {
+      result = result.filter((item: FileEntry) => item.name.toLowerCase().includes(debouncedSearch.toLowerCase()));
+    }
+    if (typeFilter) {
+      result = result.filter((item: FileEntry) => item.name.toLowerCase().endsWith('.' + typeFilter));
+    }
+    return result;
+  }, [items, debouncedSearch, typeFilter]);
+
+  // Handle search with debounce (300ms)
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    const timeoutId = setTimeout(() => setDebouncedSearch(value), 300);
+    return () => clearTimeout(timeoutId);
+  };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if in input field (except for Escape to clear selection)
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        if (e.key !== 'Escape') return;
+      }
+
+      // Skip if typing in search input (except Escape, Ctrl+F)
+      if (e.target === searchInputRef.current) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          clearSelection();
+          searchInputRef.current?.blur();
+          return;
+        }
+        if (e.key === 'F2' || e.key === 'Delete' || e.key === 'Enter' || e.key === 'Backspace' || e.key === 'r' || e.key === 'R') {
+          // Allow these shortcuts even in search
+        } else {
+          return;
+        }
+      }
+
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key.toLowerCase()) {
+          case 'c':
+            e.preventDefault();
+            handleCopySelected();
+            break;
+          case 'v':
+            e.preventDefault();
+            handlePaste();
+            break;
+          case 'x':
+            e.preventDefault();
+            handleCutSelected();
+            break;
+          case 'a':
+            e.preventDefault();
+            if (selectedItems.size !== filtered.length) {
+              setSelectedItems(new Set(filtered.map(item => `${currentPath === '/' ? '' : currentPath}/${item.name}`)));
+            } else {
+              setSelectedItems(new Set());
+            }
+            break;
+          case 'f':
+            e.preventDefault();
+            searchInputRef.current?.focus();
+            break;
+        }
+        return;
+      }
+
+      switch (e.key) {
+        case 'Delete':
+          e.preventDefault();
+          handleBulkDelete();
+          break;
+        case 'F2':
+          e.preventDefault();
+          startRename();
+          break;
+        case 'Enter':
+          e.preventDefault();
+          openSelected();
+          break;
+        case 'Backspace':
+          e.preventDefault();
+          navigateUp();
+          break;
+        case 'Escape':
+          e.preventDefault();
+          clearSelection();
+          break;
+        case 'r':
+        case 'R':
+          e.preventDefault();
+          refetch();
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedItems, clipboard, filtered, currentPath, items, refetch]);
 
   const navigateTo = (path: string) => {
     setCurrentPath(path);
     setSearch('');
+    setDebouncedSearch('');
+    setTypeFilter('');
     setSelectedItems(new Set());
   };
 
@@ -696,6 +813,64 @@ export function FilesPage() {
     setExpandedNodes(newExpanded);
   };
 
+  // Double-click handler to open folders or edit files
+  const handleDoubleClick = (entry: FileEntry, e: React.MouseEvent) => {
+    e.preventDefault();
+    if (entry.isDirectory) {
+      navigateTo(`${currentPath === '/' ? '' : currentPath}/${entry.name}`);
+    } else {
+      handleEdit(entry);
+    }
+  };
+
+  // Keyboard shortcuts helpers
+  const handleCopySelected = () => {
+    if (selectedItems.size === 0) return;
+    const itemsToCopy = items.filter(item => selectedItems.has(`${currentPath === '/' ? '' : currentPath}/${item.name}`));
+    if (itemsToCopy.length > 0) {
+      setClipboard({ items: itemsToCopy, operation: 'copy' });
+    }
+  };
+
+  const handleCutSelected = () => {
+    if (selectedItems.size === 0) return;
+    const itemsToCut = items.filter(item => selectedItems.has(`${currentPath === '/' ? '' : currentPath}/${item.name}`));
+    if (itemsToCut.length > 0) {
+      setClipboard({ items: itemsToCut, operation: 'cut' });
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedItems(new Set());
+  };
+
+  const startRename = () => {
+    if (selectedItems.size !== 1) return;
+    const itemName = Array.from(selectedItems)[0];
+    setRenameTarget(itemName);
+  };
+
+  const openSelected = () => {
+    if (selectedItems.size !== 1) return;
+    const itemPath = Array.from(selectedItems)[0];
+    const itemName = itemPath.split('/').pop() || '';
+    const item = items.find(i => i.name === itemName);
+    if (item) {
+      if (item.isDirectory) {
+        navigateTo(itemPath);
+      } else {
+        handleEdit(item);
+      }
+    }
+  };
+
+  const navigateUp = () => {
+    const pathParts = currentPath.split('/').filter(Boolean);
+    if (pathParts.length === 0) return;
+    const parentPath = '/' + pathParts.slice(0, -1).join('/');
+    navigateTo(parentPath || '/');
+  };
+
   const pathParts = currentPath.split('/').filter(Boolean);
 
   // Determine page header info
@@ -761,7 +936,7 @@ export function FilesPage() {
         )}
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search files..." className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm" />
+          <input ref={searchInputRef} value={search} onChange={(e) => handleSearchChange(e.target.value)} placeholder="Search files... (Ctrl+F)" className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm" />
         </div>
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className="rounded-md border border-input bg-background px-3 py-2 text-sm">
           <option value="name">Sort by Name</option>
@@ -774,6 +949,26 @@ export function FilesPage() {
         </button>
         <button onClick={() => setShowHidden(!showHidden)} className={`rounded-md border px-3 py-2 text-sm hover:bg-accent flex items-center gap-1 ${showHidden ? 'border-primary bg-primary/5' : 'border-border'}`}>
           {showHidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {showHidden ? 'Hidden' : 'Show Hidden'}
+        </button>
+        {/* File type filter */}
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+        >
+          <option value="">All Types</option>
+          {availableTypes.filter(Boolean).map((ext) => (
+            <option key={ext} value={ext as string}>.{ext}</option>
+          ))}
+        </select>
+        {/* Refresh button */}
+        <button
+          onClick={() => refetch()}
+          className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent flex items-center gap-1"
+          disabled={isLoading}
+        >
+          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          {isLoading ? 'Loading...' : 'Refresh'}
         </button>
       </div>
 
@@ -874,6 +1069,7 @@ export function FilesPage() {
                       className={`border-b border-border last:border-0 hover:bg-muted/30 cursor-pointer ${selectedItems.has(`${currentPath === '/' ? '' : currentPath}/${entry.name}`) ? 'bg-primary/10' : ''}`}
                       onContextMenu={(e) => handleContextMenu(e, entry)}
                       onClick={() => toggleSelectItem(entry)}
+                      onDoubleClick={(e) => handleDoubleClick(entry, e)}
                     >
                       <td className="px-4 py-3">
                         <button onClick={(e) => { e.stopPropagation(); toggleSelectItem(entry); }} className="rounded hover:bg-accent p-1">
