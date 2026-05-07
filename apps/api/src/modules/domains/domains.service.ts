@@ -19,6 +19,7 @@ import { SslService } from '../ssl/ssl.service.js';
 import { DnsService } from '../dns/dns.service.js';
 import { WebsitesService } from '../websites/websites.service.js';
 import { TunnelService } from '../tunnel/tunnel.service.js';
+import { detectNetworkInfo } from '../../utils/network.js';
 
 // Create service instances for cascade operations
 const mailService = new MailService();
@@ -715,8 +716,8 @@ export class DomainsService {
         // Get server IP
         let serverIp = '127.0.0.1';
         try {
-          const ipResult = await run('hostname', ['-I']);
-          serverIp = ipResult.stdout.trim().split(' ')[0] || '127.0.0.1';
+          const networkInfo = await detectNetworkInfo();
+          serverIp = networkInfo.primaryIp || '127.0.0.1';
         } catch { /* use default */ }
 
         await db.insert(dnsRecords).values({

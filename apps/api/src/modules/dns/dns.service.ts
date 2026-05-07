@@ -12,6 +12,7 @@ import * as sudoFs from '../../services/sudo-fs.js';
 import { resolve4, resolve6, resolveMx } from 'node:dns/promises';
 import { auditService } from '../audit/audit.service.js';
 import { createDnsError } from '../../utils/error-messages.js';
+import { detectNetworkInfo } from '../../utils/network.js';
 
 export class DnsService {
   /**
@@ -64,10 +65,10 @@ export class DnsService {
     // Get server IP for default records
     let serverIp = '127.0.0.1';
     try {
-      const ipResult = await run('hostname', ['-I']);
-      serverIp = ipResult.stdout.trim().split(' ')[0] || '127.0.0.1';
+      const networkInfo = await detectNetworkInfo();
+      serverIp = networkInfo.primaryIp || '127.0.0.1';
     } catch {
-      // Use default IP if hostname command fails
+      // Use default IP if network detection fails
     }
 
     // Insert default DNS records
@@ -292,8 +293,8 @@ export class DnsService {
     }
 
     // Get server IP
-    const ipResult = await run('hostname', ['-I']);
-    const serverIp = ipResult.stdout.trim().split(' ')[0] || '127.0.0.1';
+    const networkInfo = await detectNetworkInfo();
+    const serverIp = networkInfo.primaryIp || '127.0.0.1';
 
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
 
