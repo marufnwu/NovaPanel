@@ -269,3 +269,177 @@ export function useDomainCloudflareStatus(domainId: string) {
     enabled: !!domainId,
   });
 }
+
+// --- Cloudflare Zone for Domain ---
+
+export function useDomainCloudflareZone(domainId: string) {
+  return useQuery({
+    queryKey: ['domains', domainId, 'cloudflare-zone'],
+    queryFn: () => api.get<{ id: string; zoneName: string; zoneId: string; accountId: string | null; sslMode: string; isPaused: boolean } | null>(`/domains/${domainId}/cloudflare-zone`),
+    enabled: !!domainId,
+  });
+}
+
+// --- Cloudflare DNS Records for Domain ---
+
+export interface DomainCloudflareDnsRecord {
+  id: string;
+  type: string;
+  name: string;
+  content: string;
+  proxied: boolean;
+  ttl: number;
+  priority?: number;
+}
+
+export interface DomainCloudflareDnsResult {
+  records: DomainCloudflareDnsRecord[];
+  total_count: number;
+}
+
+export function useDomainCloudflareDns(domainId: string) {
+  return useQuery({
+    queryKey: ['domains', domainId, 'cloudflare', 'dns'],
+    queryFn: () => api.get<DomainCloudflareDnsResult>(`/domains/${domainId}/cloudflare/dns`),
+    enabled: !!domainId,
+  });
+}
+
+export function useCreateDomainCloudflareDns(domainId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { type: string; name: string; content: string; proxied?: boolean; ttl?: number; priority?: number }) =>
+      api.post(`/domains/${domainId}/cloudflare/dns`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['domains', domainId, 'cloudflare', 'dns'] }),
+  });
+}
+
+export function useDeleteDomainCloudflareDns(domainId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (recordId: string) => api.delete(`/domains/${domainId}/cloudflare/dns/${recordId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['domains', domainId, 'cloudflare', 'dns'] }),
+  });
+}
+
+// --- Cloudflare SSL Settings for Domain ---
+
+export interface DomainCloudflareSsl {
+  sslMode: string;
+  alwaysUseHttps: boolean;
+  automaticHttpsRewrites: boolean;
+  minTlsVersion: string;
+  http2: boolean;
+  http3: boolean;
+}
+
+export function useDomainCloudflareSsl(domainId: string) {
+  return useQuery({
+    queryKey: ['domains', domainId, 'cloudflare', 'ssl'],
+    queryFn: () => api.get<DomainCloudflareSsl>(`/domains/${domainId}/cloudflare/ssl`),
+    enabled: !!domainId,
+  });
+}
+
+export function useUpdateDomainCloudflareSsl(domainId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Partial<DomainCloudflareSsl>) => api.put(`/domains/${domainId}/cloudflare/ssl`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['domains', domainId, 'cloudflare', 'ssl'] }),
+  });
+}
+
+// --- Cloudflare Firewall Rules for Domain ---
+
+export interface DomainCloudflareFirewallRule {
+  id: string;
+  action: string;
+  description: string;
+  paused: boolean;
+  filter: { id: string; expression: string; paused: boolean };
+}
+
+export function useDomainCloudflareFirewall(domainId: string) {
+  return useQuery({
+    queryKey: ['domains', domainId, 'cloudflare', 'firewall'],
+    queryFn: () => api.get<DomainCloudflareFirewallRule[]>(`/domains/${domainId}/cloudflare/firewall`),
+    enabled: !!domainId,
+  });
+}
+
+export function useCreateDomainCloudflareFirewall(domainId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { action: string; expression: string; description?: string }) =>
+      api.post(`/domains/${domainId}/cloudflare/firewall`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['domains', domainId, 'cloudflare', 'firewall'] }),
+  });
+}
+
+export function useDeleteDomainCloudflareFirewall(domainId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ruleId: string) => api.delete(`/domains/${domainId}/cloudflare/firewall/${ruleId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['domains', domainId, 'cloudflare', 'firewall'] }),
+  });
+}
+
+// --- Cloudflare Redirect Rules for Domain ---
+
+export interface DomainCloudflareRedirectRule {
+  id: string;
+  ruleId: string | null;
+  sourcePattern: string;
+  destinationUrl: string;
+  redirectType: string;
+  isActive: boolean;
+}
+
+export function useDomainCloudflareRedirects(domainId: string) {
+  return useQuery({
+    queryKey: ['domains', domainId, 'cloudflare', 'redirects'],
+    queryFn: () => api.get<DomainCloudflareRedirectRule[]>(`/domains/${domainId}/cloudflare/redirects`),
+    enabled: !!domainId,
+  });
+}
+
+export function useCreateDomainCloudflareRedirect(domainId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { sourcePattern: string; destinationUrl: string; redirectType: string }) =>
+      api.post(`/domains/${domainId}/cloudflare/redirects`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['domains', domainId, 'cloudflare', 'redirects'] }),
+  });
+}
+
+export function useDeleteDomainCloudflareRedirect(domainId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ruleId: string) => api.delete(`/domains/${domainId}/cloudflare/redirects/${ruleId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['domains', domainId, 'cloudflare', 'redirects'] }),
+  });
+}
+
+// --- Cloudflare Tunnel Route for Domain ---
+
+export function useCreateDomainCloudflareRoute(domainId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post(`/domains/${domainId}/cloudflare/route`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['domains', domainId, 'cloudflare-status'] });
+      qc.invalidateQueries({ queryKey: ['tunnel', 'routes'] });
+    },
+  });
+}
+
+export function useDeleteDomainCloudflareRoute(domainId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.delete(`/domains/${domainId}/cloudflare/route`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['domains', domainId, 'cloudflare-status'] });
+      qc.invalidateQueries({ queryKey: ['tunnel', 'routes'] });
+    },
+  });
+}

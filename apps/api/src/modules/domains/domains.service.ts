@@ -1004,6 +1004,170 @@ export class DomainsService {
       return '';
     }
   }
+
+  // =========================================================================
+  // Cloudflare Domain-Specific Methods (for DomainDetail Cloudflare Tab)
+  // =========================================================================
+
+  /**
+   * Get the linked Cloudflare zone for a domain by domainId.
+   * Returns the zone if found, null otherwise.
+   */
+  async getCloudflareZoneForDomain(domainId: string): Promise<typeof cloudflareZones.$inferSelect | null> {
+    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+
+    return this.findLinkedZoneForDomain(domain.name);
+  }
+
+  /**
+   * Get DNS records for a domain's linked Cloudflare zone.
+   */
+  async getCloudflareDnsForDomain(domainId: string, options: { type?: string; name?: string; page?: number; perPage?: number } = {}) {
+    const zone = await this.getCloudflareZoneForDomain(domainId);
+    if (!zone) throw new AppError(404, 'NO_CLOUDFLARE_ZONE', 'No Cloudflare zone linked to this domain');
+
+    const cfService = new (await import('../cloudflare/cloudflare.service.js')).CloudflareService();
+    return cfService.listDnsRecords(zone.id, options);
+  }
+
+  /**
+   * Create a DNS record for a domain's linked Cloudflare zone.
+   */
+  async createCloudflareDnsRecord(domainId: string, data: { type: string; name: string; content: string; proxied?: boolean; ttl?: number; priority?: number }, userId?: string, ipAddress?: string) {
+    const zone = await this.getCloudflareZoneForDomain(domainId);
+    if (!zone) throw new AppError(404, 'NO_CLOUDFLARE_ZONE', 'No Cloudflare zone linked to this domain');
+
+    const cfService = new (await import('../cloudflare/cloudflare.service.js')).CloudflareService();
+    return cfService.createDnsRecord(zone.id, data, userId, ipAddress);
+  }
+
+  /**
+   * Delete a DNS record from a domain's linked Cloudflare zone.
+   */
+  async deleteCloudflareDnsRecord(domainId: string, recordId: string, userId?: string, ipAddress?: string) {
+    const zone = await this.getCloudflareZoneForDomain(domainId);
+    if (!zone) throw new AppError(404, 'NO_CLOUDFLARE_ZONE', 'No Cloudflare zone linked to this domain');
+
+    const cfService = new (await import('../cloudflare/cloudflare.service.js')).CloudflareService();
+    return cfService.deleteDnsRecord(zone.id, recordId, userId, ipAddress);
+  }
+
+  /**
+   * Get SSL settings for a domain's linked Cloudflare zone.
+   */
+  async getCloudflareSslForDomain(domainId: string) {
+    const zone = await this.getCloudflareZoneForDomain(domainId);
+    if (!zone) throw new AppError(404, 'NO_CLOUDFLARE_ZONE', 'No Cloudflare zone linked to this domain');
+
+    const cfService = new (await import('../cloudflare/cloudflare.service.js')).CloudflareService();
+    return cfService.getSslSettings(zone.id);
+  }
+
+  /**
+   * Update SSL settings for a domain's linked Cloudflare zone.
+   */
+  async updateCloudflareSslForDomain(domainId: string, data: any, userId?: string, ipAddress?: string) {
+    const zone = await this.getCloudflareZoneForDomain(domainId);
+    if (!zone) throw new AppError(404, 'NO_CLOUDFLARE_ZONE', 'No Cloudflare zone linked to this domain');
+
+    const cfService = new (await import('../cloudflare/cloudflare.service.js')).CloudflareService();
+    return cfService.updateSslSettings(zone.id, data, userId, ipAddress);
+  }
+
+  /**
+   * Get firewall rules for a domain's linked Cloudflare zone.
+   */
+  async getCloudflareFirewallForDomain(domainId: string) {
+    const zone = await this.getCloudflareZoneForDomain(domainId);
+    if (!zone) throw new AppError(404, 'NO_CLOUDFLARE_ZONE', 'No Cloudflare zone linked to this domain');
+
+    const cfService = new (await import('../cloudflare/cloudflare.service.js')).CloudflareService();
+    return cfService.listFirewallRules(zone.id);
+  }
+
+  /**
+   * Create a firewall rule for a domain's linked Cloudflare zone.
+   */
+  async createCloudflareFirewallRule(domainId: string, data: { action: string; expression: string; description?: string }, userId?: string, ipAddress?: string) {
+    const zone = await this.getCloudflareZoneForDomain(domainId);
+    if (!zone) throw new AppError(404, 'NO_CLOUDFLARE_ZONE', 'No Cloudflare zone linked to this domain');
+
+    const cfService = new (await import('../cloudflare/cloudflare.service.js')).CloudflareService();
+    return cfService.createFirewallRule(zone.id, data, userId, ipAddress);
+  }
+
+  /**
+   * Delete a firewall rule from a domain's linked Cloudflare zone.
+   */
+  async deleteCloudflareFirewallRule(domainId: string, ruleId: string, userId?: string, ipAddress?: string) {
+    const zone = await this.getCloudflareZoneForDomain(domainId);
+    if (!zone) throw new AppError(404, 'NO_CLOUDFLARE_ZONE', 'No Cloudflare zone linked to this domain');
+
+    const cfService = new (await import('../cloudflare/cloudflare.service.js')).CloudflareService();
+    return cfService.deleteFirewallRule(zone.id, ruleId, userId, ipAddress);
+  }
+
+  /**
+   * Get redirect rules for a domain's linked Cloudflare zone.
+   */
+  async getCloudflareRedirectsForDomain(domainId: string) {
+    const zone = await this.getCloudflareZoneForDomain(domainId);
+    if (!zone) throw new AppError(404, 'NO_CLOUDFLARE_ZONE', 'No Cloudflare zone linked to this domain');
+
+    const cfService = new (await import('../cloudflare/cloudflare.service.js')).CloudflareService();
+    return cfService.listRedirectRules(zone.id);
+  }
+
+  /**
+   * Create a redirect rule for a domain's linked Cloudflare zone.
+   */
+  async createCloudflareRedirectRule(domainId: string, data: { sourcePattern: string; destinationUrl: string; redirectType: string }, userId?: string, ipAddress?: string) {
+    const zone = await this.getCloudflareZoneForDomain(domainId);
+    if (!zone) throw new AppError(404, 'NO_CLOUDFLARE_ZONE', 'No Cloudflare zone linked to this domain');
+
+    const cfService = new (await import('../cloudflare/cloudflare.service.js')).CloudflareService();
+    return cfService.createRedirectRule(zone.id, data, userId, ipAddress);
+  }
+
+  /**
+   * Delete a redirect rule from a domain's linked Cloudflare zone.
+   */
+  async deleteCloudflareRedirectRule(domainId: string, ruleId: string, userId?: string, ipAddress?: string) {
+    const zone = await this.getCloudflareZoneForDomain(domainId);
+    if (!zone) throw new AppError(404, 'NO_CLOUDFLARE_ZONE', 'No Cloudflare zone linked to this domain');
+
+    const cfService = new (await import('../cloudflare/cloudflare.service.js')).CloudflareService();
+    return cfService.deleteRedirectRule(zone.id, ruleId, userId, ipAddress);
+  }
+
+  /**
+   * Create a tunnel route for a domain (Make Public action).
+   * Uses the existing autoCreateTunnelRoute logic.
+   */
+  async createCloudflareTunnelRoute(domainId: string, userId?: string, ipAddress?: string) {
+    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+
+    await this.autoCreateTunnelRoute(domain.name, domainId, userId, ipAddress);
+
+    // Return the created route
+    const [route] = await db.select().from(tunnelRoutes)
+      .where(eq(tunnelRoutes.domainId, domainId))
+      .limit(1);
+
+    return route;
+  }
+
+  /**
+   * Delete the tunnel route for a domain (Make Private action).
+   */
+  async deleteCloudflareTunnelRoute(domainId: string, userId?: string, ipAddress?: string) {
+    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+
+    await this.autoRemoveTunnelRoutes(domainId, domain.name, userId, ipAddress);
+  }
 }
 
 function defaultIndexHtml(domain: string): string {
