@@ -420,6 +420,7 @@ function PhpSettingsSection() {
 function NameserverSettingsSection() {
   const { data, isLoading, isError, refetch } = useNameserverSettings();
   const update = useUpdateNameserverSettings();
+  const { data: serverContext } = useServerContext();
   const [form, setForm] = useState({ ns1: '', ns2: '' });
 
   useEffect(() => {
@@ -433,6 +434,14 @@ function NameserverSettingsSection() {
   const handleSave = () => {
     update.mutate(form);
   };
+
+  const hasPublicIp = serverContext?.hasPublicIp ?? false;
+  const serverIp = serverContext?.publicIp ?? serverContext?.primaryIp ?? 'your server IP';
+  const hasCustomNs = !!(form.ns1 && form.ns1 !== 'ns1.example.com');
+
+  // Determine guidance based on state
+  const showDirectIpGuidance = !hasCustomNs;
+  const showGlueRecordGuidance = hasCustomNs && hasPublicIp;
 
   return (
     <SettingsSection
@@ -448,6 +457,31 @@ function NameserverSettingsSection() {
         </div>
       ) : (
         <div className="space-y-4">
+          {/* No domain scenario - Show direct IP assignment guidance */}
+          {showDirectIpGuidance && (
+            <div className="rounded-md border border-blue-500/30 bg-blue-500/5 p-3">
+              <div className="flex items-start gap-2">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+                <div className="text-sm">
+                  <p className="font-medium text-blue-600 dark:text-blue-400">No custom nameservers configured</p>
+                  <p className="mt-1 text-muted-foreground">
+                    To use this server with a domain, point your domain's A record directly to your server's IP address.
+                    {hasPublicIp ? (
+                      <> Set <span className="font-mono font-semibold">{serverIp}</span> as the A record for your domain.</>
+                    ) : (
+                      <> Your server's public IP will be shown here once detected.</>
+                    )}
+                  </p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Custom nameservers (like ns1.yourdomain.com) require you to first own a domain, then create "glue records" 
+                    at your domain registrar that link ns1.yourdomain.com to this server's IP.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Custom nameserver inputs */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium">Primary Nameserver (NS1)</label>
@@ -468,6 +502,29 @@ function NameserverSettingsSection() {
               />
             </div>
           </div>
+
+          {/* Glue record guidance when custom nameservers are configured */}
+          {showGlueRecordGuidance && (
+            <div className="rounded-md border border-green-500/30 bg-green-500/5 p-3">
+              <div className="flex items-start gap-2">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+                <div className="text-sm">
+                  <p className="font-medium text-green-600 dark:text-green-400">Custom nameservers configured</p>
+                  <p className="mt-1 text-muted-foreground">
+                    To use these nameservers, you need to create glue records at your domain registrar:
+                  </p>
+                  <div className="mt-2 space-y-1 rounded bg-background/50 p-2 font-mono text-xs">
+                    <p><span className="font-semibold">ns1</span> → <span className="text-primary">{serverIp}</span></p>
+                    <p><span className="font-semibold">ns2</span> → <span className="text-primary">{serverIp}</span></p>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    After creating glue records, set your domain's nameservers to: <span className="font-semibold">{form.ns1}</span> and <span className="font-semibold">{form.ns2}</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <p className="text-xs text-muted-foreground">
             These nameservers will be used as defaults when creating new DNS zones. Changes will not affect
             existing domains.

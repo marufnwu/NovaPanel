@@ -13,6 +13,7 @@ import { resolve4, resolve6, resolveMx } from 'node:dns/promises';
 import { auditService } from '../audit/audit.service.js';
 import { createDnsError } from '../../utils/error-messages.js';
 import { detectNetworkInfo } from '../../utils/network.js';
+import { settingsService } from '../settings/settings.service.js';
 
 export class DnsService {
   /**
@@ -48,12 +49,16 @@ export class DnsService {
     const zoneId = nanoid();
     const serial = Math.floor(Date.now() / 1000);
 
+    // Get configured custom nameservers from settings
+    const nsSettings = await settingsService.getNameserverSettings();
+    const primaryNs = nsSettings.ns1 ? `${nsSettings.ns1}.` : 'ns1.example.com.';
+
     await db.insert(dnsZones).values({
       id: zoneId,
       domainId,
       serial,
       ttl: 3600,
-      primaryNs: 'ns1.example.com.',
+      primaryNs: primaryNs,
       adminEmail: 'admin.example.com.',
       refresh: 86400,
       retry: 7200,
@@ -78,8 +83,8 @@ export class DnsService {
       { type: 'A', name: 'mail', value: serverIp, priority: null },
       { type: 'MX', name: '@', value: `mail.${domain.name}.`, priority: 10 },
       { type: 'TXT', name: '@', value: `"v=spf1 a mx ip4:${serverIp} ~all"`, priority: null },
-      { type: 'NS', name: '@', value: 'ns1.example.com.', priority: null },
-      { type: 'NS', name: '@', value: 'ns2.example.com.', priority: null },
+      { type: 'NS', name: '@', value: nsSettings.ns1 ? `${nsSettings.ns1}.` : 'ns1.example.com.', priority: null },
+      { type: 'NS', name: '@', value: nsSettings.ns2 ? `${nsSettings.ns2}.` : 'ns2.example.com.', priority: null },
     ];
 
     for (const rec of defaultRecords) {
@@ -296,6 +301,9 @@ export class DnsService {
     const networkInfo = await detectNetworkInfo();
     const serverIp = networkInfo.primaryIp || '127.0.0.1';
 
+    // Get configured custom nameservers from settings
+    const nsSettings = await settingsService.getNameserverSettings();
+
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
 
     // Insert default records
@@ -305,8 +313,8 @@ export class DnsService {
       { type: 'A', name: 'mail', value: serverIp },
       { type: 'MX', name: '@', value: `mail.${domain!.name}.`, priority: 10 },
       { type: 'TXT', name: '@', value: `"v=spf1 a mx ip4:${serverIp} ~all"` },
-      { type: 'NS', name: '@', value: 'ns1.example.com.' },
-      { type: 'NS', name: '@', value: 'ns2.example.com.' },
+      { type: 'NS', name: '@', value: nsSettings.ns1 ? `${nsSettings.ns1}.` : 'ns1.example.com.' },
+      { type: 'NS', name: '@', value: nsSettings.ns2 ? `${nsSettings.ns2}.` : 'ns2.example.com.' },
     ];
 
     for (const rec of defaults) {
