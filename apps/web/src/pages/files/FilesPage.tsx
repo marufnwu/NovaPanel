@@ -20,6 +20,7 @@ import type { FileEntry, DirectoryTreeNode } from '../../api/hooks/files';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { ImagePreviewModal, VideoPreviewModal, PDFPreviewModal, ArchiveBrowserModal } from '../../components/files/FilePreviewModal';
 import { CodeEditor } from '../../components/files/CodeEditor';
 import { 
@@ -798,6 +799,15 @@ export function FilesPage() {
           </button>
         )}
       </div>
+
+      {/* No context selected - show empty state */}
+      {!hasContext && (
+        <EmptyState
+          icon={Globe}
+          title="No website or domain selected"
+          description="Select a website or domain above to browse files"
+        />
+      )}
 
       {/* Main content area with tree and file list */}
       <div className="flex gap-4 h-[calc(100vh-20rem)]">
