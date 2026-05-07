@@ -52,7 +52,12 @@ import {
   RefreshCw,
   LayoutGrid,
   List,
-  Info
+  Info,
+  Star,
+  GripVertical,
+  Type,
+  Hash,
+  Replace
 } from 'lucide-react';
 
 function formatSize(bytes: number): string {
@@ -421,6 +426,202 @@ function NewFileModal({ currentPath, domainId, websiteId, onClose }: { currentPa
   );
 }
 
+interface RenamePreview {
+  oldPath: string;
+  newName: string;
+}
+
+function BatchRenameModal({ entries, currentPath, domainId, websiteId, onClose }: { 
+  entries: FileEntry[]; 
+  currentPath: string;
+  domainId?: string; 
+  websiteId?: string; 
+  onClose: () => void;
+}) {
+  const rename = useRenameFile();
+  const [mode, setMode] = useState<'find-replace' | 'prefix' | 'suffix' | 'number'>('find-replace');
+  const [findText, setFindText] = useState('');
+  const [replaceText, setReplaceText] = useState('');
+  const [prefixText, setPrefixText] = useState('');
+  const [suffixText, setSuffixText] = useState('');
+  const [startNumber, setStartNumber] = useState(1);
+  const [numberPadding, setNumberPadding] = useState(3);
+
+  // Generate preview of renamed files
+  const preview = useMemo<RenamePreview[]>(() => {
+    return entries.map((entry, index) => {
+      let newName = entry.name;
+      
+      switch (mode) {
+        case 'find-replace':
+          if (findText) {
+            newName = entry.name.replace(new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replaceText);
+          }
+          break;
+        case 'prefix':
+          newName = prefixText + entry.name;
+          break;
+        case 'suffix':
+          const ext = entry.name.includes('.') ? '.' + entry.name.split('.').pop() : '';
+          const nameWithoutExt = entry.name.includes('.') ? entry.name.slice(0, -ext.length) : entry.name;
+          newName = nameWithoutExt + suffixText + ext;
+          break;
+        case 'number':
+          const extNum = entry.name.includes('.') ? '.' + entry.name.split('.').pop() : '';
+          const nameWithoutExtNum = entry.name.includes('.') ? entry.name.slice(0, -extNum.length) : entry.name;
+          const numStr = String(startNumber + index).padStart(numberPadding, '0');
+          newName = `${nameWithoutExtNum}_${numStr}${extNum}`;
+          break;
+      }
+      
+      return { oldPath: entry.name, newName };
+    });
+  }, [entries, mode, findText, replaceText, prefixText, suffixText, startNumber, numberPadding]);
+
+  const handleRename = () => {
+    preview.forEach(p => {
+      if (p.oldPath !== p.newName) {
+        const oldFullPath = `${currentPath === '/' ? '' : currentPath}/${p.oldPath}`;
+        const newFullPath = `${currentPath === '/' ? '' : currentPath}/${p.newName}`;
+        rename.mutate({ oldPath: oldFullPath, newPath: newFullPath, domainId, websiteId });
+      }
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-lg max-h-[80vh] flex flex-col">
+        <h3 className="mb-4 text-lg font-semibold">Batch Rename ({entries.length} files)</h3>
+        
+        {/* Mode selector */}
+        <div className="mb-4 flex flex-wrap gap-2">
+          <button 
+            onClick={() => setMode('find-replace')} 
+            className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm ${mode === 'find-replace' ? 'border-primary bg-primary/5' : 'border-border'}`}
+          >
+            <Replace className="h-4 w-4" /> Find & Replace
+          </button>
+          <button 
+            onClick={() => setMode('prefix')} 
+            className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm ${mode === 'prefix' ? 'border-primary bg-primary/5' : 'border-border'}`}
+          >
+            <Type className="h-4 w-4" /> Add Prefix
+          </button>
+          <button 
+            onClick={() => setMode('suffix')} 
+            className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm ${mode === 'suffix' ? 'border-primary bg-primary/5' : 'border-border'}`}
+          >
+            <Type className="h-4 w-4" /> Add Suffix
+          </button>
+          <button 
+            onClick={() => setMode('number')} 
+            className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm ${mode === 'number' ? 'border-primary bg-primary/5' : 'border-border'}`}
+          >
+            <Hash className="h-4 w-4" /> Sequential #
+          </button>
+        </div>
+
+        {/* Mode-specific inputs */}
+        <div className="mb-4 space-y-3">
+          {mode === 'find-replace' && (
+            <>
+              <div>
+                <label className="mb-1 block text-sm font-medium">Find</label>
+                <input 
+                  value={findText} 
+                  onChange={(e) => setFindText(e.target.value)} 
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" 
+                  placeholder="Text to find..."
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium">Replace with</label>
+                <input 
+                  value={replaceText} 
+                  onChange={(e) => setReplaceText(e.target.value)} 
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" 
+                  placeholder="Replacement text..."
+                />
+              </div>
+            </>
+          )}
+          {mode === 'prefix' && (
+            <div>
+              <label className="mb-1 block text-sm font-medium">Prefix</label>
+              <input 
+                value={prefixText} 
+                onChange={(e) => setPrefixText(e.target.value)} 
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" 
+                placeholder="Text to add before filename..."
+              />
+            </div>
+          )}
+          {mode === 'suffix' && (
+            <div>
+              <label className="mb-1 block text-sm font-medium">Suffix</label>
+              <input 
+                value={suffixText} 
+                onChange={(e) => setSuffixText(e.target.value)} 
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" 
+                placeholder="Text to add before extension..."
+              />
+            </div>
+          )}
+          {mode === 'number' && (
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="mb-1 block text-sm font-medium">Start at</label>
+                <input 
+                  type="number"
+                  min={0}
+                  value={startNumber} 
+                  onChange={(e) => setStartNumber(parseInt(e.target.value) || 1)} 
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" 
+                />
+              </div>
+              <div className="flex-1">
+                <label className="mb-1 block text-sm font-medium">Padding (digits)</label>
+                <input 
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={numberPadding} 
+                  onChange={(e) => setNumberPadding(parseInt(e.target.value) || 1)} 
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" 
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Preview list */}
+        <div className="flex-1 overflow-y-auto border rounded-md bg-muted/30 p-3 mb-4 max-h-64">
+          <div className="text-xs font-medium text-muted-foreground mb-2">Preview:</div>
+          {preview.map((p, i) => (
+            <div key={i} className="flex items-center gap-2 text-sm py-1">
+              <span className="line-through text-muted-foreground truncate flex-1">{p.oldPath}</span>
+              <ArrowLeft className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+              <span className="font-medium truncate flex-1">{p.newName}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
+          <button 
+            onClick={handleRename} 
+            disabled={rename.isPending || (mode === 'find-replace' && !findText)} 
+            className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            Rename {entries.length} Files
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ContextMenu({ entry, x, y, onClose, onEdit, onRename, onPermissions, onDelete, onCopy, onCut, onPreview }: {
   entry: FileEntry;
   x: number;
@@ -448,24 +649,36 @@ function ContextMenu({ entry, x, y, onClose, onEdit, onRename, onPermissions, on
   );
 }
 
-function FileTree({ tree, currentPath, onNavigate, expandedNodes, onToggleExpand }: {
+function FileTree({ tree, currentPath, onNavigate, expandedNodes, onToggleExpand, favorites, onToggleFavorite, dropTarget, onDrop, onDragOver, onDragLeave }: {
   tree: DirectoryTreeNode | null | undefined;
   currentPath: string;
   onNavigate: (path: string) => void;
   expandedNodes: Set<string>;
   onToggleExpand: (path: string) => void;
+  favorites?: Set<string>;
+  onToggleFavorite?: (path: string) => void;
+  dropTarget?: string | null;
+  onDrop?: (path: string) => void;
+  onDragOver?: (e: React.DragEvent, path: string) => void;
+  onDragLeave?: () => void;
 }) {
   if (!tree) return null;
 
   const renderNode = (node: DirectoryTreeNode, level: number = 0) => {
     const isExpanded = expandedNodes.has(node.path);
     const isActive = currentPath === node.path || currentPath.startsWith(node.path + '/');
+    const isFavorite = favorites?.has(node.path);
+    const isDropping = dropTarget === node.path;
 
     return (
       <div key={node.path}>
         <div
-          className={`flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent ${isActive ? 'bg-primary/10 text-primary' : ''}`}
+          className={`flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent transition-colors ${isActive ? 'bg-primary/10 text-primary' : ''} ${isDropping ? 'bg-primary/30 ring-2 ring-primary' : ''}`}
           style={{ paddingLeft: `${level * 12 + 12}px` }}
+          draggable={node.isDirectory}
+          onDragOver={(e) => node.isDirectory && onDragOver?.(e, node.path)}
+          onDrop={(e) => { e.preventDefault(); node.isDirectory && onDrop?.(node.path); }}
+          onDragLeave={onDragLeave}
           onClick={() => {
             if (node.isDirectory) {
               onToggleExpand(node.path);
@@ -481,7 +694,16 @@ function FileTree({ tree, currentPath, onNavigate, expandedNodes, onToggleExpand
             />
           )}
           {node.isDirectory ? <Folder className="h-4 w-4 text-blue-400" /> : <File className="h-4 w-4 text-muted-foreground" />}
-          <span className="truncate">{node.name}</span>
+          <span className="truncate flex-1">{node.name}</span>
+          {node.isDirectory && onToggleFavorite && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleFavorite(node.path); }}
+              className="rounded p-0.5 hover:bg-accent"
+              title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              <Star className={`h-3 w-3 ${isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`} />
+            </button>
+          )}
         </div>
         {node.isDirectory && isExpanded && node.children && (
           <div>
@@ -499,30 +721,47 @@ function FileTree({ tree, currentPath, onNavigate, expandedNodes, onToggleExpand
   );
 }
 
-function GridView({ items, currentPath, onSelect, onOpen, onContextMenu, selectedItems }: {
+function GridView({ items, currentPath, onSelect, onOpen, onContextMenu, selectedItems, onDragStart, onToggleFavorite, favorites }: {
   items: FileEntry[];
   currentPath: string;
   onSelect: (entry: FileEntry) => void;
   onOpen: (entry: FileEntry, e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent, entry: FileEntry) => void;
   selectedItems: Set<string>;
+  onDragStart?: (entry: FileEntry, e: React.DragEvent) => void;
+  onToggleFavorite?: (entry: FileEntry) => void;
+  favorites?: Set<string>;
 }) {
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4 p-4">
       {items.map((entry) => {
         const entryPath = `${currentPath === '/' ? '' : currentPath}/${entry.name}`;
         const isSelected = selectedItems.has(entryPath);
+        const isFavorite = favorites?.has(entryPath);
         return (
           <div
             key={entry.name}
+            draggable
+            onDragStart={(e) => onDragStart?.(entry, e)}
             onClick={() => onSelect(entry)}
             onDoubleClick={(e) => onOpen(entry, e)}
             onContextMenu={(e) => onContextMenu(e, entry)}
             className={`flex flex-col items-center p-3 rounded-lg border cursor-pointer hover:bg-accent transition-colors
               ${isSelected ? 'border-primary bg-primary/10' : 'border-border'}`}
           >
-            <div className="h-12 w-12 flex items-center justify-center">
-              {getIcon(entry)}
+            <div className="relative">
+              <div className="h-12 w-12 flex items-center justify-center">
+                {getIcon(entry)}
+              </div>
+              {entry.isDirectory && onToggleFavorite && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onToggleFavorite(entry); }}
+                  className="absolute -top-1 -right-1 rounded-full bg-card p-0.5 hover:bg-accent"
+                  title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                >
+                  <Star className={`h-3 w-3 ${isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`} />
+                </button>
+              )}
             </div>
             <span className="text-xs text-center mt-2 truncate w-full" title={entry.name}>
               {entry.name}
@@ -603,6 +842,16 @@ export function FilesPage() {
   const [showDetails, setShowDetails] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<FileEntry | null>(null);
 
+  // Phase 3: Drag-and-drop state
+  const [dragSource, setDragSource] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+
+  // Phase 3: Batch rename modal
+  const [batchRenameOpen, setBatchRenameOpen] = useState(false);
+
+  // Phase 3: Favorites state
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+
   const activeWebsiteId = urlWebsiteId || selectedWebsiteId || undefined;
   const activeDomainId = activeWebsiteId ? undefined : (selectedDomainId || undefined);
   const hasContext = !!(activeWebsiteId || activeDomainId);
@@ -614,9 +863,17 @@ export function FilesPage() {
     const savedShowHidden = localStorage.getItem('files_showHidden');
     const savedSortBy = localStorage.getItem('files_sortBy');
     const savedSortOrder = localStorage.getItem('files_sortOrder');
+    const savedFavorites = localStorage.getItem('files_favorites');
     if (savedShowHidden) setShowHidden(savedShowHidden === 'true');
     if (savedSortBy) setSortBy(savedSortBy as any);
     if (savedSortOrder) setSortOrder(savedSortOrder as any);
+    if (savedFavorites) {
+      try {
+        setFavorites(new Set(JSON.parse(savedFavorites)));
+      } catch {
+        // Ignore parse errors
+      }
+    }
   }, []);
 
   // Save preferences to localStorage
@@ -625,6 +882,11 @@ export function FilesPage() {
     localStorage.setItem('files_sortBy', sortBy);
     localStorage.setItem('files_sortOrder', sortOrder);
   }, [showHidden, sortBy, sortOrder]);
+
+  // Save favorites to localStorage
+  useEffect(() => {
+    localStorage.setItem('files_favorites', JSON.stringify(Array.from(favorites)));
+  }, [favorites]);
 
   // Save viewMode to localStorage
   useEffect(() => {
@@ -962,6 +1224,71 @@ export function FilesPage() {
     navigateTo(parentPath || '/');
   };
 
+  // Phase 3: Drag-and-drop handlers
+  const handleDragStart = (entry: FileEntry, e: React.DragEvent) => {
+    const entryPath = `${currentPath === '/' ? '' : currentPath}/${entry.name}`;
+    setDragSource(entryPath);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', entryPath);
+  };
+
+  const handleDragOver = (e: React.DragEvent, path: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragSource && dragSource !== path) {
+      setDropTarget(path);
+      e.dataTransfer.dropEffect = 'move';
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDropTarget(null);
+  };
+
+  const handleDrop = (targetPath: string) => {
+    if (dragSource && dragSource !== targetPath) {
+      // Determine full paths based on context
+      const sourceFullPath = selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}${dragSource}` : dragSource;
+      const targetFullPath = selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}${targetPath}` : targetPath;
+      
+      moveFile.mutate({ 
+        sourcePath: sourceFullPath, 
+        targetPath: targetFullPath, 
+        domainId: activeDomainId, 
+        websiteId: activeWebsiteId 
+      });
+    }
+    setDragSource(null);
+    setDropTarget(null);
+  };
+
+  const handleDragEnd = () => {
+    setDragSource(null);
+    setDropTarget(null);
+  };
+
+  // Phase 3: Favorites handlers
+  const toggleFavorite = (path: string) => {
+    const newFavorites = new Set(favorites);
+    if (newFavorites.has(path)) {
+      newFavorites.delete(path);
+    } else {
+      newFavorites.add(path);
+    }
+    setFavorites(newFavorites);
+  };
+
+  const toggleEntryFavorite = (entry: FileEntry) => {
+    const entryPath = `${currentPath === '/' ? '' : currentPath}/${entry.name}`;
+    toggleFavorite(entryPath);
+  };
+
+  // Phase 3: Batch rename handler
+  const handleBatchRename = () => {
+    if (selectedItems.size === 0) return;
+    setBatchRenameOpen(true);
+  };
+
   const pathParts = currentPath.split('/').filter(Boolean);
 
   // Determine page header info
@@ -1098,9 +1425,16 @@ export function FilesPage() {
           </button>
         )}
         {selectedItems.size > 0 && (
-          <button onClick={handleBulkDelete} className="flex items-center gap-2 rounded-md border border-destructive bg-destructive/5 px-4 py-2 text-sm hover:bg-destructive/10 text-destructive">
-            <Trash2 className="h-4 w-4" /> Delete {selectedItems.size} item(s)
-          </button>
+          <>
+            <button onClick={handleBulkDelete} className="flex items-center gap-2 rounded-md border border-destructive bg-destructive/5 px-4 py-2 text-sm hover:bg-destructive/10 text-destructive">
+              <Trash2 className="h-4 w-4" /> Delete {selectedItems.size} item(s)
+            </button>
+            {selectedItems.size > 1 && (
+              <button onClick={handleBatchRename} className="flex items-center gap-2 rounded-md border border-primary bg-primary/5 px-4 py-2 text-sm hover:bg-primary/10 text-primary">
+                <Edit2 className="h-4 w-4" /> Batch Rename
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -1117,9 +1451,33 @@ export function FilesPage() {
       <div className="flex gap-4 h-[calc(100vh-20rem)]">
         {/* Left panel - Tree view */}
         <div className="w-64 flex-shrink-0 rounded-lg border border-border bg-card overflow-hidden flex flex-col">
-          <div className="border-b border-border px-4 py-2 bg-muted/50">
+          <div className="border-b border-border px-4 py-2 bg-muted/50 flex items-center justify-between">
             <span className="text-sm font-medium">Directory Tree</span>
+            {favorites.size > 0 && (
+              <span className="text-xs text-muted-foreground">{favorites.size} favorite{favorites.size !== 1 ? 's' : ''}</span>
+            )}
           </div>
+          {/* Favorites quick access section */}
+          {favorites.size > 0 && (
+            <div className="border-b border-border px-3 py-2 bg-muted/30">
+              <div className="text-xs font-medium text-muted-foreground mb-1">Favorites</div>
+              <div className="flex flex-wrap gap-1">
+                {Array.from(favorites).slice(0, 5).map(fav => (
+                  <button
+                    key={fav}
+                    onClick={() => {
+                      const relativePath = selectedDomainId && !activeWebsiteId ? fav.replace(`/${selectedDomainId}`, '') : fav;
+                      navigateTo(relativePath || '/');
+                    }}
+                    className="flex items-center gap-1 rounded bg-primary/10 px-2 py-0.5 text-xs text-primary hover:bg-primary/20"
+                  >
+                    <Star className="h-3 w-3 fill-primary text-primary" />
+                    <span className="truncate max-w-[80px]">{fav.split('/').pop() || fav}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <FileTree 
             tree={tree} 
             currentPath={selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}${currentPath}` : currentPath}
@@ -1129,6 +1487,15 @@ export function FilesPage() {
             }}
             expandedNodes={expandedNodes}
             onToggleExpand={toggleExpandNode}
+            favorites={new Set(Array.from(favorites).map(f => {
+              // Convert favorites to the full path format used in tree
+              return selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}${f}` : f;
+            }))}
+            onToggleFavorite={toggleFavorite}
+            dropTarget={dropTarget}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
           />
         </div>
 
@@ -1175,6 +1542,9 @@ export function FilesPage() {
                 onOpen={handleDoubleClick}
                 onContextMenu={handleContextMenu}
                 selectedItems={selectedItems}
+                onDragStart={handleDragStart}
+                onToggleFavorite={toggleEntryFavorite}
+                favorites={favorites}
               />
             </div>
           ) : (
@@ -1199,15 +1569,21 @@ export function FilesPage() {
                   {filtered.map((entry: FileEntry, i: number) => (
                     <tr
                       key={i}
+                      draggable
+                      onDragStart={(e) => handleDragStart(entry, e)}
+                      onDragEnd={handleDragEnd}
                       className={`border-b border-border last:border-0 hover:bg-muted/30 cursor-pointer ${selectedItems.has(`${currentPath === '/' ? '' : currentPath}/${entry.name}`) ? 'bg-primary/10' : ''}`}
                       onContextMenu={(e) => handleContextMenu(e, entry)}
                       onClick={() => toggleSelectItem(entry)}
                       onDoubleClick={(e) => handleDoubleClick(entry, e)}
                     >
                       <td className="px-4 py-3">
-                        <button onClick={(e) => { e.stopPropagation(); toggleSelectItem(entry); }} className="rounded hover:bg-accent p-1">
-                          {selectedItems.has(`${currentPath === '/' ? '' : currentPath}/${entry.name}`) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button onClick={(e) => { e.stopPropagation(); toggleSelectItem(entry); }} className="rounded hover:bg-accent p-1">
+                            {selectedItems.has(`${currentPath === '/' ? '' : currentPath}/${entry.name}`) ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                          </button>
+                          <GripVertical className="h-3 w-3 text-muted-foreground" />
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
@@ -1231,6 +1607,15 @@ export function FilesPage() {
                       <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{entry.permissions}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1">
+                          {entry.isDirectory && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleEntryFavorite(entry); }}
+                              className="rounded p-1.5 text-muted-foreground hover:bg-accent"
+                              title={favorites.has(`${currentPath === '/' ? '' : currentPath}/${entry.name}`) ? 'Remove from favorites' : 'Add to favorites'}
+                            >
+                              <Star className={`h-4 w-4 ${favorites.has(`${currentPath === '/' ? '' : currentPath}/${entry.name}`) ? 'fill-yellow-400 text-yellow-400' : ''}`} />
+                            </button>
+                          )}
                           {entry.isDirectory ? (
                             <>
                               <button onClick={(e) => { e.stopPropagation(); navigateTo(`${currentPath === '/' ? '' : currentPath}/${entry.name}`); }} className="rounded p-1.5 text-muted-foreground hover:bg-accent" title="Open">
@@ -1292,6 +1677,15 @@ export function FilesPage() {
           domainId={activeDomainId}
           websiteId={activeWebsiteId}
           onClose={() => setRenameTarget(null)}
+        />
+      )}
+      {batchRenameOpen && (
+        <BatchRenameModal
+          entries={items.filter(item => selectedItems.has(`${currentPath === '/' ? '' : currentPath}/${item.name}`))}
+          currentPath={currentPath}
+          domainId={activeDomainId}
+          websiteId={activeWebsiteId}
+          onClose={() => { setBatchRenameOpen(false); }}
         />
       )}
       {permissionsTarget && (
