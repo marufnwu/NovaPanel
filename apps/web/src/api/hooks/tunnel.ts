@@ -6,7 +6,7 @@ export interface CloudflareTunnel {
   id: string;
   tunnelId: string;
   name: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'degraded' | 'down';
   accountId?: string; // Cloudflare zone ID stored as accountId
 }
 
@@ -21,7 +21,7 @@ export interface TunnelRoute {
 }
 
 export interface TunnelStatus {
-  status: 'active' | 'inactive' | 'degraded';
+  status: 'active' | 'inactive' | 'degraded' | 'down';
   processRunning: boolean;
   connectedToEdge: boolean;
   connectionCount: number;
@@ -33,7 +33,7 @@ export interface TunnelStatus {
 export interface TunnelInfo {
   id: string;
   name: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'degraded' | 'down';
   connections: {
     id: string;
     colo: string;
@@ -64,7 +64,7 @@ export function useTunnelStatus() {
     queryKey: ['tunnel', 'status'],
     queryFn: async () => {
       const data = await api.get<{
-        status: 'active' | 'inactive' | 'degraded';
+        status: 'active' | 'inactive' | 'degraded' | 'down';
         processRunning: boolean;
         connectedToEdge: boolean;
         connectionCount: number;
@@ -74,14 +74,14 @@ export function useTunnelStatus() {
           id: string;
           tunnelId: string;
           name: string;
-          status: 'active' | 'inactive';
+          status: 'active' | 'inactive' | 'degraded' | 'down';
           accountId?: string;
           zoneId?: string;
         }>;
       }>('/tunnel/status');
       
       return {
-        status: data.status as 'active' | 'inactive' | 'degraded',
+        status: data.status as 'active' | 'inactive' | 'degraded' | 'down',
         processRunning: data.processRunning,
         connectedToEdge: data.connectedToEdge,
         connectionCount: data.connectionCount,
