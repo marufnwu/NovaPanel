@@ -4,6 +4,7 @@ import { detectNetworkInfo, getPanelUrlInfo } from '../../utils/network.js';
 import { db } from '../../db/index.js';
 import { cloudflareTunnels, tunnelRoutes } from '../../db/schema/tunnels.js';
 import { eq } from 'drizzle-orm';
+import { settingsService } from './settings.service.js';
 
 export interface ServerContext {
   // Network info
@@ -11,6 +12,12 @@ export interface ServerContext {
   hasPublicIp: boolean;
   publicIp: string | null;
   primaryIp: string;
+
+  // Nameserver info (actual nameservers for this server)
+  nameservers: {
+    ns1: string;
+    ns2: string;
+  };
 
   // Panel info
   panelUrl: string;
@@ -100,6 +107,9 @@ export async function getServerContext(): Promise<ServerContext> {
   // Get tunnel info from database
   const tunnelInfo = await getTunnelInfo();
 
+  // Get nameserver settings
+  const nsSettings = await settingsService.getNameserverSettings();
+
   // Compute capabilities
   const capabilities = computeCapabilities(
     networkInfo.hasPublicIp,
@@ -113,6 +123,12 @@ export async function getServerContext(): Promise<ServerContext> {
     hasPublicIp: networkInfo.hasPublicIp,
     publicIp: networkInfo.publicIp,
     primaryIp: networkInfo.primaryIp,
+
+    // Nameserver info
+    nameservers: {
+      ns1: nsSettings.ns1,
+      ns2: nsSettings.ns2,
+    },
 
     // Panel info
     panelUrl: panelUrlInfo.panelUrl,

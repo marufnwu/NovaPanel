@@ -41,6 +41,8 @@ export interface CreateDomainInput {
   // Cloudflare auto-public settings
   makePublic?: boolean;
   tunnelId?: string;
+  // DNS verification - if true, skips DNS verification before domain creation
+  skipDnsVerification?: boolean;
 }
 
 export interface Subdomain {
@@ -444,6 +446,23 @@ export function useDeleteDomainCloudflareRoute(domainId: string) {
       qc.invalidateQueries({ queryKey: ['domains', domainId, 'cloudflare-status'] });
       qc.invalidateQueries({ queryKey: ['tunnel', 'routes'] });
     },
+  });
+}
+
+// --- DNS Verification ---
+
+export interface DomainDnsVerification {
+  domain: string;
+  serverIp: string;
+  resolvesTo: string[];
+  pointsToServer: boolean;
+  error?: string;
+}
+
+export function useVerifyDomainDns() {
+  return useMutation({
+    mutationFn: (domain: string) =>
+      api.get<DomainDnsVerification>(`/domains/verify-dns?domain=${encodeURIComponent(domain)}`),
   });
 }
 

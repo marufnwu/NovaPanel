@@ -1,7 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { DomainsService } from './domains.service.js';
-import { createDomainSchema, updateDomainSchema, deleteDomainSchema, createSubdomainSchema, createAliasSchema, createRedirectSchema } from './domains.schema.js';
+import { createDomainSchema, updateDomainSchema, deleteDomainSchema, createSubdomainSchema, createAliasSchema, createRedirectSchema, verifyDomainDnsSchema } from './domains.schema.js';
 import { requireAuth } from '../auth/auth.middleware.js';
+import { detectNetworkInfo } from '../../utils/network.js';
+import { verifyDomainPointsToIp } from '../../utils/network.js';
+import { AppError } from '../../errors.js';
 
 export default async function domainRoutes(fastify: FastifyInstance) {
   const service = new DomainsService();
@@ -19,8 +22,53 @@ export default async function domainRoutes(fastify: FastifyInstance) {
   // POST /api/v1/domains — Create domain
   fastify.post('/', async (req, reply) => {
     const data = createDomainSchema.parse(req.body);
+
+    // Verify domain DNS points to this server unless skipDnsVerification is true
+    if (!data.skipDnsVerification) {
+      const networkInfo = await detectNetworkInfo();
+      const serverIp = networkInfo.primaryIp;
+
+      if (serverIp) {
+        const verification = await verifyDomainPointsToIp(data.name, serverIp);
+        if (!verification.pointsToServer) {
+          throw new AppError(
+            400,
+            'DOMAIN_DNS_NOT_POINTING',
+            `Domain ${data.name} does not point to this server. Expected IP: ${serverIp}, found: ${verification.resolvesTo.join(', ') || 'none'}. Please ensure your domain's A record points to this server's IP address.`,
+          );
+        }
+      }
+    }
+
     const domain = await service.create({ ...data, userId: req.user.id, ipAddress: req.ip });
     return reply.status(201).send({ success: true, data: domain });
+  });
+
+  // GET /api/v1/domains/verify-dns — Verify domain DNS points to this server
+  fastify.get('/verify-dns', async (req) => {
+    const { domain } = verifyDomainDnsSchema.parse(req.query);
+    const networkInfo = await detectNetworkInfo();
+    const serverIp = networkInfo.primaryIp;
+
+    if (!serverIp) {
+      return {
+        success: false,
+        error: 'Could not determine server IP address',
+        data: null,
+      };
+    }
+
+    const verification = await verifyDomainPointsToIp(domain, serverIp);
+    return {
+      success: true,
+      data: {
+        domain,
+        serverIp,
+        resolvesTo: verification.resolvesTo,
+        pointsToServer: verification.pointsToServer,
+        error: verification.error,
+      },
+    };
   });
 
   // GET /api/v1/domains/:id — Get domain detail

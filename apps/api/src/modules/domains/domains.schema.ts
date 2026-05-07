@@ -20,11 +20,18 @@ export const createDomainSchema = z.object({
   phpVersion: phpVersionSchema.optional(),
   phpHandler: z.enum(['php-fpm', 'cgi', 'disabled']).default('php-fpm'),
   webServer: z.enum(['nginx', 'apache', 'nginx+apache']).default('nginx+apache'),
-  createDnsZone: z.boolean().default(true),
-  enableMail: z.boolean().default(false),
+  createDns: z.boolean().default(true),
+  createMail: z.boolean().default(false),
   // Cloudflare auto-public settings
   makePublic: z.boolean().default(false),
   tunnelId: z.string().optional(),
+  // DNS verification flag - if true, skips DNS verification before domain creation
+  skipDnsVerification: z.boolean().default(false),
+});
+
+// Schema for verifying domain DNS points to this server
+export const verifyDomainDnsSchema = z.object({
+  domain: domainNameSchema,
 });
 
 export const updateDomainSchema = z.object({

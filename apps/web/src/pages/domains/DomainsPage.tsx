@@ -35,6 +35,8 @@ import {
   useDeleteDomainCloudflareRedirect,
   useCreateDomainCloudflareRoute,
   useDeleteDomainCloudflareRoute,
+  useVerifyDomainDns,
+  type DomainDnsVerification,
   type DomainCloudflareDnsRecord,
   type DomainCloudflareSsl,
   type DomainCloudflareFirewallRule,
@@ -55,7 +57,7 @@ import {
   Search, Shield, Server, ChevronRight, ArrowLeft, Link2, ArrowRightLeft,
   Edit3, Activity, AlertTriangle, Unplug, Mail, FileText, Info, Cloud,
   Lock, RefreshCw, Zap, ToggleLeft, ToggleRight, XCircle, Waypoints, Save,
-  Globe2,
+  Globe2, CheckCircle2,
 } from 'lucide-react';
 import type { ApiError } from '../../api/client';
 import type { Domain } from '../../api/hooks/domains';
@@ -172,10 +174,14 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
     : DEFAULT_PHP_VERSIONS);
   const { data: cloudflareConfig } = useCloudflareConfig();
   const { data: tunnelStatus } = useTunnelStatus();
+  const { data: serverContext } = useServerContext();
+  const verifyDns = useVerifyDomainDns();
+
   const cfConfig = cloudflareConfig && 'apiToken' in cloudflareConfig ? cloudflareConfig : null;
   const hasCloudflareConfig = !!(cfConfig?.apiToken);
   const hasActiveTunnel = tunnelStatus?.processRunning && tunnelStatus?.tunnels?.length > 0;
   const showMakePublic = hasCloudflareConfig && hasActiveTunnel;
+
   const [form, setForm] = useState({
     name: '',
     documentRoot: '',
@@ -189,7 +195,11 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
     // Cloudflare auto-public
     makePublic: showMakePublic,
     tunnelId: '',
+    skipDnsVerification: false,
   });
+
+  const [dnsVerification, setDnsVerification] = useState<DomainDnsVerification | null>(null);
+  const [showDnsGuidance, setShowDnsGuidance] = useState(false);
 
   const { data: websites } = useWebsites();
 
@@ -204,6 +214,19 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
   }, [showMakePublic, tunnelStatus]);
 
   const autoDocRoot = form.name ? `/var/www/vhosts/${form.name}/httpdocs` : '';
+
+  // Verify DNS when domain name is entered and loses focus
+  const handleDomainBlur = async () => {
+    if (form.name && !form.skipDnsVerification) {
+      try {
+        const result = await verifyDns.mutateAsync(form.name);
+        // The API returns { success, data: DomainDnsVerification }
+        setDnsVerification(result);
+      } catch (err) {
+        console.error('DNS verification failed:', err);
+      }
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -220,16 +243,20 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
       // Cloudflare auto-public
       makePublic: showMakePublic ? form.makePublic : undefined,
       tunnelId: showMakePublic && form.makePublic && form.tunnelId ? form.tunnelId : undefined,
+      skipDnsVerification: form.skipDnsVerification,
     };
     onSubmit(payload);
   };
+
+  // Check if DNS is ready for submission
+  const isDnsReady = form.skipDnsVerification || (dnsVerification && dnsVerification.pointsToServer);
 
   return (
     <div className="mb-6 rounded-lg border border-border bg-card p-6">
       <h3 className="mb-4 text-lg font-semibold">Create New Domain</h3>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
           <strong>Error:</strong> {error.message}
         </div>
       )}
@@ -237,15 +264,121 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="mb-1 block text-sm font-medium">Domain Name</label>
-          <input
-            placeholder="example.com"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            required
-            autoFocus
-          />
+          <div className="flex gap-2">
+            <input
+              placeholder="example.com"
+              value={form.name}
+              onChange={(e) => {
+                setForm({ ...form, name: e.target.value });
+                setDnsVerification(null);
+              }}
+              onBlur={handleDomainBlur}
+              className="w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              required
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={handleDomainBlur}
+              disabled={!form.name || verifyDns.isPending}
+              className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+              title="Verify DNS"
+            >
+              {verifyDns.isPending ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Enter your domain name and click verify or tab out to check DNS configuration.
+          </p>
         </div>
+
+        {/* DNS Verification Status */}
+        {dnsVerification && (
+          <div className={`rounded-lg border p-4 ${dnsVerification.pointsToServer
+              ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20'
+              : 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20'
+            }`}>
+            <div className="flex items-start gap-3">
+              {dnsVerification.pointsToServer ? (
+                <CheckCircle2 className="h-5 w-5 text-green-500 mt-0.5" />
+              ) : (
+                <XCircle className="h-5 w-5 text-red-500 mt-0.5" />
+              )}
+              <div className="flex-1">
+                <h4 className={`font-medium ${dnsVerification.pointsToServer ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+                  {dnsVerification.pointsToServer ? 'DNS Verified' : 'DNS Not Pointing to Server'}
+                </h4>
+                <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                  <p><strong>Domain:</strong> {dnsVerification.domain}</p>
+                  <p><strong>Server IP:</strong> {dnsVerification.serverIp}</p>
+                  {dnsVerification.resolvesTo.length > 0 ? (
+                    <p><strong>Resolves to:</strong> {dnsVerification.resolvesTo.join(', ')}</p>
+                  ) : (
+                    <p className="text-red-600 dark:text-red-400">{dnsVerification.error || 'Could not resolve domain'}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* DNS Setup Instructions Toggle */}
+        <button
+          type="button"
+          onClick={() => setShowDnsGuidance(!showDnsGuidance)}
+          className="flex items-center gap-2 text-sm text-primary hover:underline"
+        >
+          <Info className="h-4 w-4" />
+          {showDnsGuidance ? 'Hide' : 'Show'} DNS setup instructions
+        </button>
+
+        {showDnsGuidance && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+            <h4 className="font-medium text-blue-700 dark:text-blue-400 mb-2">DNS Configuration Required</h4>
+            <p className="text-sm text-muted-foreground mb-3">
+              Before attaching this domain, you need to add the following DNS record to your domain registrar:
+            </p>
+            <div className="rounded-md bg-background/80 p-3 font-mono text-sm space-y-1">
+              <p><strong>Type:</strong> A</p>
+              <p><strong>Name:</strong> @ (or leave blank)</p>
+              <p><strong>Value:</strong> {serverContext?.primaryIp || '{SERVER_IP}'}</p>
+              <p><strong>TTL:</strong> 3600 (or Auto)</p>
+            </div>
+            {serverContext?.nameservers && (
+              <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-800">
+                <p className="text-sm text-muted-foreground">
+                  <strong>Your server's nameservers:</strong>
+                </p>
+                <div className="mt-1 font-mono text-sm">
+                  <p>{serverContext.nameservers.ns1}</p>
+                  <p>{serverContext.nameservers.ns2}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Skip DNS Verification */}
+        {dnsVerification && !dnsVerification.pointsToServer && (
+          <label className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50/50 p-3 cursor-pointer hover:bg-orange-100/50 dark:border-orange-800 dark:bg-orange-900/20 dark:hover:bg-orange-900/30">
+            <input
+              type="checkbox"
+              checked={form.skipDnsVerification}
+              onChange={(e) => setForm({ ...form, skipDnsVerification: e.target.checked })}
+              className="h-4 w-4 rounded border-input text-primary"
+            />
+            <div>
+              <span className="text-sm font-medium text-orange-700 dark:text-orange-400">Skip DNS verification</span>
+              <p className="text-xs text-muted-foreground">
+                Only check this if you haven't configured DNS yet and want to proceed anyway.
+              </p>
+            </div>
+          </label>
+        )}
 
         {/* Website Mode Selection */}
         <div>
@@ -450,8 +583,9 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
         <div className="flex gap-3 pt-2">
           <button
             type="submit"
-            disabled={!form.name || isLoading || (form.websiteMode === 'existing' && !form.websiteId)}
+            disabled={!form.name || isLoading || (form.websiteMode === 'existing' && !form.websiteId) || !isDnsReady}
             className="rounded-md bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            title={!isDnsReady && form.name ? 'DNS verification required - click verify or wait for DNS to propagate' : undefined}
           >
             {isLoading ? 'Creating...' : 'Create Domain'}
           </button>

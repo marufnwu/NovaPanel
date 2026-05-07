@@ -404,6 +404,11 @@ export interface ServerContext {
   canIssueHttpSsl: boolean;
   canReceiveExternalMail: boolean;
   canServePublicDns: boolean;
+  // DNS / Nameserver info
+  nameservers: {
+    ns1: string;
+    ns2: string;
+  };
 }
 
 export function useServerContext() {

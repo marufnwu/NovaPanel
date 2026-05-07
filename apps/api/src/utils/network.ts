@@ -183,3 +183,72 @@ export function getPanelUrlInfo(): { panelUrl: string; panelUrlIsPrivate: boolea
     panelUrlIsPrivate: isPrivateUrl(env.PANEL_URL),
   };
 }
+
+/**
+ * DNS verification result
+ */
+export interface DnsVerificationResult {
+  domain: string;
+  resolvesTo: string[];
+  pointsToServer: boolean;
+  serverIp: string;
+  error?: string;
+}
+
+/**
+ * Verify that a domain's A record(s) point to a specific IP address.
+ * Used to verify domain ownership before attachment.
+ */
+export async function verifyDomainPointsToIp(domain: string, targetIp: string): Promise<DnsVerificationResult> {
+  const result: DnsVerificationResult = {
+    domain,
+    resolvesTo: [],
+    pointsToServer: false,
+    serverIp: targetIp,
+  };
+
+  try {
+    // Use Node's built-in DNS module to resolve A records
+    const { promises: dnsPromises } = await import('node:dns');
+    const addresses = await dnsPromises.resolve4(domain);
+    result.resolvesTo = addresses;
+    result.pointsToServer = addresses.includes(targetIp);
+  } catch (err: any) {
+    // Try using dig command as fallback
+    try {
+      const { run: runCmd } = await import('../services/executor.js');
+      const digResult = await runCmd('dig', ['+short', domain, 'A']);
+      if (digResult.stdout.trim()) {
+        result.resolvesTo = digResult.stdout.trim().split('\n').filter(Boolean);
+        result.pointsToServer = result.resolvesTo.includes(targetIp);
+      } else {
+        result.error = `DNS resolution failed: ${err.message}`;
+      }
+    } catch {
+      result.error = `DNS resolution failed: ${err.message}`;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Get nameservers for a domain by querying NS records
+ */
+export async function getDomainNameservers(domain: string): Promise<string[]> {
+  try {
+    const { promises: dnsPromises } = await import('node:dns');
+    const nameservers = await dnsPromises.resolveNs(domain);
+    return nameservers;
+  } catch {
+    // Fallback to dig
+    try {
+      const { run: runCmd } = await import('../services/executor.js');
+      const digResult = await runCmd('dig', ['+short', domain, 'NS']);
+      if (digResult.stdout.trim()) {
+        return digResult.stdout.trim().split('\n').filter(Boolean);
+      }
+    } catch { /* ignore */ }
+    return [];
+  }
+}
