@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useDomains } from '../../api/hooks/domains';
-import { useWebsite } from '../../api/hooks/websites';
+import { useWebsite, useWebsites } from '../../api/hooks/websites';
 import {
   useDirectoryListing,
   useCreateDirectory,
@@ -502,10 +502,11 @@ export function FilesPage() {
   }, []);
 
   const { data: domains } = useDomains();
-  const { data: website } = useWebsite(urlWebsiteId || '');
+  const { data: websites } = useWebsites();
 
-  // When websiteId is in URL, use website context; otherwise use domain selector
-  const [domainId, setDomainId] = useState('');
+  // When websiteId is in URL, use website context; otherwise use website/domain selector
+  const [selectedWebsiteId, setSelectedWebsiteId] = useState('');
+  const [selectedDomainId, setSelectedDomainId] = useState('');
   const [currentPath, setCurrentPath] = useState('/');
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
@@ -524,10 +525,11 @@ export function FilesPage() {
   const [previewModal, setPreviewModal] = useState<{ type: 'image' | 'video' | 'pdf' | 'archive'; entry: FileEntry } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void }>({ open: false, title: '', message: '', onConfirm: () => {} });
 
-  // Determine active context: websiteId takes priority over domainId
-  const activeWebsiteId = urlWebsiteId || undefined;
-  const activeDomainId = activeWebsiteId ? undefined : (domainId || undefined);
+  const activeWebsiteId = urlWebsiteId || selectedWebsiteId || undefined;
+  const activeDomainId = activeWebsiteId ? undefined : (selectedDomainId || undefined);
   const hasContext = !!(activeWebsiteId || activeDomainId);
+
+  const { data: website } = useWebsite(activeWebsiteId || '');
 
   // Load preferences from localStorage
   useEffect(() => {
@@ -547,12 +549,12 @@ export function FilesPage() {
   }, [showHidden, sortBy, sortOrder]);
 
   const { data: listing, isLoading } = useDirectoryListing(
-    domainId && !activeWebsiteId ? `/${domainId}${currentPath}` : currentPath,
+    selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}${currentPath}` : currentPath,
     activeDomainId,
     activeWebsiteId
   );
   const { data: tree } = useDirectoryTree(
-    domainId && !activeWebsiteId ? `/${domainId}` : '/',
+    selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}` : '/',
     showHidden,
     activeDomainId,
     activeWebsiteId
@@ -561,7 +563,7 @@ export function FilesPage() {
   const copyFile = useCopyFile();
   const moveFile = useMoveFile();
 
-  const fullPath = domainId && !activeWebsiteId ? `/${domainId}${currentPath}` : currentPath;
+  const fullPath = selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}${currentPath}` : currentPath;
   const items: FileEntry[] = listing?.items || [];
 
   const filtered = search
@@ -582,12 +584,12 @@ export function FilesPage() {
 
   const handleEdit = (entry: FileEntry) => {
     const entryPath = `${currentPath === '/' ? '' : currentPath}/${entry.name}`;
-    setEditingFile(domainId && !activeWebsiteId ? `/${domainId}${entryPath}` : entryPath);
+    setEditingFile(selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}${entryPath}` : entryPath);
   };
 
   const handleDelete = (entry: FileEntry) => {
     const entryPath = `${currentPath === '/' ? '' : currentPath}/${entry.name}`;
-    const fp = domainId && !activeWebsiteId ? `/${domainId}${entryPath}` : entryPath;
+    const fp = selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}${entryPath}` : entryPath;
     setDeleteConfirm({
       open: true,
       title: entry.isDirectory ? 'Delete Directory' : 'Delete File',
@@ -604,7 +606,7 @@ export function FilesPage() {
       message: `This will permanently delete ${selectedItems.size} item(s). This cannot be undone.`,
       onConfirm: () => {
         selectedItems.forEach(item => {
-          const fp = domainId && !activeWebsiteId ? `/${domainId}${item}` : item;
+          const fp = selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}${item}` : item;
           deleteFile.mutate({ path: fp, domainId: activeDomainId, websiteId: activeWebsiteId });
         });
         setSelectedItems(new Set());
@@ -723,11 +725,38 @@ export function FilesPage() {
             <span className="text-muted-foreground">({website?.documentRoot})</span>
           </div>
         ) : (
-          /* Domain selector — shown when no websiteId in URL (legacy) */
-          <select value={domainId} onChange={(e) => { setDomainId(e.target.value); setCurrentPath('/'); }} className="rounded-md border border-input bg-background px-3 py-2 text-sm">
-            <option value="">Select domain...</option>
-            {domains?.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
+          /* Website selector + Domain selector (when no URL websiteId) */
+          <div className="flex items-center gap-2">
+            {/* Website selector dropdown */}
+            <select
+              value={selectedWebsiteId}
+              onChange={(e) => {
+                setSelectedWebsiteId(e.target.value);
+                setSelectedDomainId(''); // Clear domain when website selected
+                setCurrentPath('/');
+              }}
+              className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="">Select website...</option>
+              {websites?.map((w: any) => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+            <span className="text-muted-foreground text-sm">or</span>
+            {/* Domain selector dropdown */}
+            <select
+              value={selectedDomainId}
+              onChange={(e) => {
+                setSelectedDomainId(e.target.value);
+                setSelectedWebsiteId(''); // Clear website when domain selected
+                setCurrentPath('/');
+              }}
+              className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="">Select domain...</option>
+              {domains?.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
         )}
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -779,9 +808,9 @@ export function FilesPage() {
           </div>
           <FileTree 
             tree={tree} 
-            currentPath={domainId && !activeWebsiteId ? `/${domainId}${currentPath}` : currentPath}
+            currentPath={selectedDomainId && !activeWebsiteId ? `/${selectedDomainId}${currentPath}` : currentPath}
             onNavigate={(path) => {
-              const relativePath = domainId && !activeWebsiteId ? path.replace(`/${domainId}`, '') : path;
+              const relativePath = selectedDomainId && !activeWebsiteId ? path.replace(`/${selectedDomainId}`, '') : path;
               setCurrentPath(relativePath || '/');
             }}
             expandedNodes={expandedNodes}
@@ -802,7 +831,7 @@ export function FilesPage() {
                 </button>
               </span>
             ))}
-            {domainId && !activeWebsiteId && <span className="text-muted-foreground ml-2">/ {domainId}</span>}
+            {selectedDomainId && !activeWebsiteId && <span className="text-muted-foreground ml-2">/ {selectedDomainId}</span>}
           </div>
 
           {/* File table */}
