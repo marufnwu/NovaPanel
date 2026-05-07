@@ -268,4 +268,12 @@ export default async function domainRoutes(fastify: FastifyInstance) {
     await service.deleteCloudflareTunnelRoute(id, req.user.id, req.ip);
     return { success: true, data: null };
   });
+
+  // POST /api/v1/domains/:id/make-public — Make domain public (auto-create tunnel route + CNAME + SSL)
+  fastify.post('/:id/make-public', async (req) => {
+    const { id } = req.params as { id: string };
+    const { tunnelId } = req.body as { tunnelId?: string };
+    const result = await service.makeDomainPublic(id, tunnelId, req.user.id, req.ip);
+    return { success: true, data: result };
+  });
 }

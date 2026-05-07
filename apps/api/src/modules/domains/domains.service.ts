@@ -127,7 +127,7 @@ export class DomainsService {
    * This is called after domain creation to automatically wire up Cloudflare Tunnel.
    * Best-effort: logs warnings on failure but doesn't block domain creation.
    */
-  private async autoCreateTunnelRoute(hostname: string, domainId: string, userId?: string, ipAddress?: string): Promise<void> {
+  private async autoCreateTunnelRoute(hostname: string, domainId: string, userId?: string, ipAddress?: string, preferredTunnelId?: string): Promise<void> {
     try {
       // 1. Check if a Cloudflare zone is linked for this domain
       const linkedZone = await this.findLinkedZoneForDomain(hostname);
@@ -136,8 +136,15 @@ export class DomainsService {
         return;
       }
 
-      // 2. Find an active tunnel
-      const tunnel = await this.findActiveTunnel();
+      // 2. Find the tunnel to use (preferred or first active one)
+      let tunnel = null;
+      if (preferredTunnelId) {
+        const [t] = await db.select().from(cloudflareTunnels).where(eq(cloudflareTunnels.id, preferredTunnelId)).limit(1);
+        if (t && t.status === 'active' && t.apiToken) tunnel = t;
+      }
+      if (!tunnel) {
+        tunnel = await this.findActiveTunnel();
+      }
       if (!tunnel) {
         logger.debug({ hostname }, 'No active Cloudflare tunnel found — skipping auto tunnel route');
         return;
@@ -163,6 +170,15 @@ export class DomainsService {
         service,
         domainId,
       }, userId, ipAddress);
+
+      // 6. Set SSL mode to "full" for the zone (best-effort)
+      try {
+        const cfService = new (await import('../cloudflare/cloudflare.service.js')).CloudflareService();
+        await cfService.updateSslSettings(linkedZone.id, { sslMode: 'full' }, userId, ipAddress);
+        logger.info({ hostname, zoneId: linkedZone.id }, 'SSL mode set to full');
+      } catch (sslError) {
+        logger.warn({ err: sslError, hostname }, 'Failed to set SSL mode — continuing');
+      }
 
       logger.info({ hostname, domainId, tunnelId: tunnel.id, service }, 'Auto-created tunnel route + CNAME for domain');
 
@@ -237,6 +253,9 @@ export class DomainsService {
     webServer?: string;
     createDnsZone?: boolean;
     enableMail?: boolean;
+    // Cloudflare auto-public settings
+    makePublic?: boolean;
+    tunnelId?: string;
     userId?: string;
     ipAddress?: string;
   }) {
@@ -251,6 +270,8 @@ export class DomainsService {
       webServer = 'nginx+apache',
       createDnsZone = true,
       enableMail = false,
+      makePublic = false,
+      tunnelId: preferredTunnelId,
     } = data;
 
     // 1. Check domain doesn't already exist
@@ -337,8 +358,10 @@ export class DomainsService {
         }
       }
 
-      // 8. Auto-create Cloudflare Tunnel route + CNAME if zone is linked
-      await this.autoCreateTunnelRoute(name, domainId, data.userId, data.ipAddress);
+      // 8. Auto-create Cloudflare Tunnel route + CNAME + SSL if makePublic is true and zone is linked
+      if (makePublic) {
+        await this.autoCreateTunnelRoute(name, domainId, data.userId, data.ipAddress, preferredTunnelId);
+      }
 
       logger.info({ domainId, name, documentRoot, websiteId, websiteMode }, 'Domain created successfully');
 
@@ -1150,6 +1173,45 @@ export class DomainsService {
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
     await this.autoCreateTunnelRoute(domain.name, domainId, userId, ipAddress);
+
+    // Return the created route
+    const [route] = await db.select().from(tunnelRoutes)
+      .where(eq(tunnelRoutes.domainId, domainId))
+      .limit(1);
+
+    return route;
+  }
+
+  /**
+   * Make a domain public — auto-creates tunnel route + CNAME + SSL.
+   * This is the manual equivalent of the auto-magic that happens during domain creation
+   * when makePublic=true.
+   */
+  async makeDomainPublic(domainId: string, preferredTunnelId?: string, userId?: string, ipAddress?: string) {
+    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+
+    // Check if a tunnel route already exists
+    const [existingRoute] = await db.select().from(tunnelRoutes)
+      .where(eq(tunnelRoutes.domainId, domainId))
+      .limit(1);
+
+    if (existingRoute) {
+      // Already has a route — just update SSL and return
+      const linkedZone = await this.findLinkedZoneForDomain(domain.name);
+      if (linkedZone) {
+        try {
+          const cfService = new (await import('../cloudflare/cloudflare.service.js')).CloudflareService();
+          await cfService.updateSslSettings(linkedZone.id, { sslMode: 'full' }, userId, ipAddress);
+        } catch (e) {
+          logger.warn({ err: e, domainId }, 'Failed to update SSL — continuing');
+        }
+      }
+      return existingRoute;
+    }
+
+    // Create the tunnel route (this also creates CNAME + sets SSL to full internally)
+    await this.autoCreateTunnelRoute(domain.name, domainId, userId, ipAddress, preferredTunnelId);
 
     // Return the created route
     const [route] = await db.select().from(tunnelRoutes)

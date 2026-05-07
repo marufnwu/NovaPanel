@@ -38,6 +38,9 @@ export interface CreateDomainInput {
   redirectTarget?: string;
   createDnsZone?: boolean;
   enableMail?: boolean;
+  // Cloudflare auto-public settings
+  makePublic?: boolean;
+  tunnelId?: string;
 }
 
 export interface Subdomain {
@@ -440,6 +443,20 @@ export function useDeleteDomainCloudflareRoute(domainId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['domains', domainId, 'cloudflare-status'] });
       qc.invalidateQueries({ queryKey: ['tunnel', 'routes'] });
+    },
+  });
+}
+
+// --- Make Domain Public ---
+
+export function useMakeDomainPublic(domainId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (tunnelId?: string) => api.post(`/domains/${domainId}/make-public`, { tunnelId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['domains', domainId, 'cloudflare-status'] });
+      qc.invalidateQueries({ queryKey: ['tunnel', 'routes'] });
+      qc.invalidateQueries({ queryKey: ['domains'] });
     },
   });
 }

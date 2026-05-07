@@ -44,7 +44,7 @@ import type { CreateDomainInput } from '../../api/hooks/domains';
 import { useWebsites, useAttachDomain } from '../../api/hooks/websites';
 import { usePhpVersions, DEFAULT_PHP_VERSIONS } from '../../api/hooks/php';
 import { useServerContext } from '../../api/hooks/settings';
-import { useTunnelRoutes, useCloudflareConfig } from '../../api/hooks/tunnel';
+import { useTunnelRoutes, useCloudflareConfig, useTunnelStatus } from '../../api/hooks/tunnel';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -55,6 +55,7 @@ import {
   Search, Shield, Server, ChevronRight, ArrowLeft, Link2, ArrowRightLeft,
   Edit3, Activity, AlertTriangle, Unplug, Mail, FileText, Info, Cloud,
   Lock, RefreshCw, Zap, ToggleLeft, ToggleRight, XCircle, Waypoints, Save,
+  Globe2,
 } from 'lucide-react';
 import type { ApiError } from '../../api/client';
 import type { Domain } from '../../api/hooks/domains';
@@ -167,6 +168,12 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
 }) {
   const { data: phpData, isLoading: phpLoading } = usePhpVersions();
   const phpVersions = (phpData?.versions?.length ? phpData.versions : DEFAULT_PHP_VERSIONS);
+  const { data: cloudflareConfig } = useCloudflareConfig();
+  const { data: tunnelStatus } = useTunnelStatus();
+  const cfConfig = cloudflareConfig && 'apiToken' in cloudflareConfig ? cloudflareConfig : null;
+  const hasCloudflareConfig = !!(cfConfig?.apiToken);
+  const hasActiveTunnel = tunnelStatus?.processRunning && tunnelStatus?.tunnels?.length > 0;
+  const showMakePublic = hasCloudflareConfig && hasActiveTunnel;
   const [form, setForm] = useState({
     name: '',
     documentRoot: '',
@@ -177,9 +184,22 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
     createMail: true,
     websiteMode: 'create' as 'none' | 'create' | 'existing',
     websiteId: '',
+    // Cloudflare auto-public
+    makePublic: showMakePublic,
+    tunnelId: '',
   });
 
   const { data: websites } = useWebsites();
+
+  // Set default tunnel when cloudflare config loads
+  useEffect(() => {
+    if (showMakePublic && !form.tunnelId && tunnelStatus?.tunnels?.length) {
+      const activeTunnel = tunnelStatus.tunnels.find(t => t.status === 'active');
+      if (activeTunnel) {
+        setForm(f => ({ ...f, tunnelId: activeTunnel.id }));
+      }
+    }
+  }, [showMakePublic, tunnelStatus]);
 
   const autoDocRoot = form.name ? `/var/www/vhosts/${form.name}/httpdocs` : '';
 
@@ -195,6 +215,9 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
       createMail: form.createMail,
       websiteMode: form.websiteMode,
       websiteId: form.websiteMode === 'existing' ? form.websiteId : undefined,
+      // Cloudflare auto-public
+      makePublic: showMakePublic ? form.makePublic : undefined,
+      tunnelId: showMakePublic && form.makePublic && form.tunnelId ? form.tunnelId : undefined,
     };
     onSubmit(payload);
   };
@@ -373,6 +396,54 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
             <span className="text-sm">Enable mail domain</span>
           </label>
         </div>
+
+        {/* Cloudflare Auto-Public Section */}
+        {showMakePublic && (
+          <div className="rounded-lg border border-orange-200 bg-orange-50/50 p-4 space-y-3 dark:border-orange-800 dark:bg-orange-900/20">
+            <div className="flex items-center gap-2">
+              <Globe2 className="h-4 w-4 text-orange-500" />
+              <span className="text-sm font-medium">Internet Access</span>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.makePublic}
+                onChange={(e) => setForm({ ...form, makePublic: e.target.checked })}
+                className="h-4 w-4 rounded border-input text-primary"
+              />
+              <span className="text-sm">Make this domain publicly accessible via Cloudflare Tunnel</span>
+            </label>
+            {form.makePublic && (
+              <div className="pl-6 space-y-2">
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Tunnel</label>
+                  <select
+                    value={form.tunnelId}
+                    onChange={(e) => setForm({ ...form, tunnelId: e.target.value })}
+                    className="w-full max-w-xs rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+                  >
+                    <option value="">Auto-select tunnel</option>
+                    {tunnelStatus?.tunnels?.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.status})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Shield className="h-3 w-3" />
+                  <span>SSL mode: Full (HTTPS, self-signed certificate OK)</span>
+                </div>
+              </div>
+            )}
+            {!hasActiveTunnel && (
+              <div className="flex items-start gap-2 mt-2 text-xs text-orange-600 dark:text-orange-400">
+                <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                <span>No tunnels configured. <a href="/cloudflare" className="underline">Create a tunnel</a> in Cloudflare → Tunnels to enable this feature.</span>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex gap-3 pt-2">
           <button

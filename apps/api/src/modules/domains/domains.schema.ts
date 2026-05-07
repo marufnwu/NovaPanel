@@ -22,6 +22,9 @@ export const createDomainSchema = z.object({
   webServer: z.enum(['nginx', 'apache', 'nginx+apache']).default('nginx+apache'),
   createDnsZone: z.boolean().default(true),
   enableMail: z.boolean().default(false),
+  // Cloudflare auto-public settings
+  makePublic: z.boolean().default(false),
+  tunnelId: z.string().optional(),
 });
 
 export const updateDomainSchema = z.object({
