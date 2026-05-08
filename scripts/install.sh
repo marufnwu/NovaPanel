@@ -488,6 +488,10 @@ APACHEPORTS
     log "Installing Nginx..."
     apt-get install -y -qq nginx
     systemctl enable nginx
+    # Fix nginx pid location for Docker compatibility (read-only /run filesystem)
+    if [ -f /etc/nginx/nginx.conf ]; then
+        sed -i 's|pid /run/nginx.pid;|pid /var/run/nginx.pid;|' /etc/nginx/nginx.conf
+    fi
     systemctl start nginx
     verify_cmd "nginx -v" "Nginx installed"
     
