@@ -757,6 +757,10 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
   const [tab, setTab] = useState<'overview' | 'subdomains' | 'aliases' | 'redirects' | 'cloudflare'>('overview');
   const [cfSubTab, setCfSubTab] = useState<'dns' | 'ssl' | 'firewall' | 'redirects'>('dns');
   const [newSubdomain, setNewSubdomain] = useState('');
+  const [newSubdomainDocRoot, setNewSubdomainDocRoot] = useState('');
+  const [subdomainError, setSubdomainError] = useState<string | null>(null);
+  const [subdomainWarning, setSubdomainWarning] = useState<string | null>(null);
+  const [dnsStatus, setDnsStatus] = useState<{ created: boolean; message: string } | null>(null);
   const [newAlias, setNewAlias] = useState('');
   const [newRedirectSource, setNewRedirectSource] = useState('');
   const [newRedirectTarget, setNewRedirectTarget] = useState('');
@@ -1059,28 +1063,121 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
       {/* Subdomains Tab */}
       {tab === 'subdomains' && (
         <div className="space-y-4">
-          <div className="flex gap-3">
-            <input
-              value={newSubdomain}
-              onChange={(e) => setNewSubdomain(e.target.value)}
-              placeholder="Subdomain prefix (e.g., api)"
-              className="flex-1 max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <button
-              onClick={() => {
-                if (newSubdomain) {
-                  createSubdomain.mutate({ name: newSubdomain }, {
-                    onSuccess: () => { setNewSubdomain(''); toast.success(`Subdomain ${newSubdomain}.${domain.name} created`); },
-                    onError: (e: Error) => toast.error(e.message || 'Failed to create subdomain'),
-                  });
+          {/* Subdomain creation form */}
+          {/* Compute auto document root for subdomains */}
+          {(() => {
+            const autoDocRoot = newSubdomain
+              ? `/var/www/vhosts/${domain.name}/subdomains/${newSubdomain}`
+              : `/var/www/vhosts/${domain.name}/subdomains/{subdomain}`;
+
+            // Reserved subdomain names
+            const RESERVED_SUBDOMAINS = ['www', 'mail', 'ftp', 'admin', 'root', 'administrator', 'webmail', 'smtp', 'pop', 'ns1', 'ns2', 'webdisk', 'ns', 'mysql', 'pgsql', 'ssh', 'git'];
+
+            // Validate subdomain name
+            const validateSubdomain = (name: string): string | null => {
+              if (!name) return null;
+              if (!/^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$/.test(name)) {
+                return 'Subdomain must start and end with alphanumeric characters, and contain only letters, numbers, and hyphens';
+              }
+              if (name.length > 63) {
+                return 'Subdomain must be 63 characters or less';
+              }
+              if (RESERVED_SUBDOMAINS.includes(name.toLowerCase())) {
+                return `Warning: "${name.toLowerCase()}" is a reserved name`;
+              }
+              // Check for existing subdomains
+              if (subdomains?.some(s => s.name.toLowerCase() === name.toLowerCase())) {
+                return `"${name}" already exists as a subdomain`;
+              }
+              return null;
+            };
+
+            // Handle subdomain input change with validation
+            const handleSubdomainChange = (value: string) => {
+              setNewSubdomain(value);
+              setDnsStatus(null);
+              const error = validateSubdomain(value);
+              if (error && !RESERVED_SUBDOMAINS.includes(value.toLowerCase()) && !subdomains?.some(s => s.name.toLowerCase() === value.toLowerCase())) {
+                setSubdomainError(error);
+                setSubdomainWarning(null);
+              } else if (RESERVED_SUBDOMAINS.includes(value.toLowerCase())) {
+                setSubdomainWarning(`"${value.toLowerCase()}" is a reserved name`);
+                setSubdomainError(null);
+              } else if (subdomains?.some(s => s.name.toLowerCase() === value.toLowerCase())) {
+                setSubdomainError(`"${value}" already exists as a subdomain`);
+                setSubdomainWarning(null);
+              } else {
+                setSubdomainError(null);
+                setSubdomainWarning(null);
+              }
+            };
+
+            // Handle subdomain creation
+            const handleCreateSubdomain = () => {
+              if (!newSubdomain) return;
+              const fullName = `${newSubdomain}.${domain.name}`;
+              createSubdomain.mutate(
+                { name: newSubdomain, documentRoot: newSubdomainDocRoot || undefined },
+                {
+                  onSuccess: (result: any) => {
+                    setNewSubdomain('');
+                    setNewSubdomainDocRoot('');
+                    setSubdomainError(null);
+                    setSubdomainWarning(null);
+                    const dnsMessage = result?.dnsCreated
+                      ? `DNS record created`
+                      : `DNS record not created (DNS zone may not exist)`;
+                    setDnsStatus({ created: result?.dnsCreated ?? false, message: dnsMessage });
+                    toast.success(`Subdomain ${fullName} created`);
+                    // Clear DNS status after 5 seconds
+                    setTimeout(() => setDnsStatus(null), 5000);
+                  },
+                  onError: (e: Error) => {
+                    toast.error(e.message || 'Failed to create subdomain');
+                    setDnsStatus(null);
+                  },
                 }
-              }}
-              disabled={!newSubdomain || createSubdomain.isPending}
-              className="flex items-center gap-1 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              <Plus className="h-4 w-4" /> Add
-            </button>
-          </div>
+              );
+            };
+
+            return (
+              <>
+                <div className="flex gap-3">
+                  <input
+                    value={newSubdomain}
+                    onChange={(e) => handleSubdomainChange(e.target.value)}
+                    placeholder="Subdomain prefix (e.g., api)"
+                    className="flex-1 max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <input
+                    value={newSubdomainDocRoot}
+                    onChange={(e) => setNewSubdomainDocRoot(e.target.value)}
+                    placeholder={autoDocRoot}
+                    className="flex-1 max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <button
+                    onClick={handleCreateSubdomain}
+                    disabled={!newSubdomain || !!subdomainError || createSubdomain.isPending}
+                    className="flex items-center gap-1 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    <Plus className="h-4 w-4" /> Add
+                  </button>
+                </div>
+                {subdomainError && (
+                  <p className="text-sm text-destructive">{subdomainError}</p>
+                )}
+                {subdomainWarning && (
+                  <p className="text-sm text-yellow-600 dark:text-yellow-400">{subdomainWarning}</p>
+                )}
+                {dnsStatus && (
+                  <div className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${dnsStatus.created ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400' : 'border-yellow-200 bg-yellow-50 text-yellow-700 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'}`}>
+                    {dnsStatus.created ? <CheckCircle className="h-4 w-4" /> : <Info className="h-4 w-4" />}
+                    <span>{dnsStatus.message}</span>
+                  </div>
+                )}
+              </>
+            );
+          })()}
           {subdomains && subdomains.length > 0 ? (
             <ResponsiveTable>
               <table className="w-full text-sm">

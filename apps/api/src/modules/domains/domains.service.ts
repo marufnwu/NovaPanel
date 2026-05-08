@@ -701,6 +701,32 @@ export class DomainsService {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
+    // Validate subdomain name format
+    const subdomainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
+    if (!subdomainRegex.test(data.name)) {
+      throw new AppError(400, 'INVALID_SUBDOMAIN', 
+        'Subdomain name must be 1-63 characters, start/end with alphanumeric, contain only hyphens in middle');
+    }
+
+    // Check for reserved names
+    const reserved = ['www', 'mail', 'smtp', 'pop', 'imap', 'ftp', 'ssh', 'admin', 'administrator', 'root', 'api', 'cdn', 'blog', 'forum', 'shop'];
+    if (reserved.includes(data.name.toLowerCase())) {
+      throw new AppError(400, 'RESERVED_SUBDOMAIN', 
+        `Subdomain "${data.name}" is reserved. Please choose a different name.`);
+    }
+
+    // Check for conflicts - subdomain already exists
+    const [existing] = await db.select().from(subdomains)
+      .where(and(
+        eq(subdomains.domainId, domainId),
+        eq(subdomains.name, `${data.name}.${domain.name}`)
+      )).limit(1);
+
+    if (existing) {
+      throw new AppError(409, 'SUBDOMAIN_EXISTS', 
+        `Subdomain ${data.name} already exists for this domain`);
+    }
+
     const subId = nanoid();
     const fullSubdomain = `${data.name}.${domain.name}`;
     const docRoot = data.documentRoot || `${env.VHOSTS_ROOT}/${domain.name}/${data.name}`;
@@ -755,12 +781,15 @@ export class DomainsService {
     await this.autoCreateTunnelRoute(fullSubdomain, domainId, userId, ipAddress);
 
     // If parent domain is attached to a website, regenerate nginx config
-    // so the subdomain can be served (best-effort)
+    // so the subdomain can be served. Rollback subdomain on failure.
     if (domain.websiteId) {
       try {
         await nginxService.generateWebsiteConfig(domain.websiteId);
-      } catch (e) {
-        logger.warn({ err: e, websiteId: domain.websiteId }, 'Failed to regenerate website nginx config for new subdomain');
+      } catch (nginxError) {
+        // Rollback: delete the subdomain record
+        await db.delete(subdomains).where(eq(subdomains.id, subId));
+        logger.error({ err: nginxError, subdomainId: subId }, 'Nginx config regeneration failed — subdomain rolled back');
+        throw new AppError(500, 'SUBDOMAIN_CREATE_FAILED', `Subdomain record created but nginx configuration failed: ${(nginxError as Error).message}. Subdomain has been rolled back.`);
       }
     }
 
@@ -781,6 +810,24 @@ export class DomainsService {
     // Auto-remove Cloudflare Tunnel route + CNAME for this subdomain
     if (sub?.name) {
       await this.autoRemoveTunnelRoutes(domainId, sub.name, userId, ipAddress);
+    }
+
+    // Clean up DNS A record for this subdomain before deleting the subdomain record
+    if (sub) {
+      const subdomainName = sub.name.split('.')[0]; // Extract subdomain prefix (e.g., "blog" from "blog.example.com")
+      const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
+      if (zone) {
+        const [dnsRecord] = await db.select().from(dnsRecords)
+          .where(and(
+            eq(dnsRecords.zoneId, zone.id),
+            eq(dnsRecords.name, subdomainName),
+            eq(dnsRecords.type, 'A')
+          )).limit(1);
+        if (dnsRecord) {
+          await db.delete(dnsRecords).where(eq(dnsRecords.id, dnsRecord.id));
+          logger.info({ subdomainName, zoneId: zone.id }, 'DNS A record deleted for subdomain');
+        }
+      }
     }
 
     await db.delete(subdomains).where(eq(subdomains.id, subdomainId));
