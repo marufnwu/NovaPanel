@@ -58,7 +58,7 @@ import {
   Search, Shield, Server, ChevronRight, ArrowLeft, Link2, ArrowRightLeft,
   Edit3, Activity, AlertTriangle, Unplug, Mail, FileText, Info, Cloud,
   Lock, RefreshCw, Zap, ToggleLeft, ToggleRight, XCircle, Waypoints, Save,
-  Globe2, CheckCircle2,
+  Globe2, CheckCircle2, Upload,
 } from 'lucide-react';
 import type { ApiError } from '../../api/client';
 import type { Domain } from '../../api/hooks/domains';
@@ -2047,6 +2047,15 @@ export function DomainsPage() {
                 >
                   <ExternalLink className="h-4 w-4" /> Set Up Tunnel
                 </Link>
+                {createdDomain.documentRoot && (
+                  <Link
+                    to="/files"
+                    search={{ website: createdDomain.name }}
+                    className="mt-3 ml-2 inline-flex items-center gap-2 rounded-md border border-primary bg-background px-4 py-2 text-sm font-medium text-primary hover:bg-accent"
+                  >
+                    <Upload className="h-4 w-4" /> Upload Files
+                  </Link>
+                )}
               </div>
             </div>
             <button onClick={() => setCreatedDomain(null)} className="text-green-600 hover:text-green-800">
