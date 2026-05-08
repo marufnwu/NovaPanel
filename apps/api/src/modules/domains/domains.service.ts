@@ -334,7 +334,23 @@ export class DomainsService {
       //     was inserted with websiteId already set, so attachDomain() would
       //     be a no-op)
       if (websiteId) {
-        await nginxService.generateWebsiteConfig(websiteId);
+        try {
+          await nginxService.generateWebsiteConfig(websiteId);
+          logger.info({ websiteId, domainId }, 'Nginx config generated successfully after domain insert');
+        } catch (nginxError) {
+          logger.error({ err: nginxError, websiteId, domainId }, 'Nginx config generation FAILED after domain insert — initiating rollback');
+          // Rollback: delete domain record AND website
+          try {
+            await db.delete(domains).where(eq(domains.id, domainId));
+            logger.info({ domainId }, 'Rollback: domain record deleted');
+          } catch (deleteDomainError) {
+            logger.error({ err: deleteDomainError, domainId }, 'Rollback: FAILED to delete domain record');
+          }
+          if (websiteId) {
+            await websitesService.delete(websiteId).catch(() => {});
+          }
+          throw new AppError(500, 'DOMAIN_CREATE_FAILED', `Domain record created but nginx configuration failed: ${(nginxError as Error).message}. Domain has been rolled back.`);
+        }
       }
 
       // 6. Create DNS zone if requested
