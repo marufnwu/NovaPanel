@@ -334,11 +334,7 @@ export class DomainsService {
       //     was inserted with websiteId already set, so attachDomain() would
       //     be a no-op)
       if (websiteId) {
-        try {
-          await nginxService.generateWebsiteConfig(websiteId);
-        } catch (e) {
-          logger.warn({ err: e, websiteId, domainId }, 'Failed to regenerate website nginx config after domain creation');
-        }
+        await nginxService.generateWebsiteConfig(websiteId);
       }
 
       // 6. Create DNS zone if requested
