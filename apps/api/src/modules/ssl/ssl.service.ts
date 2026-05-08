@@ -395,6 +395,9 @@ export class SslService {
 
     await db.delete(sslCertificates).where(eq(sslCertificates.domainId, domainId));
 
+    // Remove existing nginx config for this domain first (avoid conflicts)
+    await nginxService.removeVhost(domain.name);
+
     // Regenerate HTTP-only vhost
     const vhostCtx: VhostContext = {
       domain: domain.name,
