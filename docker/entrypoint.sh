@@ -356,6 +356,12 @@ phase_service_config() {
 
     # 3a. Nginx configuration
     log "Configuring Nginx..."
+
+    # Fix nginx pid location for Docker (read-only /run filesystem)
+    if [ -f /etc/nginx/nginx.conf ]; then
+        sed -i 's|pid /run/nginx.pid;|pid /var/run/nginx.pid;|' /etc/nginx/nginx.conf
+    fi
+
     if [ ! -f "/etc/nginx/sites-enabled/novapanel" ]; then
         cat > /etc/nginx/sites-available/novapanel << 'NGINXEOF'
 # NovaPanel â€” Nginx Frontend Reverse Proxy
@@ -366,6 +372,9 @@ upstream panel_api {
     server 127.0.0.1:8732;
     keepalive 64;
 }
+
+# Use /var/run for pid file (Docker compatibility with read-only /run)
+pid /var/run/nginx.pid;
 
 # Upstream for Apache (for .htaccess support)
 upstream apache_backend {
