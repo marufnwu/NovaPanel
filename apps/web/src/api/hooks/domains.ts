@@ -479,3 +479,23 @@ export function useMakeDomainPublic(domainId: string) {
     },
   });
 }
+
+// --- Domain Log Access ---
+
+export function useDomainAccessLog(domainId: string, lines: number = 100) {
+  return useQuery({
+    queryKey: ['domains', domainId, 'logs', 'access', lines],
+    queryFn: () => {
+      return api.get<string>(`/domains/${domainId}/logs/access?lines=${lines}`);
+    },
+  });
+}
+
+export function useDomainErrorLog(domainId: string, lines: number = 100) {
+  return useQuery({
+    queryKey: ['domains', domainId, 'logs', 'error', lines],
+    queryFn: () => {
+      return api.get<string>(`/domains/${domainId}/logs/error?lines=${lines}`);
+    },
+  });
+}
