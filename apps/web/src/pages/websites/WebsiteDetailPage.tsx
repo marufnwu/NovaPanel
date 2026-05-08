@@ -27,7 +27,7 @@ import { Breadcrumb } from '../../components/ui/Breadcrumb';
 import {
   Server, Trash2, Ban, CheckCircle, Edit3, HardDrive,
   Globe, FolderOpen, Users, Clock, Database, Archive,
-  AppWindow, Link2, Unlink, AlertTriangle, Plus,
+  AppWindow, Link2, Unlink, AlertTriangle, Plus, Activity,
 } from 'lucide-react';
 import type { ApiError } from '../../api/client';
 import { toast } from '../../lib/toast';
@@ -310,6 +310,24 @@ function OverviewTab({ website }: { website: Website }) {
             </p>
           </div>
         ))}
+      </div>
+
+      {/* Quick Actions */}
+      <div className="flex flex-wrap gap-3">
+        <a
+          href={`/php?domain=${encodeURIComponent(website.name)}`}
+          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          <Activity className="h-4 w-4" /> PHP Settings
+        </a>
+        <a
+          href={`http://${website.name}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+        >
+          <Globe className="h-4 w-4" /> Open Website
+        </a>
       </div>
     </div>
   );
