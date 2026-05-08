@@ -276,22 +276,66 @@ export class WebServerService {
   }
 
   /**
-   * Get custom error pages for a domain
+   * Get custom error pages for a domain by parsing nginx config
    */
   async getErrorPages(domainName: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.name, domainName)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    // Return default error pages — real implementation would read from config files
-    return [
-      { code: 400, enabled: false, content: '', contentType: 'text/html' as const },
-      { code: 401, enabled: false, content: '', contentType: 'text/html' as const },
-      { code: 403, enabled: false, content: '', contentType: 'text/html' as const },
-      { code: 404, enabled: true, content: '<h1>404 - Page Not Found</h1>', contentType: 'text/html' as const },
-      { code: 500, enabled: true, content: '<h1>500 - Internal Server Error</h1>', contentType: 'text/html' as const },
-      { code: 502, enabled: false, content: '', contentType: 'text/html' as const },
-      { code: 503, enabled: false, content: '', contentType: 'text/html' as const },
-    ];
+    // Try to read the actual nginx config to find error page directives
+    const configPath = `/etc/nginx/sites-available/${domainName}.conf`;
+    
+    try {
+      const configContent = await sudoFs.readFile(configPath);
+      
+      // Parse error_page directives from nginx config
+      // Format: error_page 404 = /404.html;
+      const errorPageRegex = /error_page\s+(\d+)\s*(?:=\s*\/?(\S+))?;/g;
+      const customErrorPages: Record<number, { enabled: boolean; content: string }> = {};
+      let match;
+      
+      while ((match = errorPageRegex.exec(configContent)) !== null) {
+        const code = parseInt(match[1], 10);
+        const page = match[2] || '';
+        customErrorPages[code] = {
+          enabled: true,
+          content: page,
+        };
+      }
+
+      // Build response with defaults for missing codes but override if we found them
+      const defaultPages = [
+        { code: 400, enabled: false, content: '', contentType: 'text/html' as const },
+        { code: 401, enabled: false, content: '', contentType: 'text/html' as const },
+        { code: 403, enabled: false, content: '', contentType: 'text/html' as const },
+        { code: 404, enabled: true, content: '/404.html', contentType: 'text/html' as const },
+        { code: 500, enabled: true, content: '/500.html', contentType: 'text/html' as const },
+        { code: 502, enabled: false, content: '', contentType: 'text/html' as const },
+        { code: 503, enabled: false, content: '', contentType: 'text/html' as const },
+      ];
+
+      return defaultPages.map(page => {
+        if (customErrorPages[page.code]) {
+          return {
+            ...page,
+            enabled: customErrorPages[page.code].enabled,
+            content: customErrorPages[page.code].content,
+          };
+        }
+        return page;
+      });
+    } catch {
+      // Config file not readable, return defaults
+      return [
+        { code: 400, enabled: false, content: '', contentType: 'text/html' as const },
+        { code: 401, enabled: false, content: '', contentType: 'text/html' as const },
+        { code: 403, enabled: false, content: '', contentType: 'text/html' as const },
+        { code: 404, enabled: true, content: '<h1>404 - Page Not Found</h1>', contentType: 'text/html' as const },
+        { code: 500, enabled: true, content: '<h1>500 - Internal Server Error</h1>', contentType: 'text/html' as const },
+        { code: 502, enabled: false, content: '', contentType: 'text/html' as const },
+        { code: 503, enabled: false, content: '', contentType: 'text/html' as const },
+      ];
+    }
   }
 
   /**
@@ -315,19 +359,69 @@ export class WebServerService {
   }
 
   /**
-   * Get rate limiting configuration for a domain
+   * Get rate limiting configuration for a domain by parsing nginx config
    */
   async getRateLimitConfig(domainName: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.name, domainName)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    // Return default config — real implementation would read from nginx config
-    return {
-      enabled: false,
-      requestsPerSecond: 10,
-      burstSize: 20,
-      timeoutSeconds: 60,
-    };
+    // Try to read the actual nginx config to find rate limiting directives
+    const configPath = `/etc/nginx/sites-available/${domainName}.conf`;
+    
+    try {
+      const configContent = await sudoFs.readFile(configPath);
+      
+      // Check if rate limiting is enabled in this vhost
+      // Look for limit_req_zone and limit_req directives
+      const hasLimitReqZone = /limit_req_zone\s+\$binary_remote_addr/.test(configContent);
+      const limitReqMatch = configContent.match(/limit_req_zone\s+\$binary_remote_addr\s+zone=(\w+):(\d+m)/);
+      
+      let zoneName = 'limit';
+      let zoneSize = '10m';
+      if (limitReqMatch) {
+        zoneName = limitReqMatch[1];
+        zoneSize = limitReqMatch[2];
+      }
+
+      // Parse limit_req directives
+      const limitReqRegex = /limit_req\s+(?:zone=(\w+)\s+)?(burst=(\d+)\s+)?(?:nodelay\s+)?(?:delay=(\d+)\s+)?/g;
+      const limitReqMatch2 = limitReqRegex.exec(configContent);
+      
+      // Also look for limit_conn directives
+      const limitConnRegex = /limit_conn\s+(\w+)\s+(\d+)/;
+      const limitConnMatch = limitConnRegex.exec(configContent);
+
+      if (hasLimitReqZone || limitReqMatch2) {
+        // Rate limiting is configured
+        const requestsPerSecond = limitReqMatch2 ? 1 : 10; // Default to conservative estimate
+        const burstSize = limitReqMatch2?.[2] ? parseInt(limitReqMatch2[2].replace('burst=', '')) : 20;
+        
+        return {
+          enabled: true,
+          requestsPerSecond,
+          burstSize,
+          timeoutSeconds: 60,
+          zoneName,
+          maxConnections: limitConnMatch ? parseInt(limitConnMatch[2]) : undefined,
+        };
+      }
+
+      // Rate limiting not configured for this domain
+      return {
+        enabled: false,
+        requestsPerSecond: 10,
+        burstSize: 20,
+        timeoutSeconds: 60,
+      };
+    } catch {
+      // Config file not readable, return defaults
+      return {
+        enabled: false,
+        requestsPerSecond: 10,
+        burstSize: 20,
+        timeoutSeconds: 60,
+      };
+    }
   }
 
   /**

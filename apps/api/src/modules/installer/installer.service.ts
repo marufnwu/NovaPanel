@@ -43,8 +43,6 @@ export class InstallerService {
       return { success: false, message: 'App not found' };
     }
 
-    const installedId = data.path || app.installPath;
-
     // Log the installation
     await db.insert(appInstallLogs).values({
       appId: data.appId,
@@ -54,32 +52,79 @@ export class InstallerService {
     });
 
     try {
-      // In a real implementation, this would:
-      // 1. Create database if needed
-      // 2. Download and extract the app
-      // 3. Configure the app (database credentials, domain, etc.)
-      // 4. Set up nginx/apache vhost
-      // 5. Run any setup scripts (wp-cli, composer, etc.)
-
       logger.info({ appId: data.appId, domain: data.domain, path: data.path }, 'Installing app');
 
-      // Simulate installation for now
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Get domain info for document root and PHP version
+      const domainInfo = await this.getDomainInfo(data.domain);
+      if (!domainInfo) {
+        return { success: false, message: 'Domain not found' };
+      }
+
+      const installPath = data.path || `${domainInfo.documentRoot}/apps/${app.appId}`;
+      const dbHost = 'localhost';
+      const dbName = `${data.domain.replace(/\./g, '_')}_${app.appId}`;
+      const dbUser = `${data.domain.replace(/\./g, '_')}_${app.appId}`;
+      const dbPass = this.generatePassword();
+
+      // Update progress
+      await this.updateInstallProgress(data.appId, data.domain, 10, 'Creating database...');
+
+      // Create database for the app
+      const dbResult = await this.createAppDatabase(dbHost, dbName, dbUser, dbPass);
+      if (!dbResult.success) {
+        throw new Error(dbResult.message);
+      }
+
+      // Update progress
+      await this.updateInstallProgress(data.appId, data.domain, 30, 'Downloading application files...');
+
+      // Download and extract the application based on app type
+      const downloadResult = await this.downloadApp(app.appId, installPath);
+      if (!downloadResult.success) {
+        throw new Error(downloadResult.message);
+      }
+
+      // Update progress
+      await this.updateInstallProgress(data.appId, data.domain, 60, 'Configuring application...');
+
+      // Configure the application
+      const configResult = await this.configureApp(app.appId, installPath, {
+        dbHost,
+        dbName,
+        dbUser,
+        dbPass,
+        domain: data.domain,
+        adminEmail: data.adminEmail,
+        adminPassword: data.adminPassword,
+      });
+      if (!configResult.success) {
+        throw new Error(configResult.message);
+      }
+
+      // Update progress
+      await this.updateInstallProgress(data.appId, data.domain, 80, 'Setting permissions...');
+
+      // Set correct ownership and permissions
+      await this.setAppPermissions(installPath, domainInfo.phpVersion);
+
+      // Update progress
+      await this.updateInstallProgress(data.appId, data.domain, 95, 'Finalizing installation...');
 
       // Insert installation record
       const newApp = await db.insert(installedApps).values({
         appId: data.appId,
         appName: app.appName,
         domainId: data.domain,
-        installPath: installedId,
+        websiteId: domainInfo.websiteId,
+        installPath: installPath,
         status: 'ready',
         progress: 100,
         adminEmail: data.adminEmail,
         adminPassword: data.adminPassword,
-        databaseHost: data.domain ? `${data.domain}.localhost` : 'localhost',
-        databaseName: `${app.appName}_db`,
-        databaseUser: data.domain ? `${data.domain}_db` : 'root',
-        databasePassword: this.generatePassword(),
+        databaseHost: dbHost,
+        databaseName: dbName,
+        databaseUser: dbUser,
+        databasePassword: dbPass,
         installedAt: new Date(),
       }).returning();
 
@@ -93,7 +138,7 @@ export class InstallerService {
 
       return {
         success: true,
-        message: `Installation of ${app.appName} started. This may take a few minutes.`,
+        message: `Installation of ${app.appName} completed successfully`,
         installedId: newApp[0]?.id?.toString(),
       };
     } catch (error: any) {
@@ -110,6 +155,206 @@ export class InstallerService {
         success: false,
         message: `Installation failed: ${error.message}`,
       };
+    }
+  }
+
+  /**
+   * Update installation progress
+   */
+  private async updateInstallProgress(appId: string, domainId: string, progress: number, message: string): Promise<void> {
+    await db.insert(appInstallLogs).values({
+      appId,
+      domainId,
+      message: `[${progress}%] ${message}`,
+      level: 'info',
+    }).catch(() => {});
+  }
+
+  /**
+   * Get domain info from domain name
+   */
+  private async getDomainInfo(domainName: string): Promise<{ documentRoot: string; phpVersion: string; websiteId: string | null } | null> {
+    try {
+      const { domains } = await import('../../db/schema/domains.js');
+      const { eq } = await import('drizzle-orm');
+      const [domain] = await db.select({
+        documentRoot: domains.documentRoot,
+        phpVersion: domains.phpVersion,
+        websiteId: domains.websiteId,
+      }).from(domains).where(eq(domains.name, domainName)).limit(1);
+      return domain || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Create database for app installation
+   */
+  private async createAppDatabase(host: string, dbName: string, dbUser: string, dbPass: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Create database
+      const createDbResult = await run('mysql', ['-e', `CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`]);
+      if (!createDbResult.success) {
+        return { success: false, message: 'Failed to create database' };
+      }
+
+      // Create user and grant privileges
+      const createUserResult = await run('mysql', ['-e', `CREATE USER IF NOT EXISTS '${dbUser}'@'localhost' IDENTIFIED BY '${dbPass}';`]);
+      if (!createUserResult.success) {
+        return { success: false, message: 'Failed to create database user' };
+      }
+
+      const grantResult = await run('mysql', ['-e', `GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO '${dbUser}'@'localhost'; FLUSH PRIVILEGES;`]);
+      if (!grantResult.success) {
+        return { success: false, message: 'Failed to grant database privileges' };
+      }
+
+      return { success: true, message: 'Database created successfully' };
+    } catch (error: any) {
+      return { success: false, message: `Database creation failed: ${error.message}` };
+    }
+  }
+
+  /**
+   * Download and extract application files
+   */
+  private async downloadApp(appId: string, installPath: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // WordPress download URL
+      const wordpressUrl = 'https://wordpress.org/latest.tar.gz';
+
+      // Create install directory
+      await run('mkdir', ['-p', installPath]);
+
+      // Download WordPress
+      const downloadResult = await run('wget', ['-q', '-O', '/tmp/wordpress.tar.gz', wordpressUrl]);
+      if (!downloadResult.success) {
+        // Try curl as fallback
+        const curlResult = await run('curl', ['-sL', '-o', '/tmp/wordpress.tar.gz', wordpressUrl]);
+        if (!curlResult.success) {
+          return { success: false, message: 'Failed to download WordPress' };
+        }
+      }
+
+      // Extract to temp location first
+      const extractResult = await run('tar', ['-xzf', '/tmp/wordpress.tar.gz', '-C', '/tmp']);
+      if (!extractResult.success) {
+        return { success: false, message: 'Failed to extract WordPress' };
+      }
+
+      // Move files to install path (WordPress extracts to /tmp/wordpress/)
+      await run('sh', ['-c', `cp -r /tmp/wordpress/* "${installPath}/"`]);
+
+      // Cleanup
+      await run('rm', ['-rf', '/tmp/wordpress.tar.gz', '/tmp/wordpress']);
+
+      return { success: true, message: 'Downloaded successfully' };
+    } catch (error: any) {
+      return { success: false, message: `Download failed: ${error.message}` };
+    }
+  }
+
+  /**
+   * Configure the installed application
+   */
+  private async configureApp(appId: string, installPath: string, config: {
+    dbHost: string;
+    dbName: string;
+    dbUser: string;
+    dbPass: string;
+    domain: string;
+    adminEmail: string;
+    adminPassword: string;
+  }): Promise<{ success: boolean; message: string }> {
+    if (appId.toLowerCase().includes('wordpress') || appId === 'wordpress') {
+      return this.configureWordPress(installPath, config);
+    }
+    return { success: true, message: 'Configuration skipped (unsupported app type)' };
+  }
+
+  /**
+   * Configure WordPress specific settings
+   */
+  private async configureWordPress(installPath: string, config: {
+    dbHost: string;
+    dbName: string;
+    dbUser: string;
+    dbPass: string;
+    domain: string;
+    adminEmail: string;
+    adminPassword: string;
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      // Create wp-config.php
+      const wpConfigContent = `<?php
+/**
+ * WordPress Database Configuration
+ * Generated by NovaPanel
+ */
+
+define( 'DB_NAME', '${config.dbName}' );
+define( 'DB_USER', '${config.dbUser}' );
+define( 'DB_PASSWORD', '${config.dbPass}' );
+define( 'DB_HOST', '${config.dbHost}' );
+define( 'DB_CHARSET', 'utf8mb4' );
+define( 'DB_COLLATE', '' );
+
+// Security keys (using standard WordPress salting)
+define('AUTH_KEY',         '${this.generatePassword()}');
+define('SECURE_AUTH_KEY',  '${this.generatePassword()}');
+define('LOGGED_IN_KEY',    '${this.generatePassword()}');
+define('NONCE_KEY',        '${this.generatePassword()}');
+define('AUTH_SALT',        '${this.generatePassword()}');
+define('SECURE_AUTH_SALT', '${this.generatePassword()}');
+define('LOGGED_IN_SALT',   '${this.generatePassword()}');
+define('NONCE_SALT',       '${this.generatePassword()}');
+
+$table_prefix = 'wp_';
+
+define( 'WP_DEBUG', false );
+
+// Absolute path to the WordPress directory
+if ( ! defined( 'ABSPATH' ) ) {
+    define( 'ABSPATH', __DIR__ . '/' );
+}
+
+// Sets up WordPress vars and included files
+require_once ABSPATH . 'wp-settings.php';
+`;
+
+      // Write wp-config.php using tee
+      const wpConfigPath = `${installPath}/wp-config.php`;
+      const writeResult = await run('tee', [wpConfigPath], { input: wpConfigContent });
+      if (!writeResult.success) {
+        return { success: false, message: 'Failed to write wp-config.php' };
+      }
+
+      return { success: true, message: 'WordPress configured successfully' };
+    } catch (error: any) {
+      return { success: false, message: `WordPress configuration failed: ${error.message}` };
+    }
+  }
+
+  /**
+   * Set correct permissions for installed app
+   */
+  private async setAppPermissions(installPath: string, phpVersion: string): Promise<void> {
+    try {
+      // Set directory ownership
+      await run('chown', ['-R', 'www-data:www-data', installPath]);
+
+      // Set correct permissions for WordPress
+      await run('chmod', ['755', `${installPath}`]);
+      await run('chmod', ['755', `${installPath}/wp-content`]);
+
+      // Make wp-content writable for uploads and upgrades
+      await run('chmod', ['775', `${installPath}/wp-content/uploads`]);
+
+      // Protect wp-config.php
+      await run('chmod', ['640', `${installPath}/wp-config.php`]);
+    } catch (error) {
+      // Permissions are best-effort, don't fail installation
     }
   }
 

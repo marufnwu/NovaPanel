@@ -1,6 +1,6 @@
 import { db } from '../../db/index.js';
-import { cronJobs } from '../../db/schema/cron.js';
-import { eq } from 'drizzle-orm';
+import { cronJobs, cronJobHistory } from '../../db/schema/cron.js';
+import { eq, desc } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { run } from '../../services/executor.js';
 import { AppError } from '../../errors.js';
@@ -201,12 +201,41 @@ export class CronService {
     const [job] = await db.select().from(cronJobs).where(eq(cronJobs.id, jobId)).limit(1);
     if (!job) throw new AppError(404, 'CRON_NOT_FOUND', 'Cron job not found');
 
+    const startTime = new Date();
+    const historyId = nanoid();
+
+    // Mark as running
+    await db.update(cronJobs).set({
+      lastRun: startTime,
+      lastStatus: 'running',
+    }).where(eq(cronJobs.id, jobId));
+
+    // Create history entry with start time
+    await db.insert(cronJobHistory).values({
+      id: historyId,
+      jobId: jobId,
+      startTime: startTime,
+    });
+
     const result = await run('su', ['-c', job.command, job.systemUser], { sudo: true, timeout: 60_000 });
 
+    const endTime = new Date();
+    const durationMs = endTime.getTime() - startTime.getTime();
+
+    // Update job with final status
     await db.update(cronJobs).set({
-      lastRun: new Date(),
+      lastRun: endTime,
       lastStatus: result.success ? 'success' : 'failed',
     }).where(eq(cronJobs.id, jobId));
+
+    // Update history entry with final details
+    await db.update(cronJobHistory).set({
+      endTime: endTime,
+      durationMs: durationMs,
+      exitCode: result.exitCode ?? 0,
+      outputPreview: result.stdout?.substring(0, 1000) || '',
+      errorPreview: result.stderr?.substring(0, 500) || '',
+    }).where(eq(cronJobHistory.id, historyId));
 
     auditService.log({
       userId,
@@ -222,11 +251,25 @@ export class CronService {
   /**
    * Get cron job execution history
    */
-  async getJobHistory(jobId: string): Promise<Array<{ id: string; jobId: string; startTime: string; endTime: string; durationMs: number; exitCode: number; outputPreview: string }>> {
+  async getJobHistory(jobId: string, limit: number = 50): Promise<Array<{ id: string; jobId: string; startTime: string; endTime: string | null; durationMs: number | null; exitCode: number | null; outputPreview: string | null; errorPreview: string | null }>> {
     const [job] = await db.select().from(cronJobs).where(eq(cronJobs.id, jobId)).limit(1);
     if (!job) throw new AppError(404, 'CRON_NOT_FOUND', 'Cron job not found');
-    // Return empty history for now — history tracking can be implemented later
-    return [];
+
+    const history = await db.select().from(cronJobHistory)
+      .where(eq(cronJobHistory.jobId, jobId))
+      .orderBy(desc(cronJobHistory.startTime))
+      .limit(limit);
+
+    return history.map(h => ({
+      id: h.id,
+      jobId: h.jobId,
+      startTime: h.startTime?.toISOString() || '',
+      endTime: h.endTime?.toISOString() || null,
+      durationMs: h.durationMs || null,
+      exitCode: h.exitCode || null,
+      outputPreview: h.outputPreview || null,
+      errorPreview: h.errorPreview || null,
+    }));
   }
 
   /**

@@ -47,6 +47,8 @@ const ALLOWED_COMMANDS: ReadonlySet<string> = new Set([
   'curl',
   // Log reading
   'tail', 'wc', 'head',
+  // Archive reading
+  'zcat',
   // System logs
   'journalctl',
   // Package management

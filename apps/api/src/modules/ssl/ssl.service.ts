@@ -642,16 +642,109 @@ export class SslService {
   }
 
   /**
-   * Check for mixed content issues
+   * Check for mixed content issues - scans domain files for HTTP resources loaded on HTTPS page
    */
-  async checkMixedContent(domainId: string): Promise<{ url: string; issues: Array<{ resourceUrl: string; type: string; line?: number }>; totalIssues: number; scannedAt: string }> {
+  async checkMixedContent(domainId: string): Promise<{ url: string; issues: Array<{ resourceUrl: string; type: string; line?: number; file: string }>; totalIssues: number; scannedAt: string }> {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!domain) {
+      return { url: '', issues: [], totalIssues: 0, scannedAt: new Date().toISOString() };
+    }
+
+    const documentRoot = domain.documentRoot || `${env.VHOSTS_ROOT}/${domain.name}/public`;
+    const issues: Array<{ resourceUrl: string; type: string; line?: number; file: string }> = [];
+
+    // Patterns that indicate mixed content (HTTP URLs in HTTPS context)
+    const mixedContentPatterns = [
+      // HTML/XML patterns
+      { pattern: /<script[^>]+src=["']http:\/\/[^"']+["']/gi, type: 'script' },
+      { pattern: /<link[^>]+href=["']http:\/\/[^"']+["']/gi, type: 'stylesheet' },
+      { pattern: /<img[^>]+src=["']http:\/\/[^"']+["']/gi, type: 'image' },
+      { pattern: /<iframe[^>]+src=["']http:\/\/[^"']+["']/gi, type: 'iframe' },
+      { pattern: /<video[^>]*>[^<]*<source[^>]+src=["']http:\/\/[^"']+["']/gi, type: 'video' },
+      { pattern: /<audio[^>]*>[^<]*<source[^>]+src=["']http:\/\/[^"']+["']/gi, type: 'audio' },
+      { pattern: /<source[^>]+src=["']http:\/\/[^"']+["']/gi, type: 'media' },
+      { pattern: /<object[^>]+data=["']http:\/\/[^"']+["']/gi, type: 'object' },
+      { pattern: /<embed[^>]+src=["']http:\/\/[^"']+["']/gi, type: 'embed' },
+      { pattern: /<video[^>]+src=["']http:\/\/[^"']+["']/gi, type: 'video' },
+      { pattern: /<audio[^>]+src=["']http:\/\/[^"']+["']/gi, type: 'audio' },
+      // CSS url() patterns
+      { pattern: /url\s*\(\s*["']http:\/\/[^"']+["']\s*\)/gi, type: 'css-url' },
+      // Inline event handlers with http://
+      { pattern: /onclick\s*=\s*["']http:\/\/[^"']+["']/gi, type: 'javascript' },
+      { pattern: /onload\s*=\s*["']http:\/\/[^"']+["']/gi, type: 'javascript' },
+    ];
+
+    // File extensions to scan
+    const scannableExtensions = ['.html', '.htm', '.php', '.css', '.js', '.xml'];
+
+    try {
+      // Get list of files recursively
+      const files = await this.getFilesRecursively(documentRoot, scannableExtensions);
+
+      // Scan each file
+      for (const file of files.slice(0, 500)) { // Limit to 500 files for performance
+        try {
+          const content = await sudoFs.readFile(file);
+          const lines = content.split('\n');
+
+          for (const [lineIdx, line] of lines.entries()) {
+            for (const { pattern, type } of mixedContentPatterns) {
+              const matches = line.match(pattern);
+              if (matches) {
+                for (const match of matches) {
+                  // Extract the HTTP URL from the match
+                  const urlMatch = match.match(/http:\/\/[^\s"'<>]+/);
+                  if (urlMatch) {
+                    issues.push({
+                      resourceUrl: urlMatch[0],
+                      type,
+                      line: lineIdx + 1,
+                      file: file.replace(documentRoot, ''),
+                    });
+                  }
+                }
+              }
+            }
+          }
+        } catch (fileError) {
+          // Skip files that can't be read (binary files, permission issues, etc.)
+          continue;
+        }
+      }
+    } catch (error) {
+      logger.warn({ domain: domain.name, error }, 'Failed to scan for mixed content');
+    }
+
     return {
-      url: domain?.name || '',
-      issues: [],
-      totalIssues: 0,
+      url: domain.name,
+      issues,
+      totalIssues: issues.length,
       scannedAt: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Recursively get list of files with specific extensions using find command
+   */
+  private async getFilesRecursively(dir: string, extensions: string[], maxDepth: number = 5): Promise<string[]> {
+    try {
+      // Build find command to get files with specific extensions
+      const extArgs = extensions.map(ext => `-name "*${ext}"`).flatMap(e => ['-o', '-name', e]).slice(2);
+      const depthArg = `-maxdepth ${maxDepth}`;
+      
+      // Use find to get files with matching extensions
+      const findCmd = `find ${dir} ${depthArg} -type f \\( ${extArgs.join(' ')} \\) 2>/dev/null | head -500`;
+      const result = await run('sh', ['-c', findCmd]);
+      
+      if (!result.success || !result.stdout) {
+        return [];
+      }
+      
+      const files = result.stdout.split('\n').filter(f => f.trim());
+      return files;
+    } catch (error) {
+      return [];
+    }
   }
 
   /**

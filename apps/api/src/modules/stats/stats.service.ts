@@ -1,5 +1,7 @@
 import si from 'systeminformation';
 import { loadavg, hostname as osHostname, type } from 'node:os';
+import { createReadStream, existsSync } from 'node:fs';
+import { createGunzip } from 'node:zlib';
 import { db } from '../../db/index.js';
 import { domains } from '../../db/schema/domains.js';
 import { mailboxes } from '../../db/schema/email.js';
@@ -411,19 +413,142 @@ export class StatsService {
       const allDomains = await db.select({
         id: domains.id,
         name: domains.name,
+        documentRoot: domains.documentRoot,
       }).from(domains);
 
-      // Return mock/empty data for now — real implementation would parse log files
-      return allDomains.map(d => ({
-        domainId: d.id,
-        domainName: d.name,
-        incomingBytes: 0,
-        outgoingBytes: 0,
-        totalBytes: 0,
-      }));
+      const stats: DomainBandwidthStats[] = [];
+
+      for (const domain of allDomains) {
+        try {
+          // Determine log directory: prefer /var/www/{domain}/logs/ if it exists,
+          // otherwise derive from documentRoot
+          const defaultLogDir = `/var/www/${domain.name}/logs`;
+
+          // Check if domain's documentRoot is under /var/www/{domain}/
+          let logDir: string;
+          if (domain.documentRoot.includes(`/var/www/${domain.name}`)) {
+            logDir = domain.documentRoot.replace(/\/public$/, '/logs').replace(/\/httpdocs$/, '/logs');
+          } else {
+            // Fallback to default path
+            logDir = defaultLogDir;
+          }
+
+          const logFile = `${logDir}/access.log`;
+          const rotatedFiles = [
+            `${logDir}/access.log.1`,
+            `${logDir}/access.log.2.gz`,
+            `${logDir}/access.log.3.gz`,
+            `${logDir}/access.log.4.gz`,
+          ];
+
+          let incomingBytes = 0;
+          let outgoingBytes = 0;
+
+          // Parse the active log file
+          if (existsSync(logFile)) {
+            const result = await this.parseAccessLog(logFile);
+            incomingBytes += result.incoming;
+            outgoingBytes += result.outgoing;
+          }
+
+          // Parse rotated log files (some may be gzipped)
+          for (const rotatedFile of rotatedFiles) {
+            if (existsSync(rotatedFile)) {
+              try {
+                const result = await this.parseAccessLog(rotatedFile);
+                incomingBytes += result.incoming;
+                outgoingBytes += result.outgoing;
+              } catch {
+                // Skip files that can't be parsed
+              }
+            }
+          }
+
+          stats.push({
+            domainId: domain.id,
+            domainName: domain.name,
+            incomingBytes,
+            outgoingBytes,
+            totalBytes: incomingBytes + outgoingBytes,
+          });
+        } catch {
+          // Return zeros for domains that fail
+          stats.push({
+            domainId: domain.id,
+            domainName: domain.name,
+            incomingBytes: 0,
+            outgoingBytes: 0,
+            totalBytes: 0,
+          });
+        }
+      }
+
+      return stats;
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Parse an nginx access log file (plain or gzipped) and calculate bandwidth.
+   *
+   * Nginx combined log format:
+   * $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"
+   *
+   * We extract:
+   * - $body_bytes_sent (field 7 in the combined format) → incomingBytes
+   * - Request line length as estimate for outgoingBytes
+   */
+  private async parseAccessLog(filePath: string): Promise<{ incoming: number; outgoing: number }> {
+    const isGzipped = filePath.endsWith('.gz');
+
+    return new Promise((resolve, reject) => {
+      let incoming = 0;
+      let outgoing = 0;
+
+      // Combined log format regex:
+      // Field 1: $remote_addr
+      // Field 2: "-"
+      // Field 3: $remote_user (or "-")
+      // Field 4: [$time_local]
+      // Field 5: "$request"
+      // Field 6: $status
+      // Field 7: $body_bytes_sent
+      const logRegex = /^(\S+)\s+-\s+(\S+)\s+\[([^\]]+)\]\s+"([^"]+)"\s+(\d+)\s+(\d+)/;
+
+      let stream: NodeJS.ReadableStream;
+
+      if (isGzipped) {
+        // For gzipped files, use zcat + gunzip via stream
+        const { spawn } = require('node:child_process');
+        const zcat = spawn('sudo', ['zcat', filePath]);
+        const gunzip = createGunzip();
+        stream = zcat.stdout.pipe(gunzip);
+      } else {
+        stream = createReadStream(filePath, { encoding: 'utf8' });
+      }
+
+      stream.on('data', (chunk: string) => {
+        const lines = chunk.split('\n');
+        for (const line of lines) {
+          if (!line.trim()) continue;
+
+          const match = line.match(logRegex);
+          if (match) {
+            const bodyBytesSent = parseInt(match[6], 10) || 0;
+            const requestLine = match[4] || '';
+            // Estimate outgoing bytes as request line length (average overhead per request ~200 bytes)
+            const requestLength = requestLine.length + 200;
+
+            incoming += bodyBytesSent;
+            outgoing += requestLength;
+          }
+        }
+      });
+
+      stream.on('end', () => resolve({ incoming, outgoing }));
+      stream.on('error', reject);
+    });
   }
 }
 

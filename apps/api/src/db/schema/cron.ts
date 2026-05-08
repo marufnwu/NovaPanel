@@ -16,4 +16,16 @@ export const cronJobs = sqliteTable('cron_jobs', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 
+export const cronJobHistory = sqliteTable('cron_job_history', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id').notNull().references(() => cronJobs.id, { onDelete: 'cascade' }),
+  startTime: integer('start_time', { mode: 'timestamp' }).notNull(),
+  endTime: integer('end_time', { mode: 'timestamp' }),
+  durationMs: integer('duration_ms'),
+  exitCode: integer('exit_code'),
+  outputPreview: text('output_preview'),
+  errorPreview: text('error_preview'),
+});
+
 export type CronJob = typeof cronJobs.$inferSelect;
+export type CronJobHistoryEntry = typeof cronJobHistory.$inferSelect;
