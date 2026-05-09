@@ -39,8 +39,8 @@ export class NginxService implements SystemService {
   }
 
   async reload(): Promise<void> {
-    // Use nginx -s reload instead of systemctl to avoid auth issues
-    await run('nginx', ['-s', 'reload'], { sudo: true });
+    // Use systemctl reload instead of nginx -s reload to handle read-only /run
+    await run('systemctl', ['reload', 'nginx'], { sudo: true });
   }
 
   async status(): Promise<ServiceInfo> {
