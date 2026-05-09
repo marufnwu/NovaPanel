@@ -63,15 +63,23 @@ export class NginxService implements SystemService {
    */
   async testConfig(): Promise<{ valid: boolean; output: string }> {
     const result = await run('nginx', ['-T'], { sudo: true });
-    // Filter out read-only filesystem pid file warnings since nginx -T doesn't require pid file
     const combinedOutput = result.stdout + result.stderr;
+
+    // Filter out read-only filesystem pid file warnings
     const filteredOutput = combinedOutput
       .split('\n')
       .filter(line => !/\[(emerg|warn)\].*open\(\)[^)]*\).*Read-only file system/i.test(line))
       .join('\n')
       .trim();
+
+    // Check if we filtered out any pid errors
+    const hadPidErrors = combinedOutput.includes('open()') && combinedOutput.includes('Read-only file system');
+
+    // Config is valid if: exit code is 0, OR we filtered pid errors and rest looks ok
+    const looksValid = filteredOutput.includes('syntax is ok') || filteredOutput.includes('test is successful');
+
     return {
-      valid: result.exitCode === 0,
+      valid: result.exitCode === 0 || (hadPidErrors && looksValid),
       output: filteredOutput || combinedOutput,
     };
   }
