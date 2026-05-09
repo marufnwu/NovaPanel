@@ -20,6 +20,9 @@ export class CertbotService {
       args.push('--standalone');
     }
 
+    // Use /tmp for work-dir and logs-dir to avoid permission issues
+    args.push('--config-dir', '/etc/letsencrypt', '--work-dir', '/tmp/certbot-work', '--logs-dir', '/tmp/certbot-logs');
+
     const result = await run('certbot', args, { sudo: true, timeout: 120_000 });
 
     if (!result.success) {
@@ -100,6 +103,9 @@ export class CertbotService {
       );
 
       logger.info({ domain: params.domain, wildcard: params.wildcard }, 'Issuing SSL certificate via DNS-01 challenge (Cloudflare)');
+
+      // Use /tmp for work-dir and logs-dir to avoid permission issues
+      args.push('--config-dir', '/etc/letsencrypt', '--work-dir', '/tmp/certbot-work', '--logs-dir', '/tmp/certbot-logs');
 
       const result = await run('certbot', args, { sudo: true, timeout: 180_000 });
 
