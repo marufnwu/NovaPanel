@@ -24,15 +24,25 @@ export interface FirewallStatus {
 }
 
 export class FirewallService {
-  async getStatus(): Promise<FirewallStatus> {
+  async getStatus(retries = 2): Promise<FirewallStatus> {
     const result = await run('ufw', ['status', 'verbose'], { sudo: true });
     const output = result.stdout.toLowerCase();
     const enabled = output.includes('status: active');
+
+    logger.debug({ output, enabled, retries }, 'UFW status check');
 
     // Parse "Default: deny (incoming), allow (outgoing), disabled (routed)" format
     const defaultInput = this.extractDefaultPolicy(result.stdout, 'incoming');
     const defaultOutput = this.extractDefaultPolicy(result.stdout, 'outgoing');
     const defaultForward = this.extractDefaultPolicy(result.stdout, 'routed');
+
+    // UFW enables asynchronously via systemd - there may be a brief delay before
+    // the status reflects the active state. Retry a few times with small delays.
+    if (!enabled && retries > 0) {
+      logger.debug('UFW status not yet active, retrying...');
+      await new Promise(resolve => setTimeout(resolve, 200));
+      return this.getStatus(retries - 1);
+    }
 
     return { enabled, defaultInput, defaultOutput, defaultForward };
   }
