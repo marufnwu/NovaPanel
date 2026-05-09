@@ -66,8 +66,9 @@ export class NginxService implements SystemService {
     // Filter out read-only filesystem pid file warnings since nginx -T doesn't require pid file
     const combinedOutput = result.stdout + result.stderr;
     const filteredOutput = combinedOutput
-      .replace(/open\(\)[^)]*\)\s*failed.*Read-only file system[^}]*/gi, '')
-      .replace(/\[warn\][^}]*pid file[^}]*/gi, '')
+      .split('\n')
+      .filter(line => !/\[(emerg|warn)\].*open\(\)[^)]*\).*Read-only file system/i.test(line))
+      .join('\n')
       .trim();
     return {
       valid: result.exitCode === 0,
