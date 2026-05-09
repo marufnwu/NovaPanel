@@ -7,7 +7,10 @@ import { useMemo } from 'react';
 // Map of path segments to readable labels
 const PATH_LABELS: Record<string, string> = {
   '': 'Home',
-  domains: 'Domains',
+  sites: 'Sites',
+  siteId: 'Site Detail',
+  domains: 'Sites',
+  websites: 'Sites',
   webserver: 'Web Server',
   php: 'PHP',
   ssl: 'SSL',

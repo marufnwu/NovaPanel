@@ -761,10 +761,10 @@ export function DashboardPage() {
 
       {/* Summary cards */}
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-        <Link to="/domains" className="rounded-lg border border-border bg-card p-4 hover:border-primary/50 transition-colors">
+        <Link to="/sites" className="rounded-lg border border-border bg-card p-4 hover:border-primary/50 transition-colors">
           <div className="flex items-center gap-2">
             <Globe className="h-4 w-4 text-blue-500" />
-            <span className="text-sm text-muted-foreground">Domains</span>
+            <span className="text-sm text-muted-foreground">Sites</span>
           </div>
           <p className="mt-1 text-xl font-bold">{summary?.activeDomains ?? 0}</p>
           <p className="text-[10px] text-muted-foreground">{summary?.totalDomains ?? 0} total</p>
@@ -913,11 +913,11 @@ export function DashboardPage() {
           <h2 className="mb-4 text-lg font-semibold">Quick Actions</h2>
           <div className="space-y-2">
             <button
-              onClick={() => navigate({ to: '/domains' })}
+              onClick={() => navigate({ to: '/sites/new' })}
               className="flex w-full items-center gap-3 rounded-md border border-border px-4 py-3 text-sm font-medium hover:bg-accent transition-colors"
             >
               <Plus className="h-4 w-4 text-blue-500" />
-              Add Domain
+              Add Site
             </button>
             <button
               onClick={() => navigate({ to: '/databases' })}
