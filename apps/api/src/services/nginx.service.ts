@@ -58,10 +58,11 @@ export class NginxService implements SystemService {
    * Test Nginx configuration syntax without applying
    */
   async testConfig(): Promise<{ valid: boolean; output: string }> {
-    const result = await run('nginx', ['-t'], { sudo: true });
+    // Use systemctl configtest instead of nginx -t to handle read-only /run
+    const result = await run('systemctl', ['configtest', 'nginx'], { sudo: true });
     return {
       valid: result.exitCode === 0,
-      output: result.stderr, // nginx -t outputs to stderr
+      output: result.stdout + result.stderr, // systemctl configtest outputs to both stdout and stderr
     };
   }
 
