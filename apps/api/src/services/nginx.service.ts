@@ -76,7 +76,8 @@ export class NginxService implements SystemService {
     const hadPidErrors = combinedOutput.includes('open()') && combinedOutput.includes('Read-only file system');
 
     // Config is valid if: exit code is 0, OR we filtered pid errors and rest looks ok
-    const looksValid = filteredOutput.includes('syntax is ok') || filteredOutput.includes('test is successful');
+    // Note: nginx always says "syntax is ok" when syntax is valid - "test failed" appears only due to pid file errors
+    const looksValid = filteredOutput.includes('syntax is ok');
 
     return {
       valid: result.exitCode === 0 || (hadPidErrors && looksValid),
