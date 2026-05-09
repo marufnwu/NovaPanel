@@ -56,12 +56,13 @@ export class NginxService implements SystemService {
 
   /**
    * Test Nginx configuration syntax without applying
-   * Uses `nginx -t` directly instead of `systemctl configtest` because:
-   * 1. systemctl configtest is not supported on all systems (Unknown command verb)
-   * 2. nginx -t with sudo can write to /var/run/nginx.pid for the test
+   * Uses `nginx -T` directly instead of `nginx -t` or `systemctl configtest` because:
+   * 1. nginx -t with sudo can have issues on systems with read-only /run or permission problems
+   * 2. nginx -T dumps configuration without forking (no pid file needed)
+   * 3. systemctl configtest is not supported on all systems (Unknown command verb)
    */
   async testConfig(): Promise<{ valid: boolean; output: string }> {
-    const result = await run('nginx', ['-t'], { sudo: true });
+    const result = await run('nginx', ['-T'], { sudo: true });
     return {
       valid: result.exitCode === 0,
       output: result.stdout + result.stderr,
