@@ -38,7 +38,7 @@ export class FirewallService {
   }
 
   async enable(userId?: string, ipAddress?: string): Promise<{ success: boolean }> {
-    const result = await run('ufw', ['enable'], { sudo: true, input: 'y' });
+    const result = await run('ufw', ['--force', 'enable'], { sudo: true });
     logger.info('UFW firewall enabled');
 
     auditService.log({
@@ -51,7 +51,7 @@ export class FirewallService {
   }
 
   async disable(userId?: string, ipAddress?: string): Promise<{ success: boolean }> {
-    const result = await run('ufw', ['disable'], { sudo: true });
+    const result = await run('ufw', ['--force', 'disable'], { sudo: true });
     logger.info('UFW firewall disabled');
 
     auditService.log({
