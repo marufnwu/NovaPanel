@@ -13,6 +13,23 @@ import * as sudoFs from '../../services/sudo-fs.js';
 const RESERVED_PORTS: readonly number[] = [80, 443, 8732, 8080, 53, 21, 25, 110, 143, 993, 995];
 
 /**
+ * Get a human-readable error message for an HTTP status code
+ */
+function getErrorMessage(code: number): string {
+  const messages: Record<number, string> = {
+    400: 'Bad Request',
+    401: 'Unauthorized',
+    403: 'Forbidden',
+    404: 'Page Not Found',
+    500: 'Internal Server Error',
+    502: 'Bad Gateway',
+    503: 'Service Unavailable',
+    504: 'Gateway Timeout',
+  };
+  return messages[code] || 'Error';
+}
+
+/**
  * Validate custom Nginx directives for dangerous patterns.
  * Rejects directives that could break the server or conflict with panel services.
  */
@@ -345,7 +362,78 @@ export class WebServerService {
     const [domain] = await db.select().from(domains).where(eq(domains.name, domainName)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    // In a real implementation, this would write error page files and update nginx config
+    const configPath = `/etc/nginx/sites-available/${domainName}.conf`;
+    const documentRoot = domain.documentRoot;
+
+    // Read existing config
+    let existingConfig: string;
+    try {
+      existingConfig = await sudoFs.readFile(configPath);
+    } catch {
+      throw new AppError(500, 'CONFIG_READ_ERROR', 'Could not read nginx config');
+    }
+
+    // Build new error_page directives
+    const errorPageDirectives: string[] = [];
+    const enabledPages = errorPages.filter(p => p.enabled && p.content);
+
+    for (const page of enabledPages) {
+      errorPageDirectives.push(`    error_page ${page.code} = ${page.content};`);
+    }
+
+    // Remove existing error_page blocks and add new ones
+    let newConfig = existingConfig.replace(/[\t ]*# Custom error pages[\s\S]*?error_page \d+[\s\S]*?;(\n|$)/g, '');
+    newConfig = newConfig.replace(/[\t ]*error_page \d+[\s\S]*?;(\n|$)/g, '');
+
+    if (errorPageDirectives.length > 0) {
+      // Insert error_page directives inside the server block (before final closing brace)
+      const errorPagesBlock = '\n    # Custom error pages\n' + errorPageDirectives.join('\n') + '\n';
+      newConfig = newConfig.replace(/(\s*}\s*\n\s*}?\s*)$/, errorPagesBlock + '$1');
+    }
+
+    // Write updated config
+    await sudoFs.writeFile(configPath, newConfig);
+
+    // Test config before applying
+    const test = await nginxService.testConfig();
+    if (!test.valid) {
+      // Rollback to original config
+      await sudoFs.writeFile(configPath, existingConfig);
+      throw new AppError(422, 'NGINX_CONFIG_INVALID', `Error pages caused nginx config test failure: ${test.output}`);
+    }
+
+    // Create actual error page files in document root
+    for (const page of enabledPages) {
+      const filePath = `${documentRoot}${page.content}`;
+      const errorContent = page.contentType === 'text/html'
+        ? `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>${page.code} - Error</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+        h1 { font-size: 72px; margin: 0; color: #333; }
+        p { font-size: 18px; color: #666; }
+    </style>
+</head>
+<body>
+    <h1>${page.code}</h1>
+    <p>${getErrorMessage(page.code)}</p>
+</body>
+</html>`
+        : `Error ${page.code}: ${getErrorMessage(page.code)}`;
+
+      try {
+        await sudoFs.writeFile(filePath, errorContent);
+      } catch (err) {
+        logger.warn({ filePath, err }, 'Could not create error page file');
+      }
+    }
+
+    // Reload nginx to apply changes
+    await nginxService.reload();
+
     if (userId) {
       await auditService.log({
         userId,
@@ -436,7 +524,54 @@ export class WebServerService {
     const [domain] = await db.select().from(domains).where(eq(domains.name, domainName)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    // In a real implementation, this would update nginx config with rate limiting directives
+    const configPath = `/etc/nginx/sites-available/${domainName}.conf`;
+
+    // Read existing config
+    let existingConfig: string;
+    try {
+      existingConfig = await sudoFs.readFile(configPath);
+    } catch {
+      throw new AppError(500, 'CONFIG_READ_ERROR', 'Could not read nginx config');
+    }
+
+    // Remove existing rate limiting directives
+    let newConfig = existingConfig
+      .replace(/[\t ]*# Custom rate limiting[\s\S]*?limit_req_zone[\s\S]*?;(\n|$)/g, '')
+      .replace(/[\t ]*limit_req_zone[\s\S]*?;(\n|$)/g, '')
+      .replace(/[\t ]*# Custom rate limiting[\s\S]*?limit_req[\s\S]*?;(\n|$)/g, '')
+      .replace(/[\t ]*limit_req[\s\S]*?;(\n|$)/g, '')
+      .replace(/[\t ]*# Custom rate limiting[\s\S]*?limit_conn[\s\S]*?;(\n|$)/g, '')
+      .replace(/[\t ]*limit_conn[\s\S]*?;(\n|$)/g, '');
+
+    if (data.enabled) {
+      const zoneName = 'websites';
+      const zoneSize = '10m';
+      const rate = data.requestsPerSecond || 10;
+      const burst = data.burstSize || 20;
+
+      // Insert rate limiting directives inside the server block
+      const rateLimitBlock = `
+    # Custom rate limiting
+    limit_req_zone $binary_remote_addr zone=${zoneName}:${zoneSize} rate=${rate}r/s;
+    limit_req zone=${zoneName} burst=${burst} nodelay;
+`;
+      newConfig = newConfig.replace(/(\s*}\s*\n\s*}?\s*)$/, rateLimitBlock + '$1');
+    }
+
+    // Write updated config
+    await sudoFs.writeFile(configPath, newConfig);
+
+    // Test config before applying
+    const test = await nginxService.testConfig();
+    if (!test.valid) {
+      // Rollback to original config
+      await sudoFs.writeFile(configPath, existingConfig);
+      throw new AppError(422, 'NGINX_CONFIG_INVALID', `Rate limiting caused nginx config test failure: ${test.output}`);
+    }
+
+    // Reload nginx to apply changes
+    await nginxService.reload();
+
     if (userId) {
       await auditService.log({
         userId,
