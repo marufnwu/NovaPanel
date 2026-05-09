@@ -124,7 +124,11 @@ export async function run(
       reject: false,
       timeout: options.timeout || 30_000,
       cwd: options.cwd,
-      env: { ...process.env, ...options.env },
+      env: {
+        PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        ...process.env,
+        ...options.env,
+      },
       input: options.input,
       maxBuffer: 10 * 1024 * 1024, // 10MB
     });
@@ -160,7 +164,11 @@ export async function runTrusted(
       reject: false,
       timeout: options.timeout || 30_000,
       cwd: options.cwd,
-      env: { ...process.env, ...options.env },
+      env: {
+        PATH: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        ...process.env,
+        ...options.env,
+      },
       input: options.input,
     });
 
