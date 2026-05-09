@@ -47,7 +47,13 @@ export class FirewallService {
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return { success: result.success };
+    // UFW may return non-zero exit code even on successful operations
+    // Verify actual state by checking if firewall is now active
+    if (!result.success) {
+      const status = await this.getStatus();
+      return { success: status.enabled };
+    }
+    return { success: true };
   }
 
   async disable(userId?: string, ipAddress?: string): Promise<{ success: boolean }> {
@@ -60,7 +66,13 @@ export class FirewallService {
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return { success: result.success };
+    // UFW may return non-zero exit code even on successful operations
+    // Verify actual state by checking if firewall is now inactive
+    if (!result.success) {
+      const status = await this.getStatus();
+      return { success: !status.enabled };
+    }
+    return { success: true };
   }
 
   async listRules(): Promise<UfwRule[]> {
