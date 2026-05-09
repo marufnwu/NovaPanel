@@ -201,6 +201,9 @@ export class SslService {
       vhostCtx.upstreamPort = 8080;
     }
 
+    // Remove existing vhost config first (avoid conflicts with existing HTTP vhost)
+    await nginxService.removeVhost(domain.name);
+
     await nginxService.addVhost(vhostCtx);
 
     // Update domain record
