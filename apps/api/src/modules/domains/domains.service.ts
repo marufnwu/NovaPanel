@@ -1290,6 +1290,62 @@ export class DomainsService {
 
     await this.autoRemoveTunnelRoutes(domainId, domain.name, userId, ipAddress);
   }
+
+  /**
+   * Check if a domain has any conflicts with existing domains/aliases/subdomains.
+   * Used to prevent duplicate domain entries before user submits the form.
+   */
+  async checkConflict(domain: string, type?: 'primary' | 'alias' | 'subdomain') {
+    // 1. Check if domain already exists as a primary domain
+    const [existingDomain] = await db.select().from(domains).where(eq(domains.name, domain)).limit(1);
+    if (existingDomain) {
+      // Get the website name if it has one
+      let siteName = existingDomain.name;
+      if (existingDomain.websiteId) {
+        const [website] = await db.select().from(websites).where(eq(websites.id, existingDomain.websiteId)).limit(1);
+        if (website) siteName = website.name;
+      }
+      throw new AppError(409, 'DOMAIN_ALREADY_EXISTS', `Already in use by ${siteName}`, {
+        conflictType: 'primary',
+        siteId: existingDomain.websiteId,
+        siteName,
+        domainId: existingDomain.id,
+      });
+    }
+
+    // 2. Check if domain is already an alias on another site
+    const [existingAlias] = await db.select().from(domainAliases).where(eq(domainAliases.alias, domain)).limit(1);
+    if (existingAlias && (!type || type === 'alias')) {
+      // Find which domain this alias belongs to
+      const [parentDomain] = await db.select().from(domains).where(eq(domains.id, existingAlias.domainId)).limit(1);
+      let siteName = parentDomain?.name || 'unknown';
+      if (parentDomain?.websiteId) {
+        const [website] = await db.select().from(websites).where(eq(websites.id, parentDomain.websiteId)).limit(1);
+        if (website) siteName = website.name;
+      }
+      throw new AppError(409, 'DOMAIN_IS_ALIAS', `Already an alias for ${siteName}`, {
+        conflictType: 'alias',
+        siteName,
+        domainId: existingAlias.domainId,
+      });
+    }
+
+    // 3. Check if domain was created as a separate site (subdomain path)
+    // A subdomain created via subdomain flow has type='subdomain' and websiteId
+    const [subdomainAsSite] = await db.select().from(domains).where(eq(domains.name, domain)).limit(1);
+    if (subdomainAsSite && subdomainAsSite.type === 'subdomain' && subdomainAsSite.websiteId) {
+      // This was created via the "host on subdomain" path as a separate site
+      const [website] = await db.select().from(websites).where(eq(websites.id, subdomainAsSite.websiteId)).limit(1);
+      throw new AppError(409, 'SUBDOMAIN_IS_SITE', `Managed as a separate site`, {
+        conflictType: 'site',
+        siteId: subdomainAsSite.websiteId,
+        siteName: website?.name || subdomainAsSite.name,
+        domainId: subdomainAsSite.id,
+      });
+    }
+
+    return { available: true };
+  }
 }
 
 function defaultIndexHtml(domain: string): string {

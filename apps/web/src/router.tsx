@@ -2,13 +2,13 @@ import {
   createRouter,
   createRootRoute,
   createRoute,
+  redirect,
   Outlet,
   useParams,
 } from '@tanstack/react-router';
 import { LoginPage } from './pages/login/LoginPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { AuthGuard } from './components/auth/AuthGuard';
-import { DomainsPage } from './pages/domains/DomainsPage';
 import { WebserverPage } from './pages/webserver/WebserverPage';
 import { PhpPage } from './pages/php/PhpPage';
 import { SslPage } from './pages/ssl/SslPage';
@@ -25,13 +25,12 @@ import { BackupsPage } from './pages/backups/BackupsPage';
 import { AuditPage } from './pages/audit/AuditPage';
 import { ProfilePage } from './pages/settings/ProfilePage';
 import { ServerSettingsPage } from './pages/settings/ServerSettingsPage';
-import { ApiTokensPage } from './pages/settings/ApiTokensPage';
 import { MonitoringPage } from './pages/monitoring/MonitoringPage';
 import { NotificationsPage } from './pages/notifications/NotificationsPage';
 import { InstallerPage } from './pages/installer/InstallerPage';
-import { WebsitesPage } from './pages/websites/WebsitesPage';
-import { WebsiteDetailPage } from './pages/websites/WebsiteDetailPage';
 import { CloudflarePage } from './pages/cloudflare/CloudflarePage';
+import { SitesPage } from './pages/sites/SitesPage';
+import { SiteDetailPage } from './pages/sites/SiteDetailPage';
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -56,24 +55,48 @@ const indexRoute = createRoute({
   component: DashboardPage,
 });
 
-const domainsRoute = createRoute({
+// Redirect /domains to /sites (Domains + Websites merged into Sites)
+const domainsRedirectRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/domains',
-  component: DomainsPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/sites' });
+  },
+  component: () => null,
 });
 
-const websitesRoute = createRoute({
+// Redirect /websites to /sites
+const websitesRedirectRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/websites',
-  component: WebsitesPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/sites' });
+  },
+  component: () => null,
 });
 
-const websiteDetailRoute = createRoute({
+// Redirect /websites/$id to /sites/$siteId
+const websiteDetailRedirectRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/websites/$id',
-  component: function WebsiteDetailWrapper() {
-    const { id } = useParams({ from: '/protected/websites/$id' });
-    return <WebsiteDetailPage websiteId={id} />;
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: '/sites/$siteId', params: { siteId: params.id } });
+  },
+  component: () => null,
+});
+
+const sitesRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/sites',
+  component: SitesPage,
+});
+
+const siteDetailRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/sites/$siteId',
+  component: function SiteDetailWrapper() {
+    const { siteId } = useParams({ from: '/protected/sites/$siteId' });
+    return <SiteDetailPage siteId={siteId} />;
   },
 });
 
@@ -167,10 +190,24 @@ const settingsRoute = createRoute({
   component: ProfilePage,
 });
 
-const apiTokensRoute = createRoute({
+// Redirect /settings/api-tokens to /settings (tokens are now in Profile page)
+const apiTokensRedirectRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/settings/api-tokens',
-  component: ApiTokensPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/settings' });
+  },
+  component: () => null,
+});
+
+// Redirect /tunnels to /cloudflare (tunnels are now in Cloudflare page)
+const tunnelsRedirectRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/tunnels',
+  beforeLoad: () => {
+    throw redirect({ to: '/cloudflare' });
+  },
+  component: () => null,
 });
 
 const serverSettingsRoute = createRoute({
@@ -207,9 +244,11 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   protectedRoute.addChildren([
     indexRoute,
-    domainsRoute,
-    websitesRoute,
-    websiteDetailRoute,
+    sitesRoute,
+    siteDetailRoute,
+    domainsRedirectRoute,
+    websitesRedirectRoute,
+    websiteDetailRedirectRoute,
     webserverRoute,
     phpRoute,
     sslRoute,
@@ -227,7 +266,8 @@ const routeTree = rootRoute.addChildren([
     auditRoute,
     settingsRoute,
     serverSettingsRoute,
-    apiTokensRoute,
+    apiTokensRedirectRoute,
+    tunnelsRedirectRoute,
     monitoringRoute,
     notificationsRoute,
     installerRoute,

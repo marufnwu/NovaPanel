@@ -1,46 +1,23 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
+import { useSites, type Site } from '../../api/hooks/sites';
+import { useServerStats } from '../../api/hooks/stats';
+import { useNotifications, type Notification } from '../../api/hooks/notifications';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import {
-  useServerStats,
-  useServiceStatuses,
-  useDashboardSummary,
-  useNetworkStats,
-  useExpiringSslCerts,
-  useRestartService,
-  useDiskDetails,
-} from '../../api/hooks/stats';
-import { useAuditLog } from '../../api/hooks/audit';
-import { useTunnelStatus } from '../../api/hooks/tunnel';
-import { useServerContext } from '../../api/hooks/settings';
-import {
-  Activity,
-  Cpu,
-  HardDrive,
-  MemoryStick,
   Globe,
-  Shield,
-  Database,
-  Mail,
-  FolderUp,
-  Clock,
-  Network,
   AlertTriangle,
-  RefreshCw,
-  Plus,
-  Terminal,
-  ShieldCheck,
+  CheckCircle,
+  Clock,
+  Shield,
+  HardDrive,
+  Cpu,
+  Activity,
   ArrowRight,
   Server,
-  Loader2,
-  MoreVertical,
-  Cloud,
-  Download,
-  Package,
-  Zap,
+  RefreshCw,
   X,
 } from 'lucide-react';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
-import { PageHeader } from '../../components/ui/PageHeader';
 
 // --- Helpers ---
 
@@ -73,327 +50,174 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
-// --- Sub-components ---
+// --- Site Status Card ---
 
-function ProgressBar({ value, max, color = 'bg-primary' }: { value: number; max: number; color?: string }) {
-  const percent = max > 0 ? Math.min((value / max) * 100, 100) : 0;
-  return (
-    <div className="mt-2 h-2 w-full rounded-full bg-muted">
-      <div className={`h-2 rounded-full transition-all ${color}`} style={{ width: `${percent}%` }} />
-    </div>
-  );
-}
-
-function SegmentedBar({ segments }: { segments: { value: number; color: string; label: string }[] }) {
-  const total = segments.reduce((sum, s) => sum + s.value, 0);
-  return (
-    <div className="mt-2 h-3 w-full rounded-full bg-muted overflow-hidden flex">
-      {segments.map((seg, i) => {
-        const pct = total > 0 ? (seg.value / total) * 100 : 0;
-        return (
-          <div
-            key={i}
-            className={`h-full transition-all ${seg.color}`}
-            style={{ width: `${pct}%` }}
-            title={`${seg.label}: ${pct.toFixed(1)}%`}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-// --- Local Server Detection Banner ---
-
-interface LocalServerBannerProps {
-  serverContext: {
-    hasPublicIp: boolean;
-    panelUrlIsPrivate: boolean;
-    panelUrl: string;
-    tunnelActive: boolean;
-    tunnelUrl: string | null;
-    canIssueHttpSsl: boolean;
-    canReceiveExternalMail: boolean;
-    canServePublicDns: boolean;
-  } | undefined;
-  isLoading: boolean;
-  onDismiss: () => void;
-}
-
-function LocalServerBanner({ serverContext, isLoading, onDismiss }: LocalServerBannerProps) {
-  if (isLoading || !serverContext) return null;
-
-  // No banner needed for public IP
-  if (serverContext.hasPublicIp) return null;
-
-  // Critical: local server without tunnel
-  if (!serverContext.hasPublicIp && !serverContext.tunnelActive) {
-    return (
-      <div className="flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3">
-        <AlertTriangle className="h-5 w-5 shrink-0 text-yellow-500 mt-0.5" />
-        <div className="flex-1">
-          <p className="text-sm font-medium text-yellow-600">Local Server Detected</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Your server appears to be on a local network without a public IP. External features like SSL, mail, and public DNS require a Cloudflare Tunnel.
-          </p>
-          <div className="flex items-center gap-2 mt-2">
-            <Link
-              to="/cloudflare"
-              className="inline-flex items-center gap-1.5 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700"
-            >
-              Set Up Cloudflare Tunnel <ArrowRight className="h-3 w-3" />
-            </Link>
-          </div>
-        </div>
-        <button
-          onClick={onDismiss}
-          className="shrink-0 rounded p-1 text-yellow-600 hover:bg-yellow-500/20"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-    );
-  }
-
-  // Tunnel is working (local server with active tunnel)
-  if (!serverContext.hasPublicIp && serverContext.tunnelActive) {
-    // Panel URL not updated warning
-    if (serverContext.panelUrlIsPrivate) {
-      return (
-        <div className="flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-3">
-          <AlertTriangle className="h-5 w-5 shrink-0 text-yellow-500 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-yellow-600">Panel URL Not Updated</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Your panel URL is still set to a local address ({serverContext.panelUrl}). This may cause issues with links in emails and notifications. Update it in Server Settings.
-            </p>
-            <div className="flex items-center gap-2 mt-2">
-              <Link
-                to="/settings/server"
-                className="inline-flex items-center gap-1.5 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700"
-              >
-                Update Panel URL <ArrowRight className="h-3 w-3" />
-              </Link>
-            </div>
-          </div>
-          <button
-            onClick={onDismiss}
-            className="shrink-0 rounded p-1 text-yellow-600 hover:bg-yellow-500/20"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      );
-    }
-
-    // All good with tunnel
-    return (
-      <div className="flex items-start gap-3 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3">
-        <Cloud className="h-5 w-5 shrink-0 text-green-500 mt-0.5" />
-        <div className="flex-1">
-          <p className="text-sm font-medium text-green-600">Connected via Cloudflare Tunnel</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Your services are accessible externally at {serverContext.tunnelUrl || 'your tunnel URL'}.
-          </p>
-        </div>
-        <button
-          onClick={onDismiss}
-          className="shrink-0 rounded p-1 text-green-600 hover:bg-green-500/20"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-    );
-  }
-
-  return null;
-}
-
-function ServiceCard({ svc, onRestart, serverContext }: { svc: { name: string; displayName: string; status: string }; onRestart: (name: string) => void; serverContext?: { canIssueHttpSsl: boolean; canReceiveExternalMail: boolean; canServePublicDns: boolean } }) {
-  const [showMenu, setShowMenu] = useState(false);
-  const isRunning = svc.status === 'running';
-
-  // Determine capability badges based on service type
-  const serviceLower = svc.name.toLowerCase();
-  const isMailService = serviceLower.includes('postfix') || serviceLower.includes('dovecot') || serviceLower.includes('mail');
-  const isDnsService = serviceLower.includes('bind') || serviceLower.includes('named') || serviceLower.includes('dns');
-  const isSslRelated = serviceLower.includes('nginx') || serviceLower.includes('apache') || serviceLower.includes('certbot');
-
-  const showLocalOnlyBadge = serverContext && (
-    (isMailService && !serverContext.canReceiveExternalMail) ||
-    (isDnsService && !serverContext.canServePublicDns) ||
-    (isSslRelated && !serverContext.canIssueHttpSsl)
-  );
+function SiteStatusCard({ site }: { site: Site }) {
+  const isUp = site.status === 'active';
+  const needsAttention = site.status === 'error' || site.status === 'suspended';
 
   return (
-    <div className="relative flex items-center justify-between rounded-lg border border-border bg-card p-3">
+    <Link
+      to="/sites/$siteId"
+      params={{ siteId: site.id }}
+      className="group flex items-center justify-between rounded-lg border border-border bg-card p-4 hover:border-primary/50 transition-colors"
+    >
       <div className="flex items-center gap-3">
-        <span className={`h-2.5 w-2.5 rounded-full ${isRunning ? 'bg-green-500' : 'bg-red-500'}`} />
-        <div className="flex items-center gap-2">
-          <div>
-            <span className="text-sm font-medium">{svc.displayName}</span>
-            <p className="text-[10px] text-muted-foreground">{svc.name}</p>
-          </div>
-          {showLocalOnlyBadge && (
-            <span className="inline-flex items-center rounded-full bg-yellow-500/10 px-2 py-0.5 text-[10px] font-medium text-yellow-600">
-              Local only
-            </span>
-          )}
+        {/* Status dot */}
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted">
+          <Globe className={`h-5 w-5 ${isUp ? 'text-green-500' : needsAttention ? 'text-red-500' : 'text-yellow-500'}`} />
+        </div>
+        <div>
+          <p className="font-medium group-hover:text-primary transition-colors">{site.name}</p>
+          <p className="text-xs text-muted-foreground">
+            {site.phpVersion ? `PHP ${site.phpVersion}` : '—'} · {site.webServer || '—'}
+          </p>
         </div>
       </div>
-      <div className="relative">
-        <button
-          onClick={() => setShowMenu(!showMenu)}
-          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-        >
-          <MoreVertical className="h-4 w-4" />
-        </button>
-        {showMenu && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
-            <div className="absolute right-0 top-8 z-20 w-36 rounded-md border border-border bg-card shadow-lg">
-              <button
-                onClick={() => { onRestart(svc.name); setShowMenu(false); }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent"
-              >
-                <RefreshCw className="h-3.5 w-3.5" /> Restart
-              </button>
-            </div>
-          </>
-        )}
+      <div className="flex items-center gap-2">
+        {/* Status badge */}
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+          isUp ? 'bg-green-500/10 text-green-500' :
+          needsAttention ? 'bg-red-500/10 text-red-500' :
+          'bg-yellow-500/10 text-yellow-500'
+        }`}>
+          {isUp ? (
+            <><CheckCircle className="h-3 w-3" /> Up</>
+          ) : needsAttention ? (
+            <><AlertTriangle className="h-3 w-3" /> {site.status}</>
+          ) : (
+            <><Clock className="h-3 w-3" /> {site.status}</>
+          )}
+        </span>
+        <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
       </div>
+    </Link>
+  );
+}
+
+// --- Attention Item ---
+
+function AttentionItem({ notification }: { notification: Notification }) {
+  const Icon = notification.type === 'ssl_expiry' ? Shield :
+               notification.type === 'cron_failed' ? Clock :
+               notification.type === 'disk_space_low' ? HardDrive :
+               notification.type === 'service_down' ? Server :
+               AlertTriangle;
+
+  const colorClass = notification.type === 'ssl_expiry' ? 'text-yellow-500' :
+                    notification.type === 'cron_failed' ? 'text-red-500' :
+                    notification.type === 'disk_space_low' ? 'text-orange-500' :
+                    notification.type === 'service_down' ? 'text-red-500' :
+                    'text-muted-foreground';
+
+  return (
+    <div className="flex items-start gap-3 py-3 border-b border-border last:border-0">
+      <div className={`mt-0.5 rounded-full p-1.5 bg-muted ${colorClass}`}>
+        <Icon className="h-3.5 w-3.5" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium">{notification.title}</p>
+        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{notification.message}</p>
+      </div>
+      <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(notification.createdAt)}</span>
     </div>
   );
 }
 
-// --- CPU Sparkline Graph ---
+// --- Server Health Summary ---
 
-type TimeRange = '1h' | '6h' | '24h';
+function ServerHealthSummary() {
+  const { data: stats, isLoading, isError, refetch } = useServerStats();
 
-const TIME_RANGE_MS: Record<TimeRange, number> = {
-  '1h': 60 * 60 * 1000,
-  '6h': 6 * 60 * 60 * 1000,
-  '24h': 24 * 60 * 60 * 1000,
-};
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center rounded-lg border border-border bg-card p-6">
+        <LoadingSpinner />
+      </div>
+    );
+  }
 
-const MAX_POINTS: Record<TimeRange, number> = {
-  '1h': 720,   // every 5s for 1h
-  '6h': 720,   // every 30s for 6h
-  '24h': 576,  // every 150s for 24h
-};
+  if (isError) {
+    return (
+      <div className="flex items-center justify-between rounded-lg border border-red-500/30 bg-red-500/5 p-4">
+        <div className="flex items-center gap-3">
+          <AlertTriangle className="h-5 w-5 text-red-500" />
+          <span className="text-sm font-medium text-red-600">Failed to load server health</span>
+        </div>
+        <button
+          onClick={() => refetch()}
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-500/10"
+        >
+          <RefreshCw className="h-3 w-3" /> Retry
+        </button>
+      </div>
+    );
+  }
 
-function CpuSparkline({ currentUsage }: { currentUsage: number }) {
-  const [timeRange, setTimeRange] = useState<TimeRange>('1h');
-  const [dataPoints, setDataPoints] = useState<{ timestamp: number; value: number }[]>([]);
-  const prevValueRef = useRef(currentUsage);
-
-  // Collect data points every 5 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setDataPoints(prev => {
-        const now = Date.now();
-        const maxPoints = MAX_POINTS[timeRange];
-        const rangeMs = TIME_RANGE_MS[timeRange];
-        const cutoff = now - rangeMs;
-
-        // Use the latest value (polled every 5s by refetchInterval)
-        const newPoint = { timestamp: now, value: prevValueRef.current };
-        const filtered = prev.filter(p => p.timestamp > cutoff);
-        const updated = [...filtered, newPoint];
-
-        // Downsample if too many points
-        if (updated.length > maxPoints) {
-          const step = Math.ceil(updated.length / maxPoints);
-          return updated.filter((_, i) => i % step === 0);
-        }
-        return updated;
-      });
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [timeRange]);
-
-  // Update ref when currentUsage changes — guard against null/undefined
-  useEffect(() => {
-    const val = currentUsage;
-    if (typeof val === 'number' && !isNaN(val) && val >= 0) {
-      prevValueRef.current = val;
-    }
-  }, [currentUsage]);
-
-  // Filter data for selected time range, skip null/undefined/NaN points
-  const filteredData = dataPoints.filter(
-    p => p.timestamp > Date.now() - TIME_RANGE_MS[timeRange]
-      && typeof p.value === 'number'
-      && !isNaN(p.value)
-      && p.value >= 0
-  );
-
-  // SVG sparkline
-  const width = 200;
-  const height = 50;
-  const padding = 2;
-
-  const points = filteredData.length > 1
-    ? filteredData.map((p, i) => {
-        const x = padding + (i / (filteredData.length - 1)) * (width - 2 * padding);
-        const y = height - padding - (p.value / 100) * (height - 2 * padding);
-        return `${x},${y}`;
-      }).join(' ')
-    : '';
-
-  const areaPoints = points
-    ? `${padding},${height - padding} ${points} ${width - padding},${height - padding}`
-    : '';
+  const cpuWarning = (stats?.cpu.usage ?? 0) > 80;
+  const ramWarning = (stats?.memory.usagePercent ?? 0) > 80;
+  const diskWarning = (stats?.disk.usagePercent ?? 0) > 80;
+  const anyWarning = cpuWarning || ramWarning || diskWarning;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mt-2">
-        <div className="flex gap-1">
-          {(['1h', '6h', '24h'] as TimeRange[]).map(range => (
-            <button
-              key={range}
-              onClick={() => setTimeRange(range)}
-              className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                timeRange === range
-                  ? 'bg-blue-500/20 text-blue-400'
-                  : 'text-gray-500 hover:text-gray-400 hover:bg-muted'
-              }`}
-            >
-              {range}
-            </button>
-          ))}
-        </div>
-        <span className="text-[10px] text-muted-foreground">{filteredData.length} pts</span>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-muted-foreground">Server Health</h3>
+        <span className="text-xs text-muted-foreground">
+          {formatUptime(stats?.uptime ?? 0)} uptime
+        </span>
       </div>
-      <div className="mt-1">
-        {filteredData.length > 1 ? (
-          <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="overflow-visible">
-            {/* Grid lines */}
-            {[25, 50, 75].map(yPct => {
-              const y = height - padding - (yPct / 100) * (height - 2 * padding);
-              return (
-                <line key={yPct} x1={padding} y1={y} x2={width - padding} y2={y} stroke="currentColor" strokeOpacity={0.06} strokeWidth={0.5} />
-              );
-            })}
-            {/* Area fill */}
-            <polygon points={areaPoints} fill="url(#cpuGradient)" opacity={0.3} />
-            {/* Line */}
-            <polyline points={points} fill="none" stroke="#3b82f6" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
-            {/* Gradient definition */}
-            <defs>
-              <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.4} />
-                <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-          </svg>
-        ) : (
-          <div className="flex items-center justify-center h-[50px] text-[10px] text-muted-foreground">
-            Collecting data...
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        {/* CPU */}
+        <div className={`rounded-lg border p-3 ${cpuWarning ? 'border-yellow-500/50 bg-yellow-500/5' : 'border-border bg-card'}`}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-muted-foreground">CPU</span>
+            <Cpu className={`h-4 w-4 ${cpuWarning ? 'text-yellow-500' : 'text-muted-foreground'}`} />
           </div>
-        )}
+          <p className={`text-lg font-bold ${cpuWarning ? 'text-yellow-500' : ''}`}>
+            {stats?.cpu.usage ?? 0}%
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            {stats?.cpu.cores} cores
+          </p>
+        </div>
+
+        {/* RAM */}
+        <div className={`rounded-lg border p-3 ${ramWarning ? 'border-yellow-500/50 bg-yellow-500/5' : 'border-border bg-card'}`}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-muted-foreground">Memory</span>
+            <Activity className={`h-4 w-4 ${ramWarning ? 'text-yellow-500' : 'text-muted-foreground'}`} />
+          </div>
+          <p className={`text-lg font-bold ${ramWarning ? 'text-yellow-500' : ''}`}>
+            {stats?.memory.usagePercent ?? 0}%
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            {formatBytes(stats?.memory.used ?? 0)} / {formatBytes(stats?.memory.total ?? 0)}
+          </p>
+        </div>
+
+        {/* Disk */}
+        <div className={`rounded-lg border p-3 ${diskWarning ? 'border-yellow-500/50 bg-yellow-500/5' : 'border-border bg-card'}`}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-muted-foreground">Disk</span>
+            <HardDrive className={`h-4 w-4 ${diskWarning ? 'text-yellow-500' : 'text-muted-foreground'}`} />
+          </div>
+          <p className={`text-lg font-bold ${diskWarning ? 'text-yellow-500' : ''}`}>
+            {stats?.disk.usagePercent ?? 0}%
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            {formatBytes(stats?.disk.used ?? 0)} / {formatBytes(stats?.disk.total ?? 0)}
+          </p>
+        </div>
       </div>
+
+      {anyWarning && (
+        <p className="text-xs text-yellow-500 flex items-center gap-1.5">
+          <AlertTriangle className="h-3 w-3" />
+          High resource usage detected — visit Monitoring for details
+        </p>
+      )}
     </div>
   );
 }
@@ -401,573 +225,207 @@ function CpuSparkline({ currentUsage }: { currentUsage: number }) {
 // --- Main Dashboard ---
 
 export function DashboardPage() {
-  const { data: stats, isLoading: statsLoading, isError: statsError, refetch: refetchStats, dataUpdatedAt } = useServerStats();
-  const { data: services, isLoading: servicesLoading } = useServiceStatuses();
-  const { data: summary } = useDashboardSummary();
-  const { data: network } = useNetworkStats();
-  const { data: expiringCerts } = useExpiringSslCerts();
-  const { data: diskDetails } = useDiskDetails();
-  const { data: auditEntries } = useAuditLog(1, 50);
-  const { data: tunnelStatus } = useTunnelStatus();
-  const { data: serverContext, isLoading: serverContextLoading } = useServerContext();
-  const restartService = useRestartService();
-  const navigate = useNavigate();
+  const { data: sites, isLoading: sitesLoading } = useSites();
+  const { data: notificationsData, isLoading: notifLoading } = useNotifications(20, 0, { refetchInterval: 30_000 });
 
-  const [restartingService, setRestartingService] = useState<string | null>(null);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const notifications = notificationsData?.notifications || [];
 
-  // "Last updated" indicator
-  const [lastUpdatedAgo, setLastUpdatedAgo] = useState<string>('');
-  useEffect(() => {
-    if (!dataUpdatedAt) return;
-    const update = () => {
-      const diff = Date.now() - dataUpdatedAt;
-      const seconds = Math.floor(diff / 1000);
-      if (seconds < 5) setLastUpdatedAgo('just now');
-      else if (seconds < 60) setLastUpdatedAgo(`${seconds}s ago`);
-      else if (seconds < 3600) setLastUpdatedAgo(`${Math.floor(seconds / 60)}m ago`);
-      else setLastUpdatedAgo(`${Math.floor(seconds / 3600)}h ago`);
-    };
-    update();
-    const interval = setInterval(update, 5000);
-    return () => clearInterval(interval);
-  }, [dataUpdatedAt]);
+  // Filter attention-needed notifications
+  const attentionItems = notifications.filter(n =>
+    !n.isRead && [
+      'ssl_expiry',
+      'cron_failed',
+      'disk_space_low',
+      'service_down',
+      'security_alert',
+    ].includes(n.type)
+  );
 
-  const handleRestart = (serviceName: string) => {
-    setRestartingService(serviceName);
-    restartService.mutate(serviceName, {
-      onSettled: () => setRestartingService(null),
-    });
+  // Recent events (read or recent unread, last 10)
+  const recentEvents = notifications.slice(0, 10);
+
+  // Site status counts
+  const siteCounts = {
+    total: sites?.length ?? 0,
+    up: sites?.filter(s => s.status === 'active').length ?? 0,
+    attention: sites?.filter(s => s.status === 'error' || s.status === 'suspended').length ?? 0,
+    pending: sites?.filter(s => s.status === 'pending').length ?? 0,
   };
 
-  // Filter failed login attempts from audit log
-  const failedLogins = auditEntries?.filter(
-    (entry: any) => entry.action?.toLowerCase().includes('login') && entry.action?.toLowerCase().includes('fail')
-  ) || [];
-
-  const recentFailedIps = failedLogins.slice(0, 5).map((entry: any) => ({
-    ip: entry.ip || 'Unknown',
-    timestamp: entry.timestamp,
-  }));
-
-  if (statsError) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="Dashboard" description="Server overview and resource usage" />
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-500/30 dark:bg-red-500/10">
-          <AlertTriangle className="mx-auto h-10 w-10 text-red-500" />
-          <p className="mt-3 text-red-600 dark:text-red-400">Failed to load server stats. Please try again.</p>
-          <button
-            onClick={() => refetchStats()}
-            className="mt-4 inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
-          >
-            <RefreshCw className="h-4 w-4" /> Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (statsLoading) {
+  if (sitesLoading) {
     return <LoadingSpinner />;
   }
 
-  const stoppedServices = services?.filter((s) => s.status !== 'running') || [];
-  const diskWarning = stats && stats.disk.usagePercent > 80;
-
-  // RAM breakdown values
-  const memTotal = stats?.memory.total ?? 0;
-  const memUsed = stats?.memory.used ?? 0;
-  const memCached = stats?.memory.cached ?? 0;
-  const memAvailable = stats?.memory.available ?? 0;
-  const memFree = Math.max(0, memAvailable - memCached);
-
   return (
-    <div className="space-y-6">
-      <PageHeader title="Dashboard" description="Server overview and resource usage" />
+    <div className="space-y-8">
+      <PageHeader
+        title="Dashboard"
+        description="Are my sites up? Is the server healthy? What needs attention?"
+      />
 
-      {/* Local Server Detection Banner */}
-      {!bannerDismissed && (
-        <LocalServerBanner
-          serverContext={serverContext}
-          isLoading={serverContextLoading}
-          onDismiss={() => setBannerDismissed(true)}
-        />
-      )}
-
-      {/* Last updated indicator */}
-      {lastUpdatedAgo && (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Clock className="h-3 w-3" />
-          Last updated {lastUpdatedAgo}
-        </div>
-      )}
-
-      {/* Warnings Panel */}
-      {(stoppedServices.length > 0 || diskWarning || (expiringCerts && expiringCerts.length > 0)) && (
-        <div className="space-y-3">
-          {diskWarning && (
-            <div className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-yellow-500" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-yellow-600">Disk usage is above 80%</p>
-                <p className="text-xs text-muted-foreground">
-                  {stats?.disk.usagePercent}% used — {formatBytes(stats?.disk.used ?? 0)} of {formatBytes(stats?.disk.total ?? 0)}
-                </p>
-              </div>
-            </div>
-          )}
-          {stoppedServices.length > 0 && (
-            <div className="flex items-center gap-3 rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-red-500" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-red-600">
-                  {stoppedServices.length} service{stoppedServices.length > 1 ? 's' : ''} stopped
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {stoppedServices.map((s) => s.displayName).join(', ')}
-                </p>
-              </div>
-            </div>
-          )}
-          {expiringCerts && expiringCerts.length > 0 && (
-            <div className="flex items-center gap-3 rounded-lg border border-orange-500/30 bg-orange-500/5 px-4 py-3">
-              <Shield className="h-5 w-5 shrink-0 text-orange-500" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-orange-600">
-                  {expiringCerts.length} SSL certificate{expiringCerts.length > 1 ? 's' : ''} expiring within 30 days
-                </p>
-                <div className="mt-1 space-y-0.5">
-                  {expiringCerts.slice(0, 3).map((cert) => (
-                    <p key={cert.id} className="text-xs text-muted-foreground">
-                      {cert.domainName} — {cert.daysUntilExpiry} day{cert.daysUntilExpiry !== 1 ? 's' : ''} remaining
-                    </p>
-                  ))}
-                  {expiringCerts.length > 3 && (
-                    <p className="text-xs text-muted-foreground">+{expiringCerts.length - 3} more</p>
-                  )}
-                </div>
-              </div>
-              <Link
-                to="/ssl"
-                className="rounded-md px-3 py-1.5 text-xs font-medium text-orange-600 hover:bg-orange-500/10"
-              >
-                View SSL →
-              </Link>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Top row: 4 stat tiles */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {/* CPU with Sparkline */}
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-muted-foreground">CPU Usage</p>
-            <Cpu className="h-5 w-5 text-blue-500" />
-          </div>
-          <div className="mt-2 text-2xl font-bold">{stats?.cpu.usage ?? 0}%</div>
-          <ProgressBar value={stats?.cpu.usage ?? 0} max={100} color="bg-blue-500" />
-          <p className="mt-1 text-xs text-muted-foreground">
-            {stats?.cpu.cores} cores · Load: {stats?.loadAvg?.map((l) => l.toFixed(1)).join(' / ')}
-          </p>
-          <CpuSparkline currentUsage={stats?.cpu.usage ?? 0} />
-        </div>
-
-        {/* RAM with Breakdown */}
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-muted-foreground">Memory</p>
-            <MemoryStick className="h-5 w-5 text-purple-500" />
-          </div>
-          <div className="mt-2 text-2xl font-bold">{stats?.memory.usagePercent ?? 0}%</div>
-          <SegmentedBar
-            segments={[
-              { value: memUsed, color: 'bg-purple-500', label: 'Used' },
-              { value: memCached, color: 'bg-blue-400', label: 'Cached' },
-              { value: memFree, color: 'bg-green-400', label: 'Free' },
-            ]}
-          />
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded-full bg-purple-500" />
-              Used: {formatBytes(memUsed)}
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded-full bg-blue-400" />
-              Cached: {formatBytes(memCached)}
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-2 rounded-full bg-green-400" />
-              Free: {formatBytes(memFree)}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {formatBytes(memUsed)} / {formatBytes(memTotal)}
-            {stats?.memory.swapTotal ? ` · Swap: ${formatBytes(stats.memory.swapUsed)}` : ''}
-          </p>
-        </div>
-
-        {/* Disk — show per mount point if multiple */}
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-muted-foreground">Disk</p>
-            <HardDrive className="h-5 w-5 text-orange-500" />
-          </div>
-          {diskDetails && diskDetails.length > 1 ? (
-            <div className="mt-2 space-y-2">
-              {diskDetails.slice(0, 4).map((mount) => (
-                <div key={mount.mount}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium truncate max-w-[120px]" title={mount.mount}>
-                      {mount.mount}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{mount.usagePercent}%</span>
-                  </div>
-                  <div className="mt-0.5 h-1.5 w-full rounded-full bg-muted">
-                    <div
-                      className={`h-1.5 rounded-full transition-all ${mount.usagePercent > 80 ? 'bg-red-500' : 'bg-orange-500'}`}
-                      style={{ width: `${mount.usagePercent}%` }}
-                    />
-                  </div>
-                  <p className="text-[9px] text-muted-foreground">
-                    {formatBytes(mount.used)} / {formatBytes(mount.total)}
-                  </p>
-                </div>
-              ))}
-              {diskDetails.length > 4 && (
-                <Link to="/monitoring" className="text-[10px] text-primary hover:underline">
-                  +{diskDetails.length - 4} more mounts →
-                </Link>
-              )}
-            </div>
-          ) : (
-            <>
-              <div className="mt-2 text-2xl font-bold">{stats?.disk.usagePercent ?? 0}%</div>
-              <ProgressBar
-                value={stats?.disk.usagePercent ?? 0}
-                max={100}
-                color={(stats?.disk.usagePercent ?? 0) > 80 ? 'bg-red-500' : 'bg-orange-500'}
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                {formatBytes(stats?.disk.used ?? 0)} / {formatBytes(stats?.disk.total ?? 0)}
-              </p>
-            </>
-          )}
-        </div>
-
-        {/* Uptime */}
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-muted-foreground">Uptime</p>
-            <Activity className="h-5 w-5 text-green-500" />
-          </div>
-          <div className="mt-2 text-2xl font-bold">{formatUptime(stats?.uptime ?? 0)}</div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {stats?.system?.hostname || '—'} · {stats?.system?.ips?.[0] || '—'}
-          </p>
-          <p className="text-[10px] text-muted-foreground">
-            {stats?.system?.os} · {stats?.system?.kernel}
-          </p>
-        </div>
-      </div>
-
-      {/* Network I/O + Cloudflare Tunnel Status */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {network && (
-          <>
-            <div className="rounded-lg border border-border bg-card p-5">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-muted-foreground">Network In</p>
-                <Network className="h-5 w-5 text-green-500" />
-              </div>
-              <div className="mt-2 text-2xl font-bold">{formatBytes(network.rxSec)}/s</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Total: {formatBytes(network.rxBytes)} · Interface: {network.interface}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border bg-card p-5">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-muted-foreground">Network Out</p>
-                <Network className="h-5 w-5 text-blue-500" />
-              </div>
-              <div className="mt-2 text-2xl font-bold">{formatBytes(network.txSec)}/s</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Total: {formatBytes(network.txBytes)} · Interface: {network.interface}
-              </p>
-            </div>
-          </>
-        )}
-
-        {/* Cloudflare Tunnel Status Widget */}
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-muted-foreground">Cloudflare Tunnel</p>
-            <Cloud className="h-5 w-5 text-orange-500" />
-          </div>
-          <div className="mt-3">
-            {tunnelStatus && tunnelStatus.tunnels.length > 0 ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className={`h-2.5 w-2.5 rounded-full ${tunnelStatus.status === 'active' ? 'bg-green-500 animate-pulse' : 'bg-orange-500'}`} />
-                  <span className="text-sm font-medium">
-                    {tunnelStatus.status === 'active' ? 'Active' : 'Disconnected'}
+      {/* Site Status Grid */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Globe className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold">Sites</h2>
+            {siteCounts.total > 0 && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-green-600">
+                  <CheckCircle className="h-3 w-3" /> {siteCounts.up} up
+                </span>
+                {siteCounts.attention > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-red-600">
+                    <AlertTriangle className="h-3 w-3" /> {siteCounts.attention} down
                   </span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {tunnelStatus.tunnels.length} tunnel{tunnelStatus.tunnels.length > 1 ? 's' : ''} configured
-                </p>
-                <Link
-                  to="/cloudflare"
-                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                >
-                  Manage tunnels <ArrowRight className="h-3 w-3" />
-                </Link>
+                )}
+                {siteCounts.pending > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2 py-0.5 text-yellow-600">
+                    <Clock className="h-3 w-3" /> {siteCounts.pending} pending
+                  </span>
+                )}
               </div>
-            ) : tunnelStatus && tunnelStatus.tunnels.length === 0 ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-gray-400" />
-                  <span className="text-sm font-medium text-muted-foreground">Not Configured</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Required for external access on local servers
-                </p>
+            )}
+          </div>
+          <Link
+            to="/sites"
+            className="flex items-center gap-1 text-sm text-primary hover:underline"
+          >
+            View all <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+
+        {siteCounts.total === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card p-8 text-center">
+            <Globe className="h-10 w-10 text-muted-foreground/50" />
+            <p className="mt-3 text-sm font-medium">No sites yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Add a site to get started
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {sites?.slice(0, 9).map((site) => (
+              <SiteStatusCard key={site.id} site={site} />
+            ))}
+          </div>
+        )}
+        {siteCounts.total > 9 && (
+          <p className="mt-3 text-center text-xs text-muted-foreground">
+            +{siteCounts.total - 9} more sites
+          </p>
+        )}
+      </section>
+
+      {/* Attention Required Section */}
+      <section>
+        <div className="flex items-center gap-3 mb-4">
+          <AlertTriangle className="h-5 w-5 text-yellow-500" />
+          <h2 className="text-lg font-semibold">Attention Required</h2>
+          {attentionItems.length > 0 && (
+            <span className="inline-flex items-center rounded-full bg-red-500/10 px-2.5 py-0.5 text-xs font-medium text-red-600">
+              {attentionItems.length}
+            </span>
+          )}
+        </div>
+
+        {notifLoading ? (
+          <div className="flex justify-center rounded-lg border border-border bg-card p-6">
+            <LoadingSpinner />
+          </div>
+        ) : attentionItems.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-lg border border-green-500/20 bg-green-500/5 p-6 text-center">
+            <CheckCircle className="h-8 w-8 text-green-500/60" />
+            <p className="mt-2 text-sm font-medium text-green-600">All clear!</p>
+            <p className="mt-1 text-xs text-muted-foreground">No issues need your attention</p>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-border bg-card divide-y divide-border">
+            {attentionItems.slice(0, 5).map((notification) => (
+              <AttentionItem key={notification.id} notification={notification} />
+            ))}
+            {attentionItems.length > 5 && (
+              <div className="p-3 text-center">
                 <Link
-                  to="/cloudflare"
-                  className="inline-flex items-center gap-1.5 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700"
+                  to="/notifications"
+                  className="text-xs text-primary hover:underline"
                 >
-                  Set Up Tunnel <ArrowRight className="h-3 w-3" />
-                </Link>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-gray-400" />
-                  <span className="text-sm font-medium text-muted-foreground">Not configured</span>
-                </div>
-                <Link
-                  to="/cloudflare"
-                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                >
-                  Set up tunnel <ArrowRight className="h-3 w-3" />
+                  View all {attentionItems.length} items
                 </Link>
               </div>
             )}
           </div>
-        </div>
-      </div>
+        )}
+      </section>
 
-      {/* Summary cards */}
-      <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-        <Link to="/domains" className="rounded-lg border border-border bg-card p-4 hover:border-primary/50 transition-colors">
-          <div className="flex items-center gap-2">
-            <Globe className="h-4 w-4 text-blue-500" />
-            <span className="text-sm text-muted-foreground">Domains</span>
+      {/* Server Health Summary */}
+      <section>
+        <ServerHealthSummary />
+      </section>
+
+      {/* Recent Events */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Clock className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-semibold">Recent Events</h2>
           </div>
-          <p className="mt-1 text-xl font-bold">{summary?.activeDomains ?? 0}</p>
-          <p className="text-[10px] text-muted-foreground">{summary?.totalDomains ?? 0} total</p>
-        </Link>
-
-        <Link to="/mail" className="rounded-lg border border-border bg-card p-4 hover:border-primary/50 transition-colors">
-          <div className="flex items-center gap-2">
-            <Mail className="h-4 w-4 text-green-500" />
-            <span className="text-sm text-muted-foreground">Mailboxes</span>
-          </div>
-          <p className="mt-1 text-xl font-bold">{summary?.totalMailboxes ?? 0}</p>
-        </Link>
-
-        <Link to="/databases" className="rounded-lg border border-border bg-card p-4 hover:border-primary/50 transition-colors">
-          <div className="flex items-center gap-2">
-            <Database className="h-4 w-4 text-purple-500" />
-            <span className="text-sm text-muted-foreground">Databases</span>
-          </div>
-          <p className="mt-1 text-xl font-bold">{summary?.totalDatabases ?? 0}</p>
-        </Link>
-
-        <Link to="/ftp" className="rounded-lg border border-border bg-card p-4 hover:border-primary/50 transition-colors">
-          <div className="flex items-center gap-2">
-            <FolderUp className="h-4 w-4 text-orange-500" />
-            <span className="text-sm text-muted-foreground">FTP</span>
-          </div>
-          <p className="mt-1 text-xl font-bold">{summary?.totalFtpAccounts ?? 0}</p>
-        </Link>
-
-        <Link to="/cron" className="rounded-lg border border-border bg-card p-4 hover:border-primary/50 transition-colors">
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4 text-cyan-500" />
-            <span className="text-sm text-muted-foreground">Cron Jobs</span>
-          </div>
-          <p className="mt-1 text-xl font-bold">{summary?.totalActiveCronJobs ?? 0}</p>
-          <p className="text-[10px] text-muted-foreground">active</p>
-        </Link>
-      </div>
-
-      {/* Services Grid */}
-      <div>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Services</h2>
-          <span className="text-xs text-muted-foreground">
-            {services?.filter((s) => s.status === 'running').length ?? 0} / {services?.length ?? 0} running
-          </span>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {servicesLoading ? (
-            <div className="col-span-full flex justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            services?.map((svc) => (
-              <div key={svc.name} className="relative">
-                <ServiceCard svc={svc} onRestart={handleRestart} serverContext={serverContext} />
-                {restartingService === svc.name && (
-                  <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/60">
-                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                    <span className="ml-2 text-sm">Restarting...</span>
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Bottom row: Recent Activity + Failed Logins + Quick Actions */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Recent Activity */}
-        <div className="lg:col-span-1 rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Recent Activity</h2>
-            <Link to="/audit" className="flex items-center gap-1 text-xs text-primary hover:underline">
-              View all <ArrowRight className="h-3 w-3" />
-            </Link>
-          </div>
-          {auditEntries && auditEntries.length > 0 ? (
-            <div className="divide-y divide-border">
-              {auditEntries.slice(0, 10).map((entry: any) => (
-                <div key={entry.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                    <Activity className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="truncate text-sm">
-                      <span className="font-medium">{entry.action}</span>
-                      {entry.resource && (
-                        <span className="text-muted-foreground"> · {entry.resource}</span>
-                      )}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {entry.ip} · {timeAgo(entry.timestamp)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No recent activity</p>
-          )}
+          <Link
+            to="/notifications"
+            className="flex items-center gap-1 text-sm text-primary hover:underline"
+          >
+            View all <ArrowRight className="h-3 w-3" />
+          </Link>
         </div>
 
-        {/* Recent Failed Login Attempts */}
-        <div className="rounded-lg border border-border bg-card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Failed Logins</h2>
-            <div className="flex items-center gap-2">
-              {failedLogins.length > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-0.5 text-xs font-medium text-red-600">
-                  <AlertTriangle className="h-3 w-3" />
-                  {failedLogins.length}
-                </span>
-              )}
-            </div>
+        {recentEvents.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card p-6 text-center">
+            <Clock className="h-8 w-8 text-muted-foreground/50" />
+            <p className="mt-2 text-sm text-muted-foreground">No recent events</p>
           </div>
-          {recentFailedIps.length > 0 ? (
-            <div className="space-y-3">
-              <div className="divide-y divide-border">
-                {recentFailedIps.map((entry: { ip: string; timestamp: string }, i: number) => (
-                  <div key={i} className="flex items-center justify-between py-2 first:pt-0 last:pb-0">
-                    <div className="flex items-center gap-2">
-                      <Shield className="h-3.5 w-3.5 text-red-500" />
-                      <code className="text-xs font-mono">{entry.ip}</code>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground">{timeAgo(entry.timestamp)}</span>
-                  </div>
-                ))}
-              </div>
-              <Link to="/audit" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                View all in audit log <ArrowRight className="h-3 w-3" />
-              </Link>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-6 text-center">
-              <ShieldCheck className="h-8 w-8 text-green-500/50 mb-2" />
-              <p className="text-sm text-muted-foreground">No failed login attempts</p>
-              <p className="text-[10px] text-muted-foreground">Everything looks secure</p>
-            </div>
-          )}
-        </div>
-
-        {/* Quick Actions */}
-        <div className="rounded-lg border border-border bg-card p-5">
-          <h2 className="mb-4 text-lg font-semibold">Quick Actions</h2>
-          <div className="space-y-2">
-            <button
-              onClick={() => navigate({ to: '/domains' })}
-              className="flex w-full items-center gap-3 rounded-md border border-border px-4 py-3 text-sm font-medium hover:bg-accent transition-colors"
-            >
-              <Plus className="h-4 w-4 text-blue-500" />
-              Add Domain
-            </button>
-            <button
-              onClick={() => navigate({ to: '/databases' })}
-              className="flex w-full items-center gap-3 rounded-md border border-border px-4 py-3 text-sm font-medium hover:bg-accent transition-colors"
-            >
-              <Plus className="h-4 w-4 text-purple-500" />
-              New Database
-            </button>
-            <button
-              onClick={() => navigate({ to: '/backups' })}
-              className="flex w-full items-center gap-3 rounded-md border border-border px-4 py-3 text-sm font-medium hover:bg-accent transition-colors"
-            >
-              <Download className="h-4 w-4 text-green-500" />
-              Create Backup
-            </button>
-            <button
-              onClick={() => navigate({ to: '/installer' })}
-              className="flex w-full items-center gap-3 rounded-md border border-border px-4 py-3 text-sm font-medium hover:bg-accent transition-colors"
-            >
-              <Package className="h-4 w-4 text-orange-500" />
-              Install App
-            </button>
-            <button
-              onClick={() => navigate({ to: '/terminal' })}
-              className="flex w-full items-center gap-3 rounded-md border border-border px-4 py-3 text-sm font-medium hover:bg-accent transition-colors"
-            >
-              <Terminal className="h-4 w-4 text-gray-500" />
-              Open Terminal
-            </button>
+        ) : (
+          <div className="rounded-lg border border-border bg-card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="border-b border-border bg-muted/50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Type</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Event</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentEvents.map((event) => {
+                  const Icon = event.type === 'ssl_expiry' ? Shield :
+                              event.type === 'cron_failed' ? Clock :
+                              event.type === 'disk_space_low' ? HardDrive :
+                              event.type === 'service_down' ? Server :
+                              event.type === 'backup_complete' ? CheckCircle :
+                              AlertTriangle;
+                  return (
+                    <tr key={event.id} className="border-b border-border last:border-0 hover:bg-muted/30">
+                      <td className="px-4 py-2.5">
+                        <Icon className={`h-4 w-4 ${
+                          event.type === 'ssl_expiry' ? 'text-yellow-500' :
+                          event.type === 'backup_complete' ? 'text-green-500' :
+                          ['cron_failed', 'service_down', 'security_alert'].includes(event.type) ? 'text-red-500' :
+                          'text-muted-foreground'
+                        }`} />
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <p className="font-medium">{event.title}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-1">{event.message}</p>
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                        {timeAgo(event.createdAt)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        </div>
-      </div>
-
-      {/* System Info Footer */}
-      {stats?.system && (
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <Server className="h-3.5 w-3.5" />
-              {stats.system.hostname}
-            </span>
-            <span>OS: {stats.system.os}</span>
-            <span>Kernel: {stats.system.kernel}</span>
-            <span>Arch: {stats.system.arch}</span>
-            {stats.system.ips.map((ip) => (
-              <span key={ip}>IP: {ip}</span>
-            ))}
-          </div>
-        </div>
-      )}
+        )}
+      </section>
     </div>
   );
 }

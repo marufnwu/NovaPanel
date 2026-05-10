@@ -330,7 +330,7 @@ function OverviewSection() {
               Manage DNS, SSL, and redirects for your domains in the Domains section
             </p>
             <p className="mt-1 text-xs text-blue-600 dark:text-blue-300">
-              Go to <Link to="/domains" className="underline font-medium">Domains</Link> → select a domain → Cloudflare tab to manage domain-specific Cloudflare settings.
+              Go to <Link to="/sites" className="underline font-medium">Sites</Link> → select a domain → Cloudflare tab to manage domain-specific Cloudflare settings.
             </p>
           </div>
         </div>
@@ -422,7 +422,7 @@ function OverviewSection() {
             <h3 className="font-semibold flex items-center gap-2">
               <Cloud className="h-4 w-4 text-muted-foreground" /> Connected Domains
             </h3>
-            <Link to="/domains" className="text-xs text-primary hover:underline flex items-center gap-1">
+            <Link to="/sites" className="text-xs text-primary hover:underline flex items-center gap-1">
               View all <ChevronRight className="h-3 w-3" />
             </Link>
           </div>
@@ -430,8 +430,8 @@ function OverviewSection() {
             {domainsWithRoutes.length === 0 ? (
               <div className="py-6 text-center">
                 <p className="text-sm text-muted-foreground">No domains connected via tunnel</p>
-                <Link to="/domains" className="mt-1 text-xs text-primary hover:underline">
-                  Go to Domains to connect a domain
+                <Link to="/sites" className="mt-1 text-xs text-primary hover:underline">
+                  Go to Sites to connect a domain
                 </Link>
               </div>
             ) : (

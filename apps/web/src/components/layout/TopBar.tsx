@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link } from '@tanstack/react-router';
+import { Link, useRouterState } from '@tanstack/react-router';
 import { useAuthStore } from '../../store/auth.store';
 import { useLogout } from '../../api/hooks/auth';
 import { useUnreadCount, useNotifications, useMarkAsRead, useMarkAllAsRead, type Notification } from '../../api/hooks/notifications';
-import { LogOut, Settings, ShieldCheck, Bell, CheckCheck, X, Shield, AlertTriangle, Server, Clock, Database, HardDrive } from 'lucide-react';
+import { useServerStats, useServiceStatuses } from '../../api/hooks/stats';
+import { LogOut, Settings, ShieldCheck, Bell, CheckCheck, X, Shield, AlertTriangle, Server, Clock, Database, HardDrive, Activity, Cpu, HardDrive as DiskIcon, MemoryStick, ChevronDown, ExternalLink } from 'lucide-react';
 import { ThemeToggle } from '../ui/ThemeToggle';
 
 const NOTIFICATION_ICONS: Record<string, typeof Bell> = {
@@ -39,6 +40,203 @@ function formatTimeAgo(dateStr: string): string {
   if (diffHr < 24) return `${diffHr}h ago`;
   if (diffDay < 7) return `${diffDay}d ago`;
   return date.toLocaleDateString();
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+type HealthStatus = 'green' | 'yellow' | 'red';
+
+function getHealthStatus(
+  stats: { cpu?: { usage: number }; memory?: { usagePercent: number }; disk?: { usagePercent: number } } | undefined,
+  services: { name: string; status: string }[] | undefined
+): HealthStatus {
+  if (!stats || !services) return 'green';
+
+  // Check for critical issues
+  const criticalCpu = (stats.cpu?.usage ?? 0) > 90;
+  const criticalMemory = (stats.memory?.usagePercent ?? 0) > 90;
+  const criticalDisk = (stats.disk?.usagePercent ?? 0) > 90;
+  if (criticalCpu || criticalMemory || criticalDisk) return 'red';
+
+  const stoppedServices = services.filter(s => s.status === 'stopped' || s.status === 'error');
+  if (stoppedServices.length > 0) return 'red';
+
+  // Check for warnings
+  const warnCpu = (stats.cpu?.usage ?? 0) > 70;
+  const warnMemory = (stats.memory?.usagePercent ?? 0) > 70;
+  const warnDisk = (stats.disk?.usagePercent ?? 0) > 70;
+  if (warnCpu || warnMemory || warnDisk) return 'yellow';
+
+  const errorServices = services.filter(s => s.status === 'error');
+  if (errorServices.length > 0) return 'yellow';
+
+  return 'green';
+}
+
+const HEALTH_COLORS: Record<HealthStatus, string> = {
+  green: 'bg-green-500',
+  yellow: 'bg-yellow-500',
+  red: 'bg-red-500',
+};
+
+function StatusPill({ stats, services }: {
+  stats: { cpu?: { usage: number }; memory?: { usagePercent: number }; disk?: { usagePercent: number } } | undefined;
+  services: { name: string; status: string }[] | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const status = getHealthStatus(stats, services);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    if (open) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [open]);
+
+  const runningCount = services?.filter(s => s.status === 'running').length ?? 0;
+  const stoppedCount = services?.filter(s => s.status === 'stopped').length ?? 0;
+  const errorCount = services?.filter(s => s.status === 'error').length ?? 0;
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent transition-colors"
+        title="Server Status"
+      >
+        <span className={`h-2.5 w-2.5 rounded-full ${HEALTH_COLORS[status]}`} />
+        <span className="hidden sm:inline text-muted-foreground">Status</span>
+        <ChevronDown className="h-3 w-3 text-muted-foreground" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-72 rounded-lg border border-border bg-card shadow-lg z-50">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold">Server Status</h3>
+            </div>
+            <button
+              onClick={() => setOpen(false)}
+              className="rounded p-0.5 text-muted-foreground hover:bg-accent"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Status Overview */}
+          <div className="px-4 py-3 border-b border-border">
+            <div className="flex items-center gap-2 mb-2">
+              <span className={`h-3 w-3 rounded-full ${HEALTH_COLORS[status]}`} />
+              <span className="text-sm font-medium capitalize">{status === 'green' ? 'All Systems Healthy' : status === 'yellow' ? 'Attention Needed' : 'Critical Issues'}</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded bg-muted/50 px-2 py-1.5">
+                <p className="text-xs text-muted-foreground">Running</p>
+                <p className="text-lg font-semibold text-green-600">{runningCount}</p>
+              </div>
+              <div className="rounded bg-muted/50 px-2 py-1.5">
+                <p className="text-xs text-muted-foreground">Stopped</p>
+                <p className="text-lg font-semibold text-yellow-600">{stoppedCount}</p>
+              </div>
+              <div className="rounded bg-muted/50 px-2 py-1.5">
+                <p className="text-xs text-muted-foreground">Error</p>
+                <p className="text-lg font-semibold text-red-600">{errorCount}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Stats */}
+          {stats && (
+            <div className="px-4 py-3 border-b border-border">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Quick Stats</p>
+              <div className="space-y-2">
+                {stats.cpu && (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Cpu className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm">CPU</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full ${(stats.cpu.usage ?? 0) > 70 ? (stats.cpu.usage > 90 ? 'bg-red-500' : 'bg-yellow-500') : 'bg-green-500'}`}
+                          style={{ width: `${stats.cpu.usage ?? 0}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-medium w-10 text-right">{Math.round(stats.cpu.usage ?? 0)}%</span>
+                    </div>
+                  </div>
+                )}
+                {stats.memory && (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <MemoryStick className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm">RAM</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full ${(stats.memory.usagePercent ?? 0) > 70 ? (stats.memory.usagePercent > 90 ? 'bg-red-500' : 'bg-yellow-500') : 'bg-green-500'}`}
+                          style={{ width: `${stats.memory.usagePercent ?? 0}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-medium w-10 text-right">{Math.round(stats.memory.usagePercent ?? 0)}%</span>
+                    </div>
+                  </div>
+                )}
+                {stats.disk && (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <DiskIcon className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm">Disk</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full ${(stats.disk.usagePercent ?? 0) > 70 ? (stats.disk.usagePercent > 90 ? 'bg-red-500' : 'bg-yellow-500') : 'bg-green-500'}`}
+                          style={{ width: `${stats.disk.usagePercent ?? 0}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-medium w-10 text-right">{Math.round(stats.disk.usagePercent ?? 0)}%</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Footer */}
+          <div className="px-4 py-2">
+            <Link
+              to="/monitoring"
+              onClick={() => setOpen(false)}
+              className="flex items-center justify-between text-xs font-medium text-primary hover:underline"
+            >
+              View detailed monitoring
+              <ExternalLink className="h-3 w-3" />
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function DropdownNotificationItem({ notification, onMarkRead }: {
@@ -82,6 +280,11 @@ export function TopBar() {
   const { data: notifData } = useNotifications(5, 0, { refetchInterval: 30_000 });
   const markRead = useMarkAsRead();
   const markAllRead = useMarkAllAsRead();
+  const { data: serverStats } = useServerStats();
+  const { data: serviceStatuses } = useServiceStatuses();
+  
+  const routerState = useRouterState();
+  const isDashboard = routerState.location.pathname === '/';
 
   const unreadCount = unreadData?.count || 0;
   const recentNotifications = notifData?.notifications || [];
@@ -107,6 +310,11 @@ export function TopBar() {
       <div className="flex items-center gap-3">
         {/* Theme Toggle */}
         <ThemeToggle />
+
+        {/* Status Pill - hidden on dashboard */}
+        {!isDashboard && (
+          <StatusPill stats={serverStats} services={serviceStatuses} />
+        )}
 
         {/* Notification Bell */}
         <div className="relative" ref={dropdownRef}>

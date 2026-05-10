@@ -324,4 +324,32 @@ export default async function domainRoutes(fastify: FastifyInstance) {
     const result = await service.makeDomainPublic(id, tunnelId, req.user.id, req.ip);
     return { success: true, data: result };
   });
+
+  // POST /api/v1/domains/check-conflict — Check if a domain is already in use
+  fastify.post('/check-conflict', async (req) => {
+    const { domain, type } = req.body as { domain: string; type?: 'primary' | 'alias' | 'subdomain' };
+    
+    if (!domain) {
+      throw new AppError(400, 'DOMAIN_REQUIRED', 'Domain is required');
+    }
+
+    try {
+      const result = await service.checkConflict(domain, type);
+      return { success: true, data: result };
+    } catch (error: any) {
+      // If it's a conflict error (409), return the conflict info
+      if (error.code === 'DOMAIN_ALREADY_EXISTS' || error.code === 'DOMAIN_IS_ALIAS' || error.code === 'SUBDOMAIN_IS_SITE') {
+        return {
+          success: false,
+          available: false,
+          reason: error.message,
+          conflictType: error.details?.conflictType,
+          siteId: error.details?.siteId,
+          siteName: error.details?.siteName,
+          domainId: error.details?.domainId,
+        };
+      }
+      throw error;
+    }
+  });
 }

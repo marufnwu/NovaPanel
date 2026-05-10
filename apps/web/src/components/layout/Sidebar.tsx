@@ -45,8 +45,7 @@ const navGroups: { title: string; items: NavItem[] }[] = [
   {
     title: 'Web',
     items: [
-      { label: 'Domains', path: '/domains', icon: Globe },
-      { label: 'Websites', path: '/websites', icon: Layers },
+      { label: 'Sites', path: '/sites', icon: Globe },
       { label: 'Web Server', path: '/webserver', icon: Server },
       { label: 'PHP', path: '/php', icon: Code2 },
       { label: 'SSL', path: '/ssl', icon: ShieldCheck },

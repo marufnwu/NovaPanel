@@ -2,11 +2,13 @@ import { Outlet, useRouterState } from '@tanstack/react-router';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { Breadcrumb, BreadcrumbItem } from '../ui/Breadcrumb';
-import { useMemo } from 'react';
+import { CommandPalette } from '../CommandPalette';
+import { useMemo, useState, useEffect } from 'react';
 
 // Map of path segments to readable labels
 const PATH_LABELS: Record<string, string> = {
   '': 'Home',
+  sites: 'Sites',
   domains: 'Domains',
   webserver: 'Web Server',
   php: 'PHP',
@@ -29,6 +31,7 @@ const PATH_LABELS: Record<string, string> = {
   monitoring: 'Monitoring',
   notifications: 'Notifications',
   installer: 'Installer',
+  cloudflare: 'Cloudflare',
 };
 
 function buildBreadcrumbs(pathname: string): BreadcrumbItem[] {
@@ -60,8 +63,21 @@ function buildBreadcrumbs(pathname: string): BreadcrumbItem[] {
 export function AppLayout() {
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   const breadcrumbItems = useMemo(() => buildBreadcrumbs(pathname), [pathname]);
+
+  // Global keyboard listener for Cmd+K / Ctrl+K
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen(prev => !prev);
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -76,6 +92,10 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <CommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+      />
     </div>
   );
 }
