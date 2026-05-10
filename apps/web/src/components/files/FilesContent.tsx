@@ -57,6 +57,7 @@ import {
 
 export interface FilesContentProps {
   initialPath?: string; // default: '/' - set to site.documentRoot for site context
+  forcedWebsiteId?: string; // When provided, bypasses URL and selector, uses this website context directly
 }
 
 function formatSize(bytes: number): string {
@@ -95,7 +96,7 @@ function getIcon(entry: FileEntry) {
 // Note: This is a simplified embeddable version of the FilesPage.
 // For full functionality, use the complete FilesPage component.
 
-export function FilesContent({ initialPath = '/' }: FilesContentProps) {
+export function FilesContent({ initialPath = '/', forcedWebsiteId }: FilesContentProps) {
   // Read URL query params for websiteId (website-scoped browsing)
   const urlWebsiteId = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -105,7 +106,11 @@ export function FilesContent({ initialPath = '/' }: FilesContentProps) {
   const { data: domains } = useDomains();
   const { data: websites } = useWebsites();
 
-  // When websiteId is in URL, use website context; otherwise use website/domain selector
+  // When forcedWebsiteId is provided, use it directly (site context)
+  // Otherwise fall back to URL params or user selection
+  const effectiveWebsiteId = forcedWebsiteId || urlWebsiteId;
+
+  // When websiteId is in URL or forced, use website context; otherwise use website/domain selector
   const [selectedWebsiteId, setSelectedWebsiteId] = useState('');
   const [selectedDomainId, setSelectedDomainId] = useState('');
   const [currentPath, setCurrentPath] = useState(initialPath);
@@ -142,7 +147,7 @@ export function FilesContent({ initialPath = '/' }: FilesContentProps) {
   // Favorites state
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
-  const activeWebsiteId = urlWebsiteId || selectedWebsiteId || undefined;
+  const activeWebsiteId = effectiveWebsiteId || selectedWebsiteId || undefined;
   const activeDomainId = activeWebsiteId ? undefined : (selectedDomainId || undefined);
   const hasContext = !!(activeWebsiteId || activeDomainId);
 

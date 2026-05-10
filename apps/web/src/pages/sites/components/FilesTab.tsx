@@ -43,7 +43,7 @@ export function FilesTab({ site, siteId }: FilesTabProps) {
         <h3 className="mb-4 flex items-center gap-2 font-semibold">
           <FolderOpen className="h-4 w-4 text-primary" /> File Manager
         </h3>
-        <FilesContent initialPath={site.documentRoot || '/'} />
+        <FilesContent initialPath={site.documentRoot || '/'} forcedWebsiteId={site.websiteId || undefined} />
       </div>
 
       {/* FTP Access Section */}
