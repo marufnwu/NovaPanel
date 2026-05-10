@@ -35,7 +35,6 @@ import {
   checkSubdomainAvailability,
   type DomainConflictResult,
 } from '../../lib/domainConflicts';
-import { Link } from '@tanstack/react-router';
 import {
   useWebsiteFtp,
   useWebsiteCron,
@@ -672,7 +671,7 @@ function DomainsTab({ site }: { site: Site }) {
                     </p>
                     {subdomainConflict.conflictType === 'site' && subdomainConflict.siteId && (
                       <Link
-                        to="/sites/:siteId"
+                        to="/sites/$siteId"
                         params={{ siteId: subdomainConflict.siteId }}
                         className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
                       >

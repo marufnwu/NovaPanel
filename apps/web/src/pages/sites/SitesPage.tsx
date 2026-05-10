@@ -497,7 +497,7 @@ export function AddSiteModal({ onClose }: AddSiteModalProps) {
                                   </p>
                                   {domainConflict.conflictType === 'site' && domainConflict.siteId && (
                                     <Link
-                                      to="/sites/:siteId"
+                                      to="/sites/$siteId"
                                       params={{ siteId: domainConflict.siteId }}
                                       className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
                                     >
@@ -616,7 +616,7 @@ export function AddSiteModal({ onClose }: AddSiteModalProps) {
                                   </p>
                                   {subdomainConflict.conflictType === 'site' && subdomainConflict.siteId && (
                                     <Link
-                                      to="/sites/:siteId"
+                                      to="/sites/$siteId"
                                       params={{ siteId: subdomainConflict.siteId }}
                                       className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
                                     >

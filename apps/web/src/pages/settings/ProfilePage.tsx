@@ -19,6 +19,7 @@ import {
   ChevronUp,
   Activity,
   Download,
+  Clock,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/auth.store';
 import {
@@ -1340,8 +1341,8 @@ export function ProfilePage() {
             </div>
             <button
               onClick={() => {
-                const modal = document.query('[data-create-token-modal]');
-                if (modal) (modal as any).showModal?.() || document.querySelector('.modal-trigger')?.click();
+                const modal = (window as any).document.query('[data-create-token-modal]');
+                if (modal) (modal as any).showModal?.() || ((window as any).document.querySelector('.modal-trigger') as HTMLElement)?.click();
               }}
               className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 transition-colors"
             >
