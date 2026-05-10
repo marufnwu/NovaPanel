@@ -5,7 +5,7 @@ import { logger } from '../config/logger.js';
 import * as sudoFs from './sudo-fs.js';
 import { db } from '../db/index.js';
 import { websites } from '../db/schema/websites.js';
-import { domains, domainAliases } from '../db/schema/domains.js';
+import { domains, domainAliases, subdomains } from '../db/schema/domains.js';
 import { eq } from 'drizzle-orm';
 
 export interface VhostContext {
@@ -131,6 +131,38 @@ export class NginxService implements SystemService {
         phpVersion,
         aliases: [`www.${domain.name}`, ...domainAliasNames],
       });
+
+      // Also add explicit server blocks for each subdomain of this domain
+      // Each subdomain has its own document root: /var/www/vhosts/{domain}/subdomains/{subdomain}
+      // Subdomains with their own websiteId are included only if that websiteId matches the current website
+      try {
+        const subdomainRecords = await db.select({ name: subdomains.name, documentRoot: subdomains.documentRoot, websiteId: subdomains.websiteId })
+          .from(subdomains)
+          .where(eq(subdomains.domainId, domain.id));
+
+        for (const sub of subdomainRecords) {
+          // Skip subdomains that have their own websiteId set to a different website
+          // These will be served from their own website's nginx config
+          if (sub.websiteId && sub.websiteId !== websiteId) {
+            continue;
+          }
+
+          // Extract subdomain prefix from full name (e.g., "blog.example.com" -> "blog")
+          const subdomainPrefix = sub.name.split('.')[0];
+          // Use subdomain's own document root if set, otherwise use default path structure
+          const subdomainDocRoot = sub.documentRoot || `/var/www/vhosts/${domain.name}/subdomains/${subdomainPrefix}`;
+
+          config += '\n';
+          config += this.renderVhost({
+            domain: sub.name,
+            documentRoot: subdomainDocRoot,
+            phpVersion,
+            aliases: [],
+          });
+        }
+      } catch {
+        // subdomains table may be empty or not exist — that's OK
+      }
     }
 
     // 4. Write config file
@@ -185,6 +217,51 @@ export class NginxService implements SystemService {
   }
 
   /**
+   * Generate nginx config for a subdomain that has its own websiteId.
+   * This is called when a subdomain is created/updated with a custom websiteId.
+   * The subdomain config is added to the website's nginx config and the parent domain's config is updated.
+   */
+  async generateSubdomainConfig(subdomainId: string): Promise<void> {
+    // 1. Look up the subdomain
+    const [sub] = await db.select().from(subdomains).where(eq(subdomains.id, subdomainId)).limit(1);
+    if (!sub) throw new Error(`Subdomain not found: ${subdomainId}`);
+
+    // 2. Get the parent domain to find the phpVersion
+    const [parentDomain] = await db.select().from(domains).where(eq(domains.id, sub.domainId)).limit(1);
+    if (!parentDomain) throw new Error(`Parent domain not found for subdomain: ${subdomainId}`);
+
+    // 3. Determine which website to use:
+    //    - If subdomain has its own websiteId, use that
+    //    - Otherwise use parent domain's websiteId
+    const targetWebsiteId = sub.websiteId || parentDomain.websiteId;
+    if (!targetWebsiteId) {
+      // No website attached - nothing to generate
+      return;
+    }
+
+    // 4. Get the website for phpVersion and documentRoot
+    const [website] = await db.select().from(websites).where(eq(websites.id, targetWebsiteId)).limit(1);
+    if (!website) throw new Error(`Website not found: ${targetWebsiteId}`);
+
+    const phpVersion = website.phpHandler !== 'disabled' ? website.phpVersion : undefined;
+
+    // 5. Regenerate the website config (this will include this subdomain if websiteId matches)
+    await this.generateWebsiteConfig(targetWebsiteId);
+
+    // 6. If subdomain has its own websiteId different from parent, also regenerate parent website config
+    // to remove this subdomain from the parent's config
+    if (sub.websiteId && parentDomain.websiteId && sub.websiteId !== parentDomain.websiteId) {
+      try {
+        await this.generateWebsiteConfig(parentDomain.websiteId);
+      } catch {
+        // Parent website may not exist - that's OK
+      }
+    }
+
+    logger.info({ subdomainId, subdomainName: sub.name, targetWebsiteId }, 'Subdomain nginx config generated');
+  }
+
+  /**
    * Generate a "suspended" nginx config for a website — all domains return 503.
    * The original config is backed up with a `.active` suffix before overwriting.
    */
@@ -216,6 +293,24 @@ export class NginxService implements SystemService {
       config += `    return 503;\n`;
       config += `    add_header Retry-After "3600";\n`;
       config += `}\n`;
+
+      // Also suspend all subdomains of this domain
+      try {
+        const subdomainRecords = await db.select({ name: subdomains.name })
+          .from(subdomains)
+          .where(eq(subdomains.domainId, domain.id));
+
+        for (const sub of subdomainRecords) {
+          config += `\nserver {\n`;
+          config += `    listen 80;\n`;
+          config += `    server_name ${sub.name};\n`;
+          config += `    return 503;\n`;
+          config += `    add_header Retry-After "3600";\n`;
+          config += `}\n`;
+        }
+      } catch {
+        // subdomains table may be empty or not exist — that's OK
+      }
     }
 
     if (attachedDomains.length === 0) {

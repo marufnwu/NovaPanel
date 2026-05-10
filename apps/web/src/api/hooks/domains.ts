@@ -51,6 +51,7 @@ export interface Subdomain {
   domainId: string;
   documentRoot: string;
   phpVersion: string;
+  websiteId?: string | null; // Optional: if set, subdomain is attached to a different website than parent domain
   createdAt: string;
 }
 
@@ -145,7 +146,7 @@ export function useSubdomains(domainId: string) {
 export function useCreateSubdomain(domainId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; documentRoot?: string; phpVersion?: string }) =>
+    mutationFn: (data: { name: string; documentRoot?: string; phpVersion?: string; websiteId?: string }) =>
       api.post(`/domains/${domainId}/subdomains`, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['domains', domainId, 'subdomains'] }),
   });

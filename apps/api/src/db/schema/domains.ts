@@ -32,6 +32,7 @@ export const subdomains = sqliteTable('subdomains', {
   name: text('name').notNull(),
   documentRoot: text('document_root').notNull(),
   phpVersion: text('php_version'),
+  websiteId: text('website_id').references(() => websites.id, { onDelete: 'set null' }), // Optional: allows subdomain to be attached to a different website than parent domain
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 

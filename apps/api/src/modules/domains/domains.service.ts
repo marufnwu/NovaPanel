@@ -697,7 +697,7 @@ export class DomainsService {
     return db.select().from(subdomains).where(eq(subdomains.domainId, domainId));
   }
 
-  async createSubdomain(domainId: string, data: { name: string; documentRoot?: string; phpVersion?: string }, userId?: string, ipAddress?: string) {
+  async createSubdomain(domainId: string, data: { name: string; documentRoot?: string; phpVersion?: string; websiteId?: string }, userId?: string, ipAddress?: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
@@ -727,81 +727,234 @@ export class DomainsService {
         `Subdomain ${data.name} already exists for this domain`);
     }
 
+    // Validate websiteId if provided
+    let targetWebsiteId: string | null = null;
+    if (data.websiteId) {
+      const [website] = await db.select().from(websites).where(eq(websites.id, data.websiteId)).limit(1);
+      if (!website) throw new AppError(404, 'WEBSITE_NOT_FOUND', 'Website not found');
+      targetWebsiteId = data.websiteId;
+    }
+
+    // Track created resources for proper rollback on failure
+    const created = {
+      dbRecord: false,
+      directory: false,
+      dnsRecord: false,
+      dnsRecordId: null as string | null,
+      tunnelRoute: false,
+      nginxModified: false,
+    };
+
     const subId = nanoid();
     const fullSubdomain = `${data.name}.${domain.name}`;
     const docRoot = data.documentRoot || `${env.VHOSTS_ROOT}/${domain.name}/${data.name}`;
 
-    await sudoFs.mkdir(docRoot);
-    if (domain.systemUser) {
-      await run('chown', [`${domain.systemUser}:www-data`, docRoot], { sudo: true });
-    }
-
-    await db.insert(subdomains).values({
-      id: subId,
-      domainId,
-      name: fullSubdomain,
-      documentRoot: docRoot,
-      phpVersion: data.phpVersion || domain.phpVersion,
-    });
-
-    // Create DNS A record for the subdomain if a DNS zone exists for the parent domain
     try {
-      const [zone] = await db.select().from(dnsZones)
-        .where(eq(dnsZones.domainId, domainId))
-        .limit(1);
+      // 1. Create directory
+      await sudoFs.mkdir(docRoot);
+      created.directory = true;
 
-      if (zone) {
-        // Get server IP
-        let serverIp = '127.0.0.1';
-        try {
-          const networkInfo = await detectNetworkInfo();
-          serverIp = networkInfo.primaryIp || '127.0.0.1';
-        } catch { /* use default */ }
-
-        await db.insert(dnsRecords).values({
-          id: nanoid(),
-          zoneId: zone.id,
-          type: 'A',
-          name: data.name,
-          value: serverIp,
-          ttl: 3600,
-          priority: null,
-          isSystem: true,
-        });
-
-        // Sync zone file to disk
-        await dnsService.syncZoneToDisk(zone.id);
-        logger.info({ subdomain: fullSubdomain, ip: serverIp }, 'DNS A record created for subdomain');
+      // 2. Set ownership if system user exists
+      if (domain.systemUser) {
+        await run('chown', [`${domain.systemUser}:www-data`, docRoot], { sudo: true });
       }
-    } catch (e) {
-      logger.warn({ err: e, subdomain: fullSubdomain }, 'Failed to create DNS record for subdomain — continuing');
+
+      // 3. Insert subdomain DB record (with optional websiteId)
+      await db.insert(subdomains).values({
+        id: subId,
+        domainId,
+        name: fullSubdomain,
+        documentRoot: docRoot,
+        phpVersion: data.phpVersion || domain.phpVersion,
+        websiteId: targetWebsiteId,
+      });
+      created.dbRecord = true;
+
+      // 4. Create DNS A record for the subdomain if a DNS zone exists for the parent domain
+      try {
+        const [zone] = await db.select().from(dnsZones)
+          .where(eq(dnsZones.domainId, domainId))
+          .limit(1);
+
+        if (zone) {
+          // Get server IP
+          let serverIp = '127.0.0.1';
+          try {
+            const networkInfo = await detectNetworkInfo();
+            serverIp = networkInfo.primaryIp || '127.0.0.1';
+          } catch { /* use default */ }
+
+          const dnsRecId = nanoid();
+          await db.insert(dnsRecords).values({
+            id: dnsRecId,
+            zoneId: zone.id,
+            type: 'A',
+            name: data.name,
+            value: serverIp,
+            ttl: 3600,
+            priority: null,
+            isSystem: true,
+          });
+
+          // Sync zone file to disk
+          await dnsService.syncZoneToDisk(zone.id);
+          created.dnsRecord = true;
+          created.dnsRecordId = dnsRecId;
+          logger.info({ subdomain: fullSubdomain, ip: serverIp }, 'DNS A record created for subdomain');
+        }
+      } catch (e) {
+        logger.warn({ err: e, subdomain: fullSubdomain }, 'Failed to create DNS record for subdomain — continuing');
+      }
+
+      // 5. Auto-create Cloudflare Tunnel route + CNAME for subdomain (best-effort)
+      await this.autoCreateTunnelRoute(fullSubdomain, domainId, userId, ipAddress);
+      created.tunnelRoute = true;
+
+      // 6. Regenerate nginx config:
+      //    - If subdomain has its own websiteId, regenerate that website's config
+      //    - If subdomain uses parent domain's website (no websiteId), regenerate parent website's config
+      //    - If this change moves subdomain from parent website to different website, also regenerate parent website
+      const effectiveWebsiteId = targetWebsiteId || domain.websiteId;
+      const subdomainOwnWebsite = !!targetWebsiteId;
+      
+      if (effectiveWebsiteId) {
+        try {
+          if (subdomainOwnWebsite) {
+            // Subdomain has its own websiteId - use the new subdomain config method
+            await nginxService.generateSubdomainConfig(subId);
+          } else if (domain.websiteId) {
+            // Subdomain uses parent's website - regenerate parent's config
+            await nginxService.generateWebsiteConfig(domain.websiteId);
+          }
+          created.nginxModified = true;
+        } catch (nginxError) {
+          logger.error({ err: nginxError, subdomainId: subId }, 'Nginx config generation failed after subdomain resources created — initiating full rollback');
+          await this.rollbackSubdomainCreation(domain, subId, created, fullSubdomain, userId, ipAddress, nginxError as Error);
+          throw new AppError(500, 'SUBDOMAIN_CREATE_FAILED', `Subdomain resources created but nginx configuration failed: ${(nginxError as Error).message}. All resources have been rolled back.`);
+        }
+      }
+
+      auditService.log({
+        userId,
+        action: 'domain.subdomain.create',
+        resource: `subdomain:${fullSubdomain}`,
+        details: JSON.stringify({ domainId, name: fullSubdomain, documentRoot: docRoot, websiteId: targetWebsiteId }),
+        ipAddress,
+      }).catch(err => logger.error({ err }, 'Audit log failed'));
+
+      return { id: subId, name: fullSubdomain, documentRoot: docRoot, websiteId: targetWebsiteId };
+    } catch (error) {
+      // Unexpected error before nginx step — rollback what was created
+      if (created.dbRecord || created.directory || created.dnsRecord) {
+        await this.rollbackSubdomainCreation(domain, subId, created, fullSubdomain, userId, ipAddress, error as Error);
+      }
+      throw error;
     }
+  }
 
-    // Auto-create Cloudflare Tunnel route + CNAME for subdomain
-    await this.autoCreateTunnelRoute(fullSubdomain, domainId, userId, ipAddress);
+  /**
+   * Rollback subdomain creation, cleaning up resources in reverse order of creation.
+   * Resources are cleaned up in order: nginx config → DNS record → directory → DB record.
+   * Rollback failures are logged but don't throw, to avoid masking the original error.
+   */
+  private async rollbackSubdomainCreation(
+    domain: any,
+    subId: string,
+    created: {
+      dbRecord: boolean;
+      directory: boolean;
+      dnsRecord: boolean;
+      dnsRecordId: string | null;
+      tunnelRoute: boolean;
+      nginxModified: boolean;
+    },
+    fullSubdomain: string,
+    userId?: string,
+    ipAddress?: string,
+    originalError?: Error,
+  ): Promise<void> {
+    const rollbackErrors: string[] = [];
 
-    // If parent domain is attached to a website, regenerate nginx config
-    // so the subdomain can be served. Rollback subdomain on failure.
-    if (domain.websiteId) {
+    // 1. Regenerate nginx config WITHOUT this subdomain (reverse the nginx modification)
+    if (created.nginxModified && domain.websiteId) {
       try {
         await nginxService.generateWebsiteConfig(domain.websiteId);
-      } catch (nginxError) {
-        // Rollback: delete the subdomain record
-        await db.delete(subdomains).where(eq(subdomains.id, subId));
-        logger.error({ err: nginxError, subdomainId: subId }, 'Nginx config regeneration failed — subdomain rolled back');
-        throw new AppError(500, 'SUBDOMAIN_CREATE_FAILED', `Subdomain record created but nginx configuration failed: ${(nginxError as Error).message}. Subdomain has been rolled back.`);
+        logger.info({ websiteId: domain.websiteId, subdomainId: subId }, 'Rollback: nginx config regenerated without subdomain');
+      } catch (e) {
+        const msg = `Rollback: nginx config regeneration failed: ${(e as Error).message}`;
+        rollbackErrors.push(msg);
+        logger.error({ err: e, subdomainId: subId }, msg);
       }
     }
+
+    // 2. Delete DNS record if created (reverse DNS record creation)
+    if (created.dnsRecord && created.dnsRecordId) {
+      try {
+        await db.delete(dnsRecords).where(eq(dnsRecords.id, created.dnsRecordId));
+        // Also sync zone to disk
+        const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domain.id)).limit(1);
+        if (zone) {
+          await dnsService.syncZoneToDisk(zone.id);
+        }
+        logger.info({ dnsRecordId: created.dnsRecordId, subdomain: fullSubdomain }, 'Rollback: DNS record deleted');
+      } catch (e) {
+        const msg = `Rollback: DNS record deletion failed: ${(e as Error).message}`;
+        rollbackErrors.push(msg);
+        logger.error({ err: e, dnsRecordId: created.dnsRecordId }, msg);
+      }
+    }
+
+    // 3. Remove directory if created (reverse directory creation)
+    if (created.directory) {
+      try {
+        await run('rm', ['-rf', `${env.VHOSTS_ROOT}/${domain.name}/${fullSubdomain.split('.')[0]}`], { sudo: true });
+        logger.info({ subdomain: fullSubdomain }, 'Rollback: directory deleted');
+      } catch (e) {
+        const msg = `Rollback: directory deletion failed: ${(e as Error).message}`;
+        rollbackErrors.push(msg);
+        logger.error({ err: e, subdomain: fullSubdomain }, msg);
+      }
+    }
+
+    // 4. Delete DB record if created (last, as it's the primary record)
+    if (created.dbRecord) {
+      try {
+        await db.delete(subdomains).where(eq(subdomains.id, subId));
+        logger.info({ subdomainId: subId }, 'Rollback: subdomain DB record deleted');
+      } catch (e) {
+        const msg = `Rollback: DB record deletion failed: ${(e as Error).message}`;
+        rollbackErrors.push(msg);
+        logger.error({ err: e, subdomainId: subId }, msg);
+      }
+    }
+
+    // 5. Audit log the rollback with results
+    const auditDetails = {
+      subdomainId: subId,
+      subdomain: fullSubdomain,
+      originalError: originalError?.message || 'Unknown error',
+      rollbackErrors: rollbackErrors.length > 0 ? rollbackErrors : undefined,
+      resourcesRolledBack: {
+        dbRecord: created.dbRecord,
+        directory: created.directory,
+        dnsRecord: created.dnsRecord,
+        nginxModified: created.nginxModified,
+      },
+    };
 
     auditService.log({
       userId,
-      action: 'domain.subdomain.create',
+      action: 'domain.subdomain.rollback',
       resource: `subdomain:${fullSubdomain}`,
-      details: JSON.stringify({ domainId, name: fullSubdomain, documentRoot: docRoot }),
+      details: JSON.stringify(auditDetails),
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return { id: subId, name: fullSubdomain, documentRoot: docRoot };
+    if (rollbackErrors.length > 0) {
+      logger.error({ subdomainId: subId, rollbackErrors }, 'Subdomain rollback completed with errors — manual cleanup may be required');
+    } else {
+      logger.info({ subdomainId: subId }, 'Subdomain rollback completed successfully');
+    }
   }
 
   async deleteSubdomain(domainId: string, subdomainId: string, userId?: string, ipAddress?: string) {
@@ -830,6 +983,9 @@ export class DomainsService {
       }
     }
 
+    // Track the subdomain's websiteId before deleting (for nginx cleanup)
+    const subdomainOwnWebsiteId = sub?.websiteId || null;
+
     await db.delete(subdomains).where(eq(subdomains.id, subdomainId));
     logger.info({ subdomainId }, 'Subdomain deleted');
 
@@ -842,14 +998,28 @@ export class DomainsService {
       }
     }
 
-    // If parent domain is attached to a website, regenerate nginx config
+    // Regenerate nginx configs:
+    // 1. If subdomain had its own websiteId, regenerate that website's config to remove subdomain
+    // 2. If subdomain was using parent's website (no own websiteId), regenerate parent's config
     if (sub) {
       const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+      
+      // Regenerate subdomain's own website config if it had one
+      if (subdomainOwnWebsiteId) {
+        try {
+          await nginxService.generateWebsiteConfig(subdomainOwnWebsiteId);
+        } catch (e) {
+          logger.warn({ err: e, websiteId: subdomainOwnWebsiteId }, 'Failed to regenerate subdomain website nginx config after deletion');
+        }
+      }
+      
+      // Also regenerate parent domain's website config if subdomain was using parent's website
+      // or if subdomain had its own website (to clean up any reference)
       if (domain?.websiteId) {
         try {
           await nginxService.generateWebsiteConfig(domain.websiteId);
         } catch (e) {
-          logger.warn({ err: e, websiteId: domain.websiteId }, 'Failed to regenerate website nginx config after subdomain deletion');
+          logger.warn({ err: e, websiteId: domain.websiteId }, 'Failed to regenerate parent website nginx config after subdomain deletion');
         }
       }
     }

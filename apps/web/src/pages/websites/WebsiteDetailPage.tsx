@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   useWebsite,
   useUpdateWebsite,
@@ -15,7 +15,7 @@ import {
   type Website,
   type UpdateWebsiteInput,
 } from '../../api/hooks/websites';
-import { useDomains, type Domain } from '../../api/hooks/domains';
+import { useDomains, useSubdomains, type Domain, type Subdomain } from '../../api/hooks/domains';
 import { usePhpVersions, DEFAULT_PHP_VERSIONS } from '../../api/hooks/php';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
@@ -24,10 +24,12 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
 import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
 import { Breadcrumb } from '../../components/ui/Breadcrumb';
+import { Link } from '@tanstack/react-router';
 import {
   Server, Trash2, Ban, CheckCircle, Edit3, HardDrive,
   Globe, FolderOpen, Users, Clock, Database, Archive,
   AppWindow, Link2, Unlink, AlertTriangle, Plus, Activity,
+  ExternalLink, ChevronRight,
 } from 'lucide-react';
 import type { ApiError } from '../../api/client';
 import { toast } from '../../lib/toast';
@@ -43,11 +45,12 @@ const WEBSERVER_TYPES = [
   { value: 'nginx+apache', label: 'Nginx + Apache' },
 ];
 
-type TabId = 'overview' | 'domains' | 'files' | 'ftp' | 'cron' | 'databases' | 'backups' | 'apps';
+type TabId = 'overview' | 'domains' | 'subdomains' | 'files' | 'ftp' | 'cron' | 'databases' | 'backups' | 'apps';
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'overview', label: 'Overview', icon: Server },
   { id: 'domains', label: 'Domains', icon: Globe },
+  { id: 'subdomains', label: 'Subdomains', icon: Globe },
   { id: 'files', label: 'Files', icon: FolderOpen },
   { id: 'ftp', label: 'FTP', icon: Users },
   { id: 'cron', label: 'Cron', icon: Clock },
@@ -442,6 +445,126 @@ function DomainsTab({ website }: { website: Website }) {
       )}
     </div>
   );
+}
+
+// --- Subdomains Tab ---
+interface SubdomainWithDomain extends Subdomain {
+  domainName: string;
+  domainId: string;
+}
+
+function SubdomainsTab({ website }: { website: Website }) {
+  const { data: allDomains } = useDomains();
+
+  // Filter domains attached to this website
+  const attachedDomains = (allDomains as DomainWithWebsite[] | undefined)?.filter(
+    (d) => d.websiteId === website.id,
+  ) || [];
+
+  // Fetch subdomains for each attached domain
+  const subdomainDataMap = useSubdomainsForDomains(attachedDomains.map(d => d.id));
+
+  // Flatten and combine subdomains with their domain info
+  const allSubdomains: SubdomainWithDomain[] = [];
+  attachedDomains.forEach((domain) => {
+    const subdomains = subdomainDataMap[domain.id];
+    if (subdomains?.length) {
+      subdomains.forEach((sub) => {
+        allSubdomains.push({
+          ...sub,
+          domainName: domain.name,
+          domainId: domain.id,
+        });
+      });
+    }
+  });
+
+  if (!allDomains) return <LoadingSpinner />;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-muted-foreground">
+          {allSubdomains.length} subdomain{allSubdomains.length !== 1 ? 's' : ''} across {attachedDomains.length} domain{attachedDomains.length !== 1 ? 's' : ''}
+        </h3>
+      </div>
+
+      {allSubdomains.length === 0 ? (
+        <EmptyState
+          icon={Globe}
+          title="No subdomains"
+          description="No subdomains have been created for the domains attached to this website."
+        />
+      ) : (
+        <ResponsiveTable>
+          <table className="w-full text-sm">
+            <thead className="border-b border-border bg-muted/50">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium">Subdomain</th>
+                <th className="px-4 py-2 text-left font-medium">Parent Domain</th>
+                <th className="px-4 py-2 text-left font-medium">Document Root</th>
+                <th className="px-4 py-2 text-right font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allSubdomains.map((sub) => (
+                <tr key={sub.id} className="border-b border-border last:border-0">
+                  <td className="px-4 py-2 font-medium">{sub.name}.{sub.domainName}</td>
+                  <td className="px-4 py-2 text-muted-foreground">{sub.domainName}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{sub.documentRoot}</td>
+                  <td className="px-4 py-2 text-right">
+                    <Link
+                      to="/domains"
+                      search={(prev) => ({ ...prev, selectedDomainId: sub.domainId })}
+                      className="inline-flex items-center gap-1 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                      title="Manage in Domain Detail"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ResponsiveTable>
+      )}
+    </div>
+  );
+}
+
+// Helper hook to fetch subdomains for multiple domains
+function useSubdomainsForDomains(domainIds: string[]) {
+  const [subdomainMap, setSubdomainMap] = useState<Record<string, Subdomain[]>>({});
+
+  useEffect(() => {
+    if (domainIds.length === 0) {
+      setSubdomainMap({});
+      return;
+    }
+
+    // Fetch subdomains for each domain
+    const fetchPromises = domainIds.map(async (domainId) => {
+      try {
+        const response = await fetch(`/api/v1/domains/${domainId}/subdomains`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('apiToken')}` },
+        });
+        const data = await response.json();
+        return { domainId, subdomains: data.success ? data.data : [] };
+      } catch {
+        return { domainId, subdomains: [] };
+      }
+    });
+
+    Promise.all(fetchPromises).then((results) => {
+      const map: Record<string, Subdomain[]> = {};
+      results.forEach(({ domainId, subdomains }) => {
+        map[domainId] = subdomains;
+      });
+      setSubdomainMap(map);
+    });
+  }, [domainIds.join(',')]);
+
+  return subdomainMap;
 }
 
 // --- Files Tab (Placeholder) ---
@@ -847,6 +970,7 @@ export function WebsiteDetailPage({ websiteId }: { websiteId: string }) {
       {/* Tab Content */}
       {activeTab === 'overview' && <OverviewTab website={website} />}
       {activeTab === 'domains' && <DomainsTab website={website} />}
+      {activeTab === 'subdomains' && <SubdomainsTab website={website} />}
       {activeTab === 'files' && <FilesTab website={website} />}
       {activeTab === 'ftp' && <FtpTab websiteId={website.id} />}
       {activeTab === 'cron' && <CronTab websiteId={website.id} />}
