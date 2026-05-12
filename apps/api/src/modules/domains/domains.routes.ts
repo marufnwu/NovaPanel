@@ -110,6 +110,14 @@ export default async function domainRoutes(fastify: FastifyInstance) {
     return { success: true, data: { status: 'active' } };
   });
 
+  // POST /api/v1/domains/:id/make-primary
+  // Promote an addon domain to be the primary domain of its website
+  fastify.post('/:id/make-primary', async (req) => {
+    const { id } = req.params as { id: string };
+    const result = await service.makePrimary(id, req.user.id, req.ip);
+    return { success: true, data: result };
+  });
+
   // --- Subdomains ---
   fastify.get('/:id/subdomains', async (req) => {
     const { id } = req.params as { id: string };

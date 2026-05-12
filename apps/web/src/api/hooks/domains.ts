@@ -5,11 +5,12 @@ export interface Domain {
   id: string;
   name: string;
   status: 'active' | 'suspended' | 'pending';
-  documentRoot: string;
+  documentRoot: string | null;
   phpVersion: string;
   phpHandler: string;
   webServer: string;
   sslEnabled: boolean;
+  sslCertId?: string | null;
   systemUser: string;
   diskUsedMb: number | null;
   bandwidthUsedMb: number | null;
@@ -17,9 +18,11 @@ export interface Domain {
   hsts: boolean;
   createdAt: string;
   websiteId?: string | null;
-  type?: 'primary' | 'subdomain' | 'alias' | 'redirect';
-  parentDomainId?: string;
-  redirectTarget?: string;
+  type: 'primary' | 'addon' | 'parked' | 'subdomain' | 'redirect' | 'mail-only';
+  isPrimary: boolean;
+  parentDomainId?: string | null;
+  redirectTarget?: string | null;
+  suspendedConfig?: string | null;
 }
 
 export interface CreateDomainInput {
@@ -33,7 +36,7 @@ export interface CreateDomainInput {
   websiteMode?: 'none' | 'create' | 'existing';
   websiteId?: string;
   websiteName?: string;
-  type?: 'primary' | 'subdomain' | 'alias' | 'redirect';
+  type?: 'primary' | 'addon' | 'parked' | 'subdomain' | 'redirect' | 'mail-only';
   parentDomainId?: string;
   redirectTarget?: string;
   createDnsZone?: boolean;
@@ -129,6 +132,14 @@ export function useActivateDomain() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.post(`/domains/${id}/activate`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['domains'] }),
+  });
+}
+
+export function useMakePrimaryDomain() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<Domain>(`/domains/${id}/make-primary`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['domains'] }),
   });
 }

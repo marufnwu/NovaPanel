@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   useWebsites,
   useCreateWebsite,
@@ -10,7 +10,6 @@ import {
 } from '../../api/hooks/websites';
 import { usePhpVersions, DEFAULT_PHP_VERSIONS } from '../../api/hooks/php';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Modal } from '../../components/ui/Modal';
@@ -18,6 +17,7 @@ import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
 import {
   Globe, Plus, Trash2, Ban, CheckCircle, X, Server,
   MoreVertical, Edit3, HardDrive, AlertTriangle,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import type { ApiError } from '../../api/client';
 import { toast } from '../../lib/toast';
@@ -26,6 +26,12 @@ const WEBSERVER_TYPES = [
   { value: 'nginx', label: 'Nginx' },
   { value: 'apache', label: 'Apache' },
   { value: 'nginx+apache', label: 'Nginx + Apache' },
+];
+
+const PHP_HANDLERS = [
+  { value: 'php-fpm', label: 'PHP-FPM' },
+  { value: 'cgi', label: 'CGI' },
+  { value: 'disabled', label: 'Disabled' },
 ];
 
 // --- Status Badge ---
@@ -52,6 +58,7 @@ function CreateWebsiteModal({ onClose }: { onClose: () => void }) {
   const [form, setForm] = useState<CreateWebsiteInput>({
     name: '',
     phpVersion: phpVersions[0] || '8.1',
+    phpHandler: 'php-fpm',
     webServer: 'nginx',
   });
 
@@ -82,7 +89,7 @@ function CreateWebsiteModal({ onClose }: { onClose: () => void }) {
     <Modal open={true} onClose={onClose} title="Create Website" size="lg">
       <form onSubmit={handleSubmit} className="space-y-4 p-6">
         {createWebsite.error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
             <strong>Error:</strong> {(createWebsite.error as ApiError).message || String(createWebsite.error)}
           </div>
         )}
@@ -132,6 +139,21 @@ function CreateWebsiteModal({ onClose }: { onClose: () => void }) {
             </select>
           </div>
 
+          <div>
+            <label className="mb-1 block text-sm font-medium">PHP Handler</label>
+            <select
+              value={form.phpHandler || 'php-fpm'}
+              onChange={(e) => setForm({ ...form, phpHandler: e.target.value })}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              {PHP_HANDLERS.map((h) => (
+                <option key={h.value} value={h.value}>{h.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-sm font-medium">Web Server</label>
             <select
@@ -230,9 +252,140 @@ function ActionDropdown({
   );
 }
 
+// --- Filter Bar ---
+function FilterBar({
+  statusFilter,
+  setStatusFilter,
+  phpFilter,
+  setPhpFilter,
+  phpVersions,
+}: {
+  statusFilter: string;
+  setStatusFilter: (v: string) => void;
+  phpFilter: string;
+  setPhpFilter: (v: string) => void;
+  phpVersions: string[];
+}) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="flex items-center gap-2">
+        <label className="text-sm font-medium text-muted-foreground">Status:</label>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        >
+          <option value="all">All</option>
+          <option value="active">Active</option>
+          <option value="suspended">Suspended</option>
+        </select>
+      </div>
+      <div className="flex items-center gap-2">
+        <label className="text-sm font-medium text-muted-foreground">PHP:</label>
+        <select
+          value={phpFilter}
+          onChange={(e) => setPhpFilter(e.target.value)}
+          className="rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        >
+          <option value="all">All</option>
+          {phpVersions.map((v) => (
+            <option key={v} value={v}>PHP {v}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+// --- Pagination ---
+function Pagination({
+  currentPage,
+  totalPages,
+  onPrev,
+  onNext,
+}: {
+  currentPage: number;
+  totalPages: number;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="mt-4 flex items-center justify-between">
+      <p className="text-sm text-muted-foreground">
+        Page {currentPage} of {totalPages}
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onPrev}
+          disabled={currentPage <= 1}
+          className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <ChevronLeft className="h-4 w-4" /> Previous
+        </button>
+        <button
+          onClick={onNext}
+          disabled={currentPage >= totalPages}
+          className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Next <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Disk Usage Progress Bar ---
+function DiskUsageBar({ usedMb, totalMb = 1000 }: { usedMb: number | null; totalMb?: number }) {
+  if (usedMb == null) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  const percentage = Math.min((usedMb / totalMb) * 100, 100);
+  const isHigh = percentage > 80;
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-20 rounded-full bg-muted h-1.5">
+        <div
+          className={`h-full rounded-full ${isHigh ? 'bg-orange-500' : 'bg-primary'}`}
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+      <span className="text-muted-foreground text-xs">
+        {usedMb} MB
+      </span>
+    </div>
+  );
+}
+
+// --- Skeleton Loading Rows ---
+function SkeletonRows() {
+  return (
+    <>
+      {[...Array(5)].map((_, i) => (
+        <tr key={i} className="animate-pulse border-b border-border">
+          <td className="px-4 py-3">
+            <div className="flex items-center gap-2">
+              <div className="h-4 w-4 bg-muted rounded" />
+              <div className="h-4 bg-muted rounded w-24"></div>
+            </div>
+            <div className="mt-1 h-3 bg-muted rounded w-32"></div>
+          </td>
+          <td className="px-4 py-3"><div className="h-4 bg-muted rounded w-16"></div></td>
+          <td className="px-4 py-3"><div className="h-4 bg-muted rounded w-16"></div></td>
+          <td className="px-4 py-3"><div className="h-4 bg-muted rounded w-20"></div></td>
+          <td className="px-4 py-3"><div className="h-4 bg-muted rounded w-16"></div></td>
+          <td className="px-4 py-3"><div className="h-4 bg-muted rounded w-24"></div></td>
+          <td className="px-4 py-3"><div className="h-4 bg-muted rounded w-12"></div></td>
+          <td className="px-4 py-3 flex justify-end"><div className="h-6 w-6 bg-muted rounded"></div></td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
 // --- Main Page ---
 export function WebsitesPage() {
   const { data: websites, isLoading, isError, refetch } = useWebsites();
+  const { data: phpData } = usePhpVersions();
   const deleteWebsite = useDeleteWebsite();
   const suspendWebsite = useSuspendWebsite();
   const activateWebsite = useActivateWebsite();
@@ -242,7 +395,49 @@ export function WebsitesPage() {
   const [suspendTarget, setSuspendTarget] = useState<Website | null>(null);
   const [activateTarget, setActivateTarget] = useState<Website | null>(null);
 
-  if (isLoading) return <LoadingSpinner />;
+  // Filter state
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [phpFilter, setPhpFilter] = useState('all');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  // Get PHP versions for filter
+  const phpVersions = useMemo(() => {
+    if (phpData?.versions?.length) {
+      return phpData.versions.map((v: any) => typeof v === 'string' ? v : v.version);
+    }
+    return DEFAULT_PHP_VERSIONS;
+  }, [phpData]);
+
+  // Filter websites
+  const filteredWebsites = useMemo(() => {
+    if (!websites) return [];
+    return websites.filter((w) => {
+      if (statusFilter !== 'all' && w.status !== statusFilter) return false;
+      if (phpFilter !== 'all' && w.phpVersion !== phpFilter) return false;
+      return true;
+    });
+  }, [websites, statusFilter, phpFilter]);
+
+  // Paginate
+  const totalPages = Math.max(1, Math.ceil(filteredWebsites.length / itemsPerPage));
+  const paginatedWebsites = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredWebsites.slice(start, start + itemsPerPage);
+  }, [filteredWebsites, currentPage, itemsPerPage]);
+
+  // Reset page when filter changes
+  const handleStatusFilterChange = (v: string) => {
+    setStatusFilter(v);
+    setCurrentPage(1);
+  };
+
+  const handlePhpFilterChange = (v: string) => {
+    setPhpFilter(v);
+    setCurrentPage(1);
+  };
 
   if (isError) {
     return (
@@ -320,7 +515,7 @@ export function WebsitesPage() {
         }
       />
 
-      {!websites?.length ? (
+      {!websites?.length && !isLoading ? (
         <EmptyState
           icon={Globe}
           title="No websites"
@@ -335,72 +530,111 @@ export function WebsitesPage() {
           }
         />
       ) : (
-        <ResponsiveTable>
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-muted/50">
-              <tr>
-                <th className="px-4 py-3 text-left font-medium">Name</th>
-                <th className="px-4 py-3 text-left font-medium">PHP Version</th>
-                <th className="px-4 py-3 text-left font-medium">Web Server</th>
-                <th className="px-4 py-3 text-left font-medium">Status</th>
-                <th className="px-4 py-3 text-left font-medium">Disk Usage</th>
-                <th className="px-4 py-3 text-right font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {websites.map((w) => (
-                <tr
-                  key={w.id}
-                  className="border-b border-border last:border-0 hover:bg-accent/50 cursor-pointer"
-                  onClick={() => {
-                    // Navigation will be wired in Phase 8 when router is updated
-                    // For now, this is a placeholder
-                  }}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Server className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium">{w.name}</span>
-                    </div>
-                    <p className="mt-0.5 text-xs text-muted-foreground font-mono truncate max-w-xs">
-                      {w.documentRoot}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {w.phpVersion || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {w.webServer || '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={w.status} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1.5">
-                      <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-muted-foreground">
-                        {w.diskUsedMb != null ? `${w.diskUsedMb} MB` : '—'}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end">
-                      <ActionDropdown
-                        website={w}
-                        onEdit={() => {
-                          // Edit will be handled via detail page navigation
-                        }}
-                        onSuspend={() => setSuspendTarget(w)}
-                        onActivate={() => setActivateTarget(w)}
-                        onDelete={() => setDeleteTarget(w)}
-                      />
-                    </div>
-                  </td>
+        <>
+          <FilterBar
+            statusFilter={statusFilter}
+            setStatusFilter={handleStatusFilterChange}
+            phpFilter={phpFilter}
+            setPhpFilter={handlePhpFilterChange}
+            phpVersions={phpVersions}
+          />
+
+          <ResponsiveTable>
+            <table className="w-full text-sm">
+              <thead className="border-b border-border bg-muted/50">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">Name</th>
+                  <th className="px-4 py-3 text-left font-medium">PHP Version</th>
+                  <th className="px-4 py-3 text-left font-medium">PHP Handler</th>
+                  <th className="px-4 py-3 text-left font-medium">Status</th>
+                  <th className="px-4 py-3 text-left font-medium">Primary Domain</th>
+                  <th className="px-4 py-3 text-left font-medium">Total Domains</th>
+                  <th className="px-4 py-3 text-left font-medium">Disk Usage</th>
+                  <th className="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </ResponsiveTable>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <SkeletonRows />
+                ) : paginatedWebsites.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                      No websites match the current filters
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedWebsites.map((w) => {
+                    // Get primary domain and total domain count from website data
+                    // The website object may have domains attached via API
+                    const primaryDomain = (w as any).primaryDomain || '—';
+                    const totalDomains = (w as any).domains?.length ?? 0;
+                    
+                    return (
+                      <tr
+                        key={w.id}
+                        className="border-b border-border last:border-0 hover:bg-accent/50 cursor-pointer"
+                        onClick={() => {
+                          // Navigation will be wired in Phase 8 when router is updated
+                          // For now, this is a placeholder
+                        }}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <Server className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">{w.name}</span>
+                          </div>
+                          <p className="mt-0.5 text-xs text-muted-foreground font-mono truncate max-w-xs">
+                            {w.documentRoot}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {w.phpVersion || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {w.phpHandler || 'php-fpm'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={w.status} />
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {primaryDomain}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {totalDomains > 0 ? totalDomains : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <DiskUsageBar usedMb={w.diskUsedMb} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex justify-end">
+                            <ActionDropdown
+                              website={w}
+                              onEdit={() => {
+                                // Edit will be handled via detail page navigation
+                              }}
+                              onSuspend={() => setSuspendTarget(w)}
+                              onActivate={() => setActivateTarget(w)}
+                              onDelete={() => setDeleteTarget(w)}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </ResponsiveTable>
+
+          {!isLoading && filteredWebsites.length > itemsPerPage && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPrev={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              onNext={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            />
+          )}
+        </>
       )}
 
       {/* Create Website Modal */}

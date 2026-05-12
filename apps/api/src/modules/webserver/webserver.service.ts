@@ -179,10 +179,14 @@ export class WebServerService {
     const webServer = data.webServer || domain.webServer;
 
     // Regenerate Nginx vhost with new settings
+    const docRoot = domain.documentRoot;
+    if (!docRoot) {
+      throw new AppError(400, 'NO_DOCUMENT_ROOT', 'Cannot update nginx vhost for domain without documentRoot');
+    }
     await nginxService.removeVhost(domain.name).catch(() => {});
     await nginxService.addVhost({
       domain: domain.name,
-      documentRoot: domain.documentRoot,
+      documentRoot: docRoot,
       phpVersion: domain.phpVersion,
       redirectHttpToHttps: domain.redirectHttpToHttps,
       hsts: domain.hsts,

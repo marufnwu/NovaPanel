@@ -208,7 +208,8 @@ export class StatsService {
     if (!domain) throw new Error('Domain not found');
 
     // Get disk usage via du
-    const result = await run('du', ['-sm', domain.documentRoot], { sudo: true });
+    const docRoot = domain.documentRoot || `/var/www/vhosts/${domain.id}`;
+    const result = await run('du', ['-sm', docRoot], { sudo: true });
     const usedMb = parseInt(result.stdout.split('\t')[0], 10) || 0;
 
     return {
@@ -424,10 +425,13 @@ export class StatsService {
           // otherwise derive from documentRoot
           const defaultLogDir = `/var/www/${domain.name}/logs`;
 
+          // For parked/redirect/mail-only domains, documentRoot may be null
+          const docRoot = domain.documentRoot;
+
           // Check if domain's documentRoot is under /var/www/{domain}/
           let logDir: string;
-          if (domain.documentRoot.includes(`/var/www/${domain.name}`)) {
-            logDir = domain.documentRoot.replace(/\/public$/, '/logs').replace(/\/httpdocs$/, '/logs');
+          if (docRoot && docRoot.includes(`/var/www/${domain.name}`)) {
+            logDir = docRoot.replace(/\/public$/, '/logs').replace(/\/httpdocs$/, '/logs');
           } else {
             // Fallback to default path
             logDir = defaultLogDir;

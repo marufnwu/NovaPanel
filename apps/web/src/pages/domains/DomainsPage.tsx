@@ -36,6 +36,7 @@ import {
   useCreateDomainCloudflareRoute,
   useDeleteDomainCloudflareRoute,
   useVerifyDomainDns,
+  useMakePrimaryDomain,
   type DomainDnsVerification,
   type DomainCloudflareDnsRecord,
   type DomainCloudflareSsl,
@@ -49,6 +50,7 @@ import { useServerContext } from '../../api/hooks/settings';
 import { useTunnelRoutes, useCloudflareConfig, useTunnelStatus } from '../../api/hooks/tunnel';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { DomainStatusBadge } from './components/DomainStatusBadge';
+import { DomainTypeBadge } from './components/DomainTypeBadge';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -58,7 +60,7 @@ import {
   Search, Shield, Server, ChevronRight, ArrowLeft, Link2, ArrowRightLeft,
   Edit3, Activity, AlertTriangle, Unplug, Mail, FileText, Info, Cloud,
   Lock, RefreshCw, Zap, ToggleLeft, ToggleRight, XCircle, Waypoints, Save,
-  Globe2, CheckCircle2, Upload,
+  Globe2, CheckCircle2, Upload, Star,
 } from 'lucide-react';
 import type { ApiError } from '../../api/client';
 import type { Domain } from '../../api/hooks/domains';
@@ -1163,6 +1165,11 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
                     <Plus className="h-4 w-4" /> Add
                   </button>
                 </div>
+                {newSubdomain && !subdomainError && (
+                  <p className="text-xs text-muted-foreground">
+                    Will create: <span className="font-mono">{newSubdomain}.{domain.name}</span>
+                  </p>
+                )}
                 {subdomainError && (
                   <p className="text-sm text-destructive">{subdomainError}</p>
                 )}
@@ -2002,6 +2009,8 @@ function ToggleSetting({ label, description, checked, onChange }: {
 // --- Main Page ---
 export function DomainsPage() {
   const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'primary' | 'addon' | 'parked' | 'subdomain' | 'redirect' | 'mail'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended' | 'pending'>('all');
   const { data: domains, isLoading, isError } = useDomains();
   const createDomain = useCreateDomain();
   const deleteDomain = useDeleteDomain();
@@ -2069,10 +2078,13 @@ export function DomainsPage() {
     return <DomainDetail domain={selectedDomain} onBack={() => setSelectedDomain(null)} />;
   }
 
-  // Filter domains by search
-  const filtered = domains?.filter((d) =>
-    d.name.toLowerCase().includes(search.toLowerCase())
-  ) || [];
+  // Filter domains by search and filters
+  const filtered = domains?.filter((d) => {
+    const matchesSearch = d.name.toLowerCase().includes(search.toLowerCase());
+    const matchesType = typeFilter === 'all' || d.type === typeFilter || (typeFilter === 'primary' && d.isPrimary);
+    const matchesStatus = statusFilter === 'all' || d.status === statusFilter;
+    return matchesSearch && matchesType && matchesStatus;
+  }) || [];
 
   const handleCreate = (data: CreateDomainInput) => {
     setCreatedDomain(null);
@@ -2102,6 +2114,8 @@ export function DomainsPage() {
       });
     }
   };
+
+  const makePrimary = useMakePrimaryDomain();
 
   return (
     <div>
@@ -2172,10 +2186,10 @@ export function DomainsPage() {
         />
       )}
 
-      {/* Search */}
+      {/* Search & Filters */}
       {domains && domains.length > 0 && (
-        <div className="mb-4 flex items-center gap-2">
-          <div className="relative flex-1 max-w-sm">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               value={search}
@@ -2184,6 +2198,29 @@ export function DomainsPage() {
               className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="all">All Types</option>
+            <option value="primary">Primary</option>
+            <option value="addon">Addon</option>
+            <option value="parked">Parked</option>
+            <option value="subdomain">Subdomain</option>
+            <option value="redirect">Redirect</option>
+            <option value="mail">Mail-only</option>
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="all">All Status</option>
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+            <option value="pending">Pending</option>
+          </select>
           <span className="text-xs text-muted-foreground">
             {filtered.length} domain{filtered.length !== 1 ? 's' : ''}
           </span>
@@ -2289,8 +2326,15 @@ export function DomainsPage() {
                       {d.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-xs capitalize">{d.type || 'primary'}</span>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <DomainTypeBadge type={d.type || 'primary'} />
+                      {d.isPrimary === true && (
+                        <span className="inline-flex items-center gap-0.5 rounded bg-yellow-500/10 px-1.5 py-0.5 text-[10px] font-medium text-yellow-600 dark:text-yellow-400" title="Primary Domain">
+                          <Star className="h-2.5 w-2.5 fill-yellow-500 text-yellow-500" /> Primary
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     {d.sslEnabled ? (
@@ -2355,6 +2399,18 @@ export function DomainsPage() {
                       >
                         <ChevronRight className="h-4 w-4" />
                       </button>
+                      {d.isPrimary === false && (
+                        <button
+                          onClick={() => makePrimary.mutate(d.id, {
+                            onSuccess: () => toast.success(`${d.name} set as primary`),
+                            onError: (e: Error) => toast.error(e.message || 'Failed to set as primary'),
+                          })}
+                          className="rounded p-1.5 text-muted-foreground hover:bg-yellow-500/10 hover:text-yellow-600"
+                          title="Make Primary"
+                        >
+                          <Star className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

@@ -52,9 +52,11 @@ async function resolveHomeDir(domainId?: string, websiteId?: string): Promise<st
     try {
       const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
       if (domain) {
-        // Use the domain's documentRoot parent as the home dir
-        // e.g., documentRoot = /var/www/vhosts/example.com/httpdocs → homeDir = /var/www/vhosts/example.com
         const docRoot = domain.documentRoot;
+        // For parked/redirect/mail-only domains, documentRoot may be null - use homeDir as fallback
+        if (!docRoot) {
+          return `/var/www/vhosts/${domainId}`;
+        }
         // Strip trailing slash and take parent if it ends with /httpdocs or similar
         const trimmed = docRoot.replace(/\/+$/, '');
         const lastSegment = trimmed.split('/').pop();

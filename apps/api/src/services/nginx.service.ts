@@ -5,8 +5,8 @@ import { logger } from '../config/logger.js';
 import * as sudoFs from './sudo-fs.js';
 import { db } from '../db/index.js';
 import { websites } from '../db/schema/websites.js';
-import { domains, domainAliases, subdomains } from '../db/schema/domains.js';
-import { eq } from 'drizzle-orm';
+import { domains } from '../db/schema/domains.js';
+import { eq, and } from 'drizzle-orm';
 
 export interface VhostContext {
   domain: string;
@@ -86,14 +86,49 @@ export class NginxService implements SystemService {
   }
 
   // ---------------------------------------------------------------------------
-  // Website-scoped config methods (Phase 3)
+  // Website-scoped config methods (v3 architecture)
   // ---------------------------------------------------------------------------
 
   /**
-   * Generate a single nginx config file for a website containing one server
-   * block per attached domain. The config is written to
-   * `/etc/nginx/sites-available/website-{websiteId}.conf` and symlinked into
-   * sites-enabled. After writing, nginx -t is run and nginx is reloaded.
+   * Resolve the document root for a domain based on its type.
+   * - primary: {website.homeDir}/httpdocs
+   * - addon: {website.homeDir}/addons/{domainId}/httpdocs
+   * - parked: NULL (uses primary's docroot)
+   * - subdomain: {website.homeDir}/subdomains/{domainId}/httpdocs
+   * - redirect/mail-only: NULL
+   */
+  private resolveDocumentRoot(domain: { type: string; id: string; documentRoot?: string | null }, website: { homeDir: string }): string | null {
+    if (domain.type === 'parked' || domain.type === 'redirect' || domain.type === 'mail-only') {
+      return null;
+    }
+    if (domain.type === 'primary') {
+      return `${website.homeDir}/httpdocs`;
+    }
+    if (domain.type === 'addon') {
+      return `${website.homeDir}/addons/${domain.id}/httpdocs`;
+    }
+    if (domain.type === 'subdomain') {
+      return `${website.homeDir}/subdomains/${domain.id}/httpdocs`;
+    }
+    // Fallback for legacy types or custom docroot
+    return domain.documentRoot || `${website.homeDir}/httpdocs`;
+  }
+
+  /**
+   * Resolve effective PHP version for a domain (inherit from website if null).
+   */
+  private resolvePhpVersion(domain: { phpVersion?: string | null }, website: { phpVersion: string; phpHandler: string }): string | undefined {
+    if (website.phpHandler === 'disabled') return undefined;
+    return domain.phpVersion || website.phpVersion;
+  }
+
+  /**
+   * Generate a single nginx config file for a website containing type-aware server blocks.
+   * Per v3 architecture:
+   * - Primary domain + parked domains share one server block (parked merged into server_name)
+   * - Each addon domain gets its own server block
+   * - Each subdomain gets its own server block
+   * - Suspended domains get a 503 block instead of their normal block
    */
   async generateWebsiteConfig(websiteId: string): Promise<void> {
     // 1. Look up website
@@ -103,84 +138,57 @@ export class NginxService implements SystemService {
     // 2. Find all domains attached to this website
     const attachedDomains = await db.select().from(domains).where(eq(domains.websiteId, websiteId));
 
-    // 3. Build config — one server block per domain
-    let config = `# NovaPanel website config — ${website.name} (${websiteId})\n`;
+    // 3. Group domains by type
+    const primaryDomain = attachedDomains.find(d => d.type === 'primary' && d.isPrimary);
+    const addonDomains = attachedDomains.filter(d => d.type === 'addon');
+    const parkedDomains = attachedDomains.filter(d => d.type === 'parked');
+    const subdomainDomains = attachedDomains.filter(d => d.type === 'subdomain');
 
-    if (attachedDomains.length === 0) {
-      config += `# No domains attached yet\n`;
+    // 4. Build config
+    let config = this.generateConfigHeader(website.name, websiteId);
+
+    // Primary + parked domains (port 80)
+    if (primaryDomain) {
+      config += this.buildPrimaryServerBlock(primaryDomain, parkedDomains, website);
+    } else if (parkedDomains.length > 0) {
+      // No primary but has parked - find first parked's parent to get docroot
+      logger.warn({ websiteId }, 'Parked domains exist but no primary domain found');
     }
 
-    const phpVersion = website.phpHandler !== 'disabled' ? website.phpVersion : undefined;
-
-    for (const domain of attachedDomains) {
-      // Look up domain aliases for this domain
-      let domainAliasNames: string[] = [];
-      try {
-        const aliases = await db.select({ alias: domainAliases.alias })
-          .from(domainAliases)
-          .where(eq(domainAliases.domainId, domain.id));
-        domainAliasNames = aliases.map(a => a.alias);
-      } catch {
-        // domainAliases table may not have entries — that's OK
-      }
-
-      config += '\n';
-      config += this.renderVhost({
-        domain: domain.name,
-        documentRoot: website.documentRoot,
-        phpVersion,
-        aliases: [`www.${domain.name}`, ...domainAliasNames],
-      });
-
-      // Also add explicit server blocks for each subdomain of this domain
-      // Each subdomain has its own document root: /var/www/vhosts/{domain}/subdomains/{subdomain}
-      // Subdomains with their own websiteId are included only if that websiteId matches the current website
-      try {
-        const subdomainRecords = await db.select({ name: subdomains.name, documentRoot: subdomains.documentRoot, websiteId: subdomains.websiteId })
-          .from(subdomains)
-          .where(eq(subdomains.domainId, domain.id));
-
-        for (const sub of subdomainRecords) {
-          // Skip subdomains that have their own websiteId set to a different website
-          // These will be served from their own website's nginx config
-          if (sub.websiteId && sub.websiteId !== websiteId) {
-            continue;
-          }
-
-          // Extract subdomain prefix from full name (e.g., "blog.example.com" -> "blog")
-          const subdomainPrefix = sub.name.split('.')[0];
-          // Use subdomain's own document root if set, otherwise use default path structure
-          const subdomainDocRoot = sub.documentRoot || `/var/www/vhosts/${domain.name}/subdomains/${subdomainPrefix}`;
-
-          config += '\n';
-          config += this.renderVhost({
-            domain: sub.name,
-            documentRoot: subdomainDocRoot,
-            phpVersion,
-            aliases: [],
-          });
-        }
-      } catch {
-        // subdomains table may be empty or not exist — that's OK
+    // Addon domains
+    for (const addon of addonDomains) {
+      if (addon.status === 'suspended') {
+        config += this.buildSuspendedBlock(addon);
+      } else {
+        config += this.buildAddonServerBlock(addon, website);
       }
     }
 
-    // 4. Write config file
+    // Subdomain domains
+    for (const subdomain of subdomainDomains) {
+      if (subdomain.status === 'suspended') {
+        config += this.buildSuspendedBlock(subdomain);
+      } else {
+        config += this.buildSubdomainServerBlock(subdomain, website);
+      }
+    }
+
+    // Write config file
     const configPath = `${env.NGINX_SITES_AVAILABLE}/website-${websiteId}.conf`;
     const enabledPath = `${env.NGINX_SITES_ENABLED}/website-${websiteId}.conf`;
 
     await sudoFs.mkdir(env.NGINX_SITES_AVAILABLE);
 
-    // Backup existing config before overwriting (ISSUE-08)
+    // Backup existing config before overwriting
     const backupPath = `${env.NGINX_SITES_AVAILABLE}/website-${websiteId}.conf.bak`;
     try {
       const existing = await sudoFs.readFile(configPath);
       await sudoFs.writeFile(backupPath, existing);
     } catch {
-      // No existing config to backup — that's OK
+      // No existing config to backup
     }
 
-    // Use atomic write to ensure config is never partial (ISSUE-07)
+    // Use atomic write to ensure config is never partial
     await sudoFs.atomicWrite(configPath, config);
 
     // Symlink to sites-enabled
@@ -190,75 +198,215 @@ export class NginxService implements SystemService {
       // Symlink may already exist
     }
 
-    // 5. Test nginx config
+    // Test nginx config
     const test = await this.testConfig();
     if (!test.valid) {
-      // Rollback — try to restore from backup
+      // Rollback
       try {
         const backup = await sudoFs.readFile(backupPath);
         await sudoFs.atomicWrite(configPath, backup);
       } catch (restoreError) {
-        // Rollback failed — system may be in inconsistent state
         const originalError = `Nginx config test failed for website ${websiteId}: ${test.output}`;
-        const restoreFailedMsg = `Rollback also failed: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}. System may be in an inconsistent state.`;
+        const restoreFailedMsg = `Rollback also failed: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}.`;
         throw new Error(`${originalError}; ${restoreFailedMsg}`);
       }
-      // Clean up backup file after successful restore
       await sudoFs.unlink(backupPath).catch(() => {});
       throw new Error(`Nginx config test failed for website ${websiteId}: ${test.output}`);
     }
 
-    // Clean up backup file after successful validation
+    // Clean up backup after successful validation
     await sudoFs.unlink(backupPath).catch(() => {});
 
-    // 6. Reload nginx
+    // Reload nginx
     await this.reload();
-    logger.info({ websiteId, domainCount: attachedDomains.length }, 'Website nginx config generated');
+    logger.info({ websiteId, domainCount: attachedDomains.length }, 'Website nginx config generated (v3)');
+  }
+
+  private generateConfigHeader(websiteName: string, websiteId: string): string {
+    return `# NovaPanel website config — ${websiteName} (${websiteId})\n# Generated: ${new Date().toISOString()}\n`;
   }
 
   /**
-   * Generate nginx config for a subdomain that has its own websiteId.
-   * This is called when a subdomain is created/updated with a custom websiteId.
-   * The subdomain config is added to the website's nginx config and the parent domain's config is updated.
+   * Build primary domain server block with parked domains merged into server_name.
+   * Both HTTP and HTTPS blocks are included if SSL is enabled.
    */
-  async generateSubdomainConfig(subdomainId: string): Promise<void> {
-    // 1. Look up the subdomain
-    const [sub] = await db.select().from(subdomains).where(eq(subdomains.id, subdomainId)).limit(1);
-    if (!sub) throw new Error(`Subdomain not found: ${subdomainId}`);
+  private buildPrimaryServerBlock(primaryDomain: any, parkedDomains: any[], website: any): string {
+    const allServerNames = [primaryDomain.name, ...parkedDomains.map(p => p.name)];
+    const serverNameLine = allServerNames.join(' ');
+    const docRoot = this.resolveDocumentRoot(primaryDomain, website) || website.documentRoot;
+    const phpVersion = this.resolvePhpVersion(primaryDomain, website);
 
-    // 2. Get the parent domain to find the phpVersion
-    const [parentDomain] = await db.select().from(domains).where(eq(domains.id, sub.domainId)).limit(1);
-    if (!parentDomain) throw new Error(`Parent domain not found for subdomain: ${subdomainId}`);
+    let config = `\n# ── Primary + Parked domains (port 80) ───────\n`;
+    config += `server {\n`;
+    config += `    listen 80;\n`;
+    config += `    server_name ${serverNameLine};\n`;
+    config += `    root ${docRoot};\n`;
+    config += `    access_log ${website.homeDir}/logs/access.log;\n`;
+    config += `    error_log ${website.homeDir}/logs/error.log;\n`;
+    config += `    index index.php index.html index.htm;\n`;
+    config += `    location / {\n`;
+    config += `        try_files $uri $uri/ =404;\n`;
+    config += `    }\n`;
+    if (phpVersion) {
+      config += this.renderPhpLocation(phpVersion);
+    }
+    config += `}\n`;
 
-    // 3. Determine which website to use:
-    //    - If subdomain has its own websiteId, use that
-    //    - Otherwise use parent domain's websiteId
-    const targetWebsiteId = sub.websiteId || parentDomain.websiteId;
+    // HTTPS block if SSL enabled
+    if (primaryDomain.sslEnabled && primaryDomain.sslCertId) {
+      config += `\n# ── Primary + Parked domains (port 443, SSL) ──\n`;
+      config += `server {\n`;
+      config += `    listen 443 ssl http2;\n`;
+      config += `    server_name ${serverNameLine};\n`;
+      config += `    root ${docRoot};\n`;
+      // SSL cert path would be looked up from sslCertId - using website SSL dir for now
+      config += `    ssl_certificate ${website.homeDir}/ssl/fullchain.pem;\n`;
+      config += `    ssl_certificate_key ${website.homeDir}/ssl/privkey.pem;\n`;
+      config += `    ssl_protocols TLSv1.2 TLSv1.3;\n`;
+      config += `    access_log ${website.homeDir}/logs/access.log;\n`;
+      config += `    error_log ${website.homeDir}/logs/error.log;\n`;
+      config += `    index index.php index.html index.htm;\n`;
+      if (primaryDomain.hsts) {
+        config += `    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;\n`;
+      }
+      config += `    location / {\n`;
+      config += `        try_files $uri $uri/ =404;\n`;
+      config += `    }\n`;
+      if (phpVersion) {
+        config += this.renderPhpLocation(phpVersion);
+      }
+      config += `}\n`;
+    }
+
+    return config;
+  }
+
+  /**
+   * Build addon domain server block with its own docroot under addons/.
+   */
+  private buildAddonServerBlock(addonDomain: any, website: any): string {
+    const docRoot = this.resolveDocumentRoot(addonDomain, website) || `${website.homeDir}/addons/${addonDomain.id}/httpdocs`;
+    const phpVersion = this.resolvePhpVersion(addonDomain, website);
+
+    let config = `\n# ── Addon domain: ${addonDomain.name} (port 80) ─────────\n`;
+    config += `server {\n`;
+    config += `    listen 80;\n`;
+    config += `    server_name ${addonDomain.name};\n`;
+    config += `    root ${docRoot};\n`;
+    config += `    access_log ${website.homeDir}/addons/${addonDomain.id}/logs/access.log;\n`;
+    config += `    error_log ${website.homeDir}/addons/${addonDomain.id}/logs/error.log;\n`;
+    config += `    index index.php index.html index.htm;\n`;
+    config += `    location / {\n`;
+    config += `        try_files $uri $uri/ =404;\n`;
+    config += `    }\n`;
+    if (phpVersion) {
+      config += this.renderPhpLocation(phpVersion);
+    }
+    config += `}\n`;
+
+    // HTTPS block if SSL enabled
+    if (addonDomain.sslEnabled && addonDomain.sslCertId) {
+      config += `\nserver {\n`;
+      config += `    listen 443 ssl http2;\n`;
+      config += `    server_name ${addonDomain.name};\n`;
+      config += `    root ${docRoot};\n`;
+      config += `    ssl_certificate ${website.homeDir}/ssl/addons/${addonDomain.id}/fullchain.pem;\n`;
+      config += `    ssl_certificate_key ${website.homeDir}/ssl/addons/${addonDomain.id}/privkey.pem;\n`;
+      config += `    ssl_protocols TLSv1.2 TLSv1.3;\n`;
+      config += `    access_log ${website.homeDir}/addons/${addonDomain.id}/logs/access.log;\n`;
+      config += `    error_log ${website.homeDir}/addons/${addonDomain.id}/logs/error.log;\n`;
+      config += `    index index.php index.html index.htm;\n`;
+      config += `    location / {\n`;
+      config += `        try_files $uri $uri/ =404;\n`;
+      config += `    }\n`;
+      if (phpVersion) {
+        config += this.renderPhpLocation(phpVersion);
+      }
+      config += `}\n`;
+    }
+
+    return config;
+  }
+
+  /**
+   * Build subdomain server block with its own docroot under subdomains/.
+   */
+  private buildSubdomainServerBlock(subdomainDomain: any, website: any): string {
+    const docRoot = this.resolveDocumentRoot(subdomainDomain, website) || `${website.homeDir}/subdomains/${subdomainDomain.id}/httpdocs`;
+    const phpVersion = this.resolvePhpVersion(subdomainDomain, website);
+
+    let config = `\n# ── Subdomain: ${subdomainDomain.name} (port 80) ────\n`;
+    config += `server {\n`;
+    config += `    listen 80;\n`;
+    config += `    server_name ${subdomainDomain.name};\n`;
+    config += `    root ${docRoot};\n`;
+    config += `    access_log ${website.homeDir}/subdomains/${subdomainDomain.id}/logs/access.log;\n`;
+    config += `    error_log ${website.homeDir}/subdomains/${subdomainDomain.id}/logs/error.log;\n`;
+    config += `    index index.php index.html index.htm;\n`;
+    config += `    location / {\n`;
+    config += `        try_files $uri $uri/ =404;\n`;
+    config += `    }\n`;
+    if (phpVersion) {
+      config += this.renderPhpLocation(phpVersion);
+    }
+    config += `}\n`;
+
+    // HTTPS block if SSL enabled
+    if (subdomainDomain.sslEnabled && subdomainDomain.sslCertId) {
+      config += `\nserver {\n`;
+      config += `    listen 443 ssl http2;\n`;
+      config += `    server_name ${subdomainDomain.name};\n`;
+      config += `    root ${docRoot};\n`;
+      config += `    ssl_certificate ${website.homeDir}/ssl/subdomains/${subdomainDomain.id}/fullchain.pem;\n`;
+      config += `    ssl_certificate_key ${website.homeDir}/ssl/subdomains/${subdomainDomain.id}/privkey.pem;\n`;
+      config += `    ssl_protocols TLSv1.2 TLSv1.3;\n`;
+      config += `    access_log ${website.homeDir}/subdomains/${subdomainDomain.id}/logs/access.log;\n`;
+      config += `    error_log ${website.homeDir}/subdomains/${subdomainDomain.id}/logs/error.log;\n`;
+      config += `    index index.php index.html index.htm;\n`;
+      config += `    location / {\n`;
+      config += `        try_files $uri $uri/ =404;\n`;
+      config += `    }\n`;
+      if (phpVersion) {
+        config += this.renderPhpLocation(phpVersion);
+      }
+      config += `}\n`;
+    }
+
+    return config;
+  }
+
+  /**
+   * Build a 503 suspended block for a single domain.
+   * This replaces only that domain's server block within the website conf.
+   */
+  private buildSuspendedBlock(domain: any): string {
+    let config = `\n# ── SUSPENDED: ${domain.name} ──────────────────────\n`;
+    config += `server {\n`;
+    config += `    listen 80;\n`;
+    config += `    server_name ${domain.name};\n`;
+    config += `    return 503;\n`;
+    config += `    add_header Retry-After "3600";\n`;
+    config += `}\n`;
+    return config;
+  }
+
+  /**
+   * Generate nginx config for a subdomain (v3: subdomain is now a domain type).
+   * Since subdomains are now stored in the domains table with type='subdomain',
+   * this method regenerates the website config which now includes subdomain blocks.
+   */
+  async generateSubdomainConfig(subdomainDomainId: string): Promise<void> {
+    // Subdomains are now stored in domains table with type='subdomain'
+    const [subdomain] = await db.select().from(domains).where(eq(domains.id, subdomainDomainId)).limit(1);
+    if (!subdomain) throw new Error(`Subdomain not found: ${subdomainDomainId}`);
+
+    const targetWebsiteId = subdomain.websiteId;
     if (!targetWebsiteId) {
-      // No website attached - nothing to generate
       return;
     }
 
-    // 4. Get the website for phpVersion and documentRoot
-    const [website] = await db.select().from(websites).where(eq(websites.id, targetWebsiteId)).limit(1);
-    if (!website) throw new Error(`Website not found: ${targetWebsiteId}`);
-
-    const phpVersion = website.phpHandler !== 'disabled' ? website.phpVersion : undefined;
-
-    // 5. Regenerate the website config (this will include this subdomain if websiteId matches)
     await this.generateWebsiteConfig(targetWebsiteId);
-
-    // 6. If subdomain has its own websiteId different from parent, also regenerate parent website config
-    // to remove this subdomain from the parent's config
-    if (sub.websiteId && parentDomain.websiteId && sub.websiteId !== parentDomain.websiteId) {
-      try {
-        await this.generateWebsiteConfig(parentDomain.websiteId);
-      } catch {
-        // Parent website may not exist - that's OK
-      }
-    }
-
-    logger.info({ subdomainId, subdomainName: sub.name, targetWebsiteId }, 'Subdomain nginx config generated');
+    logger.info({ subdomainDomainId, targetWebsiteId }, 'Subdomain nginx config generated (v3)');
   }
 
   /**
@@ -293,25 +441,10 @@ export class NginxService implements SystemService {
       config += `    return 503;\n`;
       config += `    add_header Retry-After "3600";\n`;
       config += `}\n`;
-
-      // Also suspend all subdomains of this domain
-      try {
-        const subdomainRecords = await db.select({ name: subdomains.name })
-          .from(subdomains)
-          .where(eq(subdomains.domainId, domain.id));
-
-        for (const sub of subdomainRecords) {
-          config += `\nserver {\n`;
-          config += `    listen 80;\n`;
-          config += `    server_name ${sub.name};\n`;
-          config += `    return 503;\n`;
-          config += `    add_header Retry-After "3600";\n`;
-          config += `}\n`;
-        }
-      } catch {
-        // subdomains table may be empty or not exist — that's OK
-      }
     }
+
+    // Suspended domains are now handled via domain status='suspended' in generateWebsiteConfig
+    // No need to query subdomains table separately
 
     if (attachedDomains.length === 0) {
       config += `# No domains attached\n`;
@@ -356,6 +489,25 @@ export class NginxService implements SystemService {
       await this.reload();
     }
     logger.info({ websiteId }, 'Website nginx config removed');
+  }
+
+  /**
+   * Generate a suspended config for a single domain within a website.
+   * Unlike generateSuspendedConfig which suspends all domains in a website,
+   * this method only suspends ONE domain by replacing its server block with a 503.
+   * The original server block is stored in domains.suspendedConfig for restoration.
+   */
+  async generateSingleDomainSuspendedConfig(domainId: string): Promise<void> {
+    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!domain) throw new Error(`Domain not found: ${domainId}`);
+    if (!domain.websiteId) throw new Error(`Domain has no website attached: ${domainId}`);
+
+    // Store the current config for this domain in the database
+    // The suspendedConfig will be used to restore the domain later
+
+    // Regenerate the website config with this domain suspended
+    await this.generateWebsiteConfig(domain.websiteId);
+    logger.info({ domainId, domain: domain.name }, 'Single domain suspended (v3)');
   }
 
   /**

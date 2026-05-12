@@ -5,7 +5,8 @@ export const websites = sqliteTable('websites', {
   id: text('id').primaryKey(),                    // nanoid, e.g., 'ws_abc123'
   name: text('name').notNull(),                   // Human label: "Main Site"
   systemUser: text('system_user').notNull().unique(), // OS user: sf_abc123
-  documentRoot: text('document_root').notNull(),   // /var/www/sites/ws_abc123/httpdocs
+  homeDir: text('home_dir').notNull(),            // /var/www/sites/ws_abc123 (website root)
+  documentRoot: text('document_root').notNull(),  // /var/www/sites/ws_abc123/httpdocs (primary docroot)
   phpVersion: text('php_version').default('8.2').notNull(),
   phpHandler: text('php_handler', { enum: ['php-fpm', 'cgi', 'disabled'] }).default('php-fpm').notNull(),
   webServer: text('web_server', { enum: ['nginx', 'apache', 'nginx+apache'] }).default('nginx+apache').notNull(),

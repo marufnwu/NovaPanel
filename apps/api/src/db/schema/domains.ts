@@ -5,8 +5,8 @@ import { websites } from './websites.js';
 export const domains = sqliteTable('domains', {
   id: text('id').primaryKey(),
   name: text('name').notNull().unique(),
-  documentRoot: text('document_root').notNull(),
-  systemUser: text('system_user'),                          // OS system user for this domain
+  documentRoot: text('document_root'),                  // nullable: parked/redirect/mail-only have no docroot
+  systemUser: text('system_user'),                     // OS system user for this domain
   phpVersion: text('php_version').default('8.2').notNull(),
   phpHandler: text('php_handler', { enum: ['php-fpm', 'cgi', 'disabled'] }).default('php-fpm').notNull(),
   webServer: text('web_server', { enum: ['nginx', 'apache', 'nginx+apache'] }).default('nginx+apache').notNull(),
@@ -19,11 +19,20 @@ export const domains = sqliteTable('domains', {
   status: text('status', { enum: ['active', 'suspended', 'pending'] }).default('active').notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 
-  // --- New columns for domain/website separation (Phase 1) ---
-  type: text('type', { enum: ['primary', 'subdomain', 'alias', 'redirect', 'parked', 'mail-only'] }).default('primary').notNull(),
+  // --- Domain/website separation (Phase 1) ---
+  type: text('type', { enum: ['primary', 'addon', 'parked', 'subdomain', 'redirect', 'mail-only'] }).default('primary').notNull(),
   websiteId: text('website_id').references(() => websites.id, { onDelete: 'set null' }),
+  parentDomainId: text('parent_domain_id'),           // subdomain → parent domain; parked → domain it mirrors
+
+  // Primary flag — at most one primary per website (enforced at service layer)
+  isPrimary: integer('is_primary', { mode: 'boolean' }).default(false).notNull(),
+
+  // Redirect config (type = redirect only)
   redirectTarget: text('redirect_target'),
-  parentDomainId: text('parent_domain_id'),
+
+  // Suspension storage — when single domain is suspended, its normal server
+  // block content is stored here so it can be restored without file-level backup
+  suspendedConfig: text('suspended_config'),
 });
 
 export const subdomains = sqliteTable('subdomains', {

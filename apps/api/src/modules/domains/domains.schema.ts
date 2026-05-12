@@ -10,7 +10,7 @@ const domainNameSchema = z.string()
 
 export const createDomainSchema = z.object({
   name: domainNameSchema,
-  type: z.enum(['primary', 'subdomain', 'alias', 'redirect']).default('primary'),
+  type: z.enum(['primary', 'addon', 'parked', 'subdomain', 'redirect', 'mail-only']).default('primary'),
   parentDomainId: z.string().optional(),
   redirectTarget: z.string().optional(),
   websiteMode: z.enum(['none', 'create', 'existing']).default('create'),

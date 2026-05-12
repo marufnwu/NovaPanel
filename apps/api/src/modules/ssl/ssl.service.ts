@@ -130,11 +130,21 @@ export class SslService {
       }
     } else {
       // HTTP-01 challenge (standalone/webroot)
+      const docRoot = domain.documentRoot;
+      if (!docRoot) {
+        throw new StructuredError(
+          422,
+          'SSL_NO_DOC_ROOT',
+          'Cannot issue certificate for domain without documentRoot',
+          'Domain has no documentRoot set - parked/redirect/mail-only domains cannot use HTTP-01 challenge',
+          'Use DNS-01 challenge instead, or set a documentRoot for this domain',
+        );
+      }
       try {
         paths = await certbotService.issueCertificate(
           domain.name,
           email,
-          domain.documentRoot,
+          docRoot,
         );
       } catch (error) {
         if (error instanceof StructuredError) throw error;
@@ -184,9 +194,10 @@ export class SslService {
     }
 
     // Re-generate Nginx vhost with SSL
+    const docRoot = domain.documentRoot || `${env.VHOSTS_ROOT}/${domain.name}/public`;
     const vhostCtx: VhostContext = {
       domain: domain.name,
-      documentRoot: domain.documentRoot,
+      documentRoot: docRoot,
       phpVersion: domain.phpVersion,
       ssl: {
         certPath: paths.certPath,
@@ -286,9 +297,10 @@ export class SslService {
     }
 
     // Re-generate Nginx vhost with SSL
+    const docRoot = domain.documentRoot || `${env.VHOSTS_ROOT}/${domain.name}/public`;
     const vhostCtx: VhostContext = {
       domain: domain.name,
-      documentRoot: domain.documentRoot,
+      documentRoot: docRoot,
       phpVersion: domain.phpVersion,
       ssl: {
         certPath,
@@ -352,7 +364,7 @@ export class SslService {
 
     const vhostCtx: VhostContext = {
       domain: domain.name,
-      documentRoot: domain.documentRoot,
+      documentRoot: domain.documentRoot || `${env.VHOSTS_ROOT}/${domain.name}/public`,
       phpVersion: domain.phpVersion,
       ssl: {
         certPath: paths.certPath,
@@ -402,9 +414,10 @@ export class SslService {
     await nginxService.removeVhost(domain.name);
 
     // Regenerate HTTP-only vhost
+    const docRoot = domain.documentRoot || `${env.VHOSTS_ROOT}/${domain.name}/public`;
     const vhostCtx: VhostContext = {
       domain: domain.name,
-      documentRoot: domain.documentRoot,
+      documentRoot: docRoot,
       phpVersion: domain.phpVersion,
       aliases: [`www.${domain.name}`],
     };

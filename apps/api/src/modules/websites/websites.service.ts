@@ -168,6 +168,7 @@ export class WebsitesService {
         id: websiteId,
         name,
         systemUser,
+        homeDir: siteDir,
         documentRoot,
         phpVersion,
         phpHandler: phpHandler as any,

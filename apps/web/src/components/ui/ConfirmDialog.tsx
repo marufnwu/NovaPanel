@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { AlertTriangle, AlertCircle, Info, X } from 'lucide-react';
 
 interface ConfirmDialogProps {
@@ -6,7 +7,7 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   title: string;
-  message: string;
+  message: ReactNode;
   confirmText?: string;
   cancelText?: string;
   variant?: 'danger' | 'warning' | 'info';
@@ -48,6 +49,7 @@ export function ConfirmDialog({
   const [typedValue, setTypedValue] = useState('');
   const dialogRef = useRef<HTMLDivElement>(null);
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
+  const cancelBtnRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const typingMatches = requireTyping ? typedValue === requireTyping : true;
@@ -87,9 +89,13 @@ export function ConfirmDialog({
     document.body.style.overflow = 'hidden';
 
     // Auto-focus first interactive element
+    // For dangerous/warning actions, focus Cancel to prevent accidental confirmation
+    // For info actions, focus Confirm (default behavior)
     const timer = setTimeout(() => {
       if (requireTyping && inputRef.current) {
         inputRef.current.focus();
+      } else if (variant === 'danger' || variant === 'warning') {
+        if (cancelBtnRef.current) cancelBtnRef.current.focus();
       } else if (confirmBtnRef.current) {
         confirmBtnRef.current.focus();
       }
@@ -130,9 +136,9 @@ export function ConfirmDialog({
             <h2 id="confirm-dialog-title" className="text-lg font-semibold text-foreground">
               {title}
             </h2>
-            <p id="confirm-dialog-description" className="mt-1 text-sm text-muted-foreground">
+            <div id="confirm-dialog-description" className="mt-1 text-sm text-muted-foreground">
               {message}
-            </p>
+            </div>
           </div>
           <button
             onClick={onCancel}
@@ -162,6 +168,7 @@ export function ConfirmDialog({
 
         <div className="flex justify-end gap-2">
           <button
+            ref={cancelBtnRef}
             onClick={onCancel}
             className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent transition-colors"
           >

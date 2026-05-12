@@ -173,7 +173,7 @@ export class InstallerService {
   /**
    * Get domain info from domain name
    */
-  private async getDomainInfo(domainName: string): Promise<{ documentRoot: string; phpVersion: string; websiteId: string | null } | null> {
+  private async getDomainInfo(domainName: string): Promise<{ documentRoot: string | null; phpVersion: string; websiteId: string | null } | null> {
     try {
       const { domains } = await import('../../db/schema/domains.js');
       const { eq } = await import('drizzle-orm');

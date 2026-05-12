@@ -137,10 +137,14 @@ export class PhpService {
     await db.update(domains).set({ phpVersion }).where(eq(domains.id, domainId));
 
     // Regenerate nginx vhost with new PHP version
+    const docRoot = domain.documentRoot;
+    if (!docRoot) {
+      throw new AppError(400, 'NO_DOCUMENT_ROOT', 'Cannot configure nginx for domain without documentRoot');
+    }
     await nginxService.removeVhost(domain.name).catch(() => {});
     await nginxService.addVhost({
       domain: domain.name,
-      documentRoot: domain.documentRoot,
+      documentRoot: docRoot,
       phpVersion,
       aliases: [`www.${domain.name}`],
     });
@@ -176,8 +180,13 @@ export class PhpService {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
+    const docRoot = domain.documentRoot;
+    if (!docRoot) {
+      throw new AppError(400, 'NO_DOCUMENT_ROOT', 'Cannot update pool settings for domain without documentRoot');
+    }
+
     // Render pool config
-    const poolConf = this.renderPoolConfig(domain.name, domain.documentRoot, domain.phpVersion, settings);
+    const poolConf = this.renderPoolConfig(domain.name, docRoot, domain.phpVersion, settings);
     const poolPath = `/etc/php/${domain.phpVersion}/fpm/pool.d/${domain.name}.conf`;
     await sudoFs.writeFile(poolPath, poolConf);
 

@@ -242,7 +242,7 @@ export class DomainsService {
    */
   async create(data: {
     name: string;
-    type?: 'primary' | 'subdomain' | 'alias' | 'redirect';
+    type?: 'primary' | 'addon' | 'parked' | 'subdomain' | 'redirect' | 'mail-only';
     parentDomainId?: string;
     redirectTarget?: string;
     websiteMode?: 'none' | 'create' | 'existing';
@@ -412,17 +412,11 @@ export class DomainsService {
 
     await db.update(domains).set(updateData).where(eq(domains.id, id));
 
-    // Regenerate vhost if web settings changed
-    if (data.phpVersion || data.phpHandler || data.webServer || data.redirectHttpToHttps !== undefined || data.hsts !== undefined) {
-      await nginxService.removeVhost(domain.name).catch(() => {});
-      await nginxService.addVhost({
-        domain: domain.name,
-        documentRoot: domain.documentRoot,
-        phpVersion: data.phpVersion || domain.phpVersion,
-        redirectHttpToHttps: data.redirectHttpToHttps ?? domain.redirectHttpToHttps,
-        hsts: data.hsts ?? domain.hsts,
-        aliases: [`www.${domain.name}`],
-      }).catch(() => {});
+    // Regenerate website config if web settings changed (v3: use website-scoped config)
+    if (domain.websiteId && (data.phpVersion || data.phpHandler || data.webServer || data.redirectHttpToHttps !== undefined || data.hsts !== undefined)) {
+      await nginxService.generateWebsiteConfig(domain.websiteId).catch((e) => {
+        logger.warn({ err: e, websiteId: domain.websiteId }, 'Failed to regenerate website config during domain update');
+      });
     }
 
     logger.info({ domainId: id }, 'Domain updated');
@@ -599,35 +593,26 @@ export class DomainsService {
 
   /**
    * Suspend a domain (return 503).
-   * Backs up the original nginx config before overwriting.
+   * Uses the website-scoped config - the domain's server block is replaced
+   * with a 503 block within the website conf.
    */
   async suspend(id: string, userId?: string, ipAddress?: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, id)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    const vhostPath = `${env.NGINX_SITES_AVAILABLE}/${domain.name}.conf`;
-    const backupPath = `${env.NGINX_SITES_AVAILABLE}/${domain.name}.conf.suspended`;
+    // Update status to suspended
+    await db.update(domains).set({ status: 'suspended' }).where(eq(domains.id, id));
 
-    // Backup original config BEFORE overwriting
-    try {
-      const original = await sudoFs.readFile(vhostPath);
-      await sudoFs.writeFile(backupPath, original);
-    } catch (e: any) {
-      logger.warn({ err: e, domain: domain.name }, 'Could not backup vhost config before suspend');
+    // Regenerate the website config with this domain getting a 503 block
+    if (domain.websiteId) {
+      try {
+        await nginxService.generateWebsiteConfig(domain.websiteId);
+      } catch (e) {
+        logger.warn({ err: e, domainId: id }, 'Failed to regenerate website config during suspend');
+      }
     }
 
-    // Write 503 maintenance config
-    const maintenanceConfig = `server {
-    listen 80;
-    server_name ${domain.name} www.${domain.name};
-    return 503;
-    add_header Retry-After "3600";
-}`;
-    await sudoFs.writeFile(vhostPath, maintenanceConfig);
-    await nginxService.reload();
-
-    await db.update(domains).set({ status: 'suspended' }).where(eq(domains.id, id));
-    logger.info({ domainId: id }, 'Domain suspended');
+    logger.info({ domainId: id }, 'Domain suspended (v3)');
 
     auditService.log({
       userId,
@@ -639,37 +624,25 @@ export class DomainsService {
 
   /**
    * Activate a suspended domain.
-   * Restores the original nginx config from backup if available,
-   * otherwise regenerates from DB fields.
+   * Regenerates the website config to restore the domain's normal server block.
    */
   async activate(id: string, userId?: string, ipAddress?: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, id)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    const vhostPath = `${env.NGINX_SITES_AVAILABLE}/${domain.name}.conf`;
-    const backupPath = `${env.NGINX_SITES_AVAILABLE}/${domain.name}.conf.suspended`;
-
-    // Try to restore from backup first
-    let restored = false;
-    try {
-      const backup = await sudoFs.readFile(backupPath);
-      await sudoFs.writeFile(vhostPath, backup);
-      // Clean up backup file
-      await run('rm', ['-f', backupPath], { sudo: true });
-      restored = true;
-    } catch {
-      // Backup doesn't exist or can't be read — fall through to regeneration
-    }
-
-    // Fallback: regenerate vhost config from DB fields
-    if (!restored) {
-      await this.regenerateVhost(domain);
-    }
-
-    await nginxService.reload();
-
+    // Update status to active
     await db.update(domains).set({ status: 'active' }).where(eq(domains.id, id));
-    logger.info({ domainId: id, restoredFromBackup: restored }, 'Domain activated');
+
+    // Regenerate the website config (removes 503 block, restores normal block)
+    if (domain.websiteId) {
+      try {
+        await nginxService.generateWebsiteConfig(domain.websiteId);
+      } catch (e) {
+        logger.warn({ err: e, domainId: id }, 'Failed to regenerate website config during activate');
+      }
+    }
+
+    logger.info({ domainId: id }, 'Domain activated (v3)');
 
     auditService.log({
       userId,
@@ -685,10 +658,87 @@ export class DomainsService {
   private async regenerateVhost(domain: any): Promise<void> {
     await nginxService.addVhost({
       domain: domain.name,
-      documentRoot: domain.documentRoot,
+      documentRoot: domain.documentRoot || '/var/www/html',
       phpVersion: domain.phpVersion,
       aliases: [`www.${domain.name}`],
     });
+  }
+
+  /**
+   * Make a domain the primary domain of its website.
+   * Demotes the current primary to addon, promotes target to primary.
+   * Reparents parked domains to the new primary.
+   */
+  async makePrimary(domainId: string, userId?: string, ipAddress?: string) {
+    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+
+    // Can only make addon domains primary (not subdomain, parked, redirect, mail-only)
+    if (domain.type !== 'addon') {
+      throw new AppError(422, 'INVALID_DOMAIN_TYPE', 'Only addon domains can be promoted to primary');
+    }
+
+    if (!domain.websiteId) {
+      throw new AppError(422, 'NO_WEBSITE_ATTACHED', 'Domain must be attached to a website');
+    }
+
+    // Find current primary domain (if any)
+    const [currentPrimary] = await db.select().from(domains)
+      .where(and(
+        eq(domains.websiteId, domain.websiteId),
+        eq(domains.isPrimary, true)
+      ))
+      .limit(1);
+
+    // Find all parked domains that reference the current primary
+    const parkedDomains: any[] = [];
+    if (currentPrimary) {
+      const parked = await db.select().from(domains)
+        .where(and(
+          eq(domains.websiteId, domain.websiteId),
+          eq(domains.type, 'parked'),
+          eq(domains.parentDomainId, currentPrimary.id)
+        ));
+      parkedDomains.push(...parked);
+    }
+
+    // Update current primary: demote to addon
+    if (currentPrimary) {
+      await db.update(domains).set({
+        isPrimary: false,
+        type: 'addon',
+      }).where(eq(domains.id, currentPrimary.id));
+    }
+
+    // Update target domain: promote to primary
+    await db.update(domains).set({
+      isPrimary: true,
+      type: 'primary',
+    }).where(eq(domains.id, domainId));
+
+    // Reparent parked domains to new primary
+    for (const parked of parkedDomains) {
+      await db.update(domains).set({
+        parentDomainId: domainId,
+      }).where(eq(domains.id, parked.id));
+    }
+
+    // Regenerate website config
+    try {
+      await nginxService.generateWebsiteConfig(domain.websiteId);
+    } catch (e) {
+      logger.warn({ err: e, websiteId: domain.websiteId }, 'Failed to regenerate website config after makePrimary');
+    }
+
+    logger.info({ domainId, domain: domain.name, websiteId: domain.websiteId }, 'Domain promoted to primary (v3)');
+
+    auditService.log({
+      userId,
+      action: 'domain.makePrimary',
+      resource: `domain:${domain.name}`,
+      details: JSON.stringify({ domainId, previousPrimaryId: currentPrimary?.id, websiteId: domain.websiteId }),
+      ipAddress,
+    }).catch(err => logger.error({ err }, 'Audit log failed'));
   }
 
   // --- Subdomain CRUD ---
