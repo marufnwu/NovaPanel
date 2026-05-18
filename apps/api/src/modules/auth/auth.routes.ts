@@ -73,19 +73,27 @@ export default async function authRoutes(fastify: FastifyInstance) {
         throw err;
       }
       console.error('[AUTH] Login attempt for username:', username);
+      let result;
       try {
-        const result = await authService.login(username, password, rememberMe, req.ip);
+        result = await authService.login(username, password, rememberMe, req.ip);
         console.error('[AUTH] Login success, result keys:', Object.keys(result));
+      } catch (err) {
+        console.error('[AUTH] Login error caught in handler:', err, 'Error constructor:', err?.constructor?.name);
+        throw err;
+      }
 
-        if ('requiresTwoFactor' in result) {
-          return reply.send({
-            success: true,
-            data: { requiresTwoFactor: true, tempToken: result.tempToken },
-          });
-        }
+      if ('requiresTwoFactor' in result) {
+        console.error('[AUTH] 2FA required');
+        return reply.send({
+          success: true,
+          data: { requiresTwoFactor: true, tempToken: result.tempToken },
+        });
+      }
 
-        // Set session cookie
-        const isRemember = rememberMe || false;
+      // Set session cookie
+      console.error('[AUTH] Setting session cookie');
+      const isRemember = rememberMe || false;
+      try {
         reply.setCookie('sf_session', result.sessionId, {
           httpOnly: true,
           secure: req.protocol === 'https',
@@ -93,12 +101,13 @@ export default async function authRoutes(fastify: FastifyInstance) {
           path: '/',
           maxAge: isRemember ? 30 * 24 * 60 * 60 : 2 * 60 * 60, // 30 days or 2 hours
         });
-
-        return reply.send({ success: true, data: result });
-      } catch (err) {
-        console.error('[AUTH] Login error caught in handler:', err, 'Error constructor:', err?.constructor?.name);
-        throw err;
+        console.error('[AUTH] Cookie set successfully');
+      } catch (cookieErr) {
+        console.error('[AUTH] Cookie set error:', cookieErr);
       }
+
+      console.error('[AUTH] Sending reply');
+      return reply.send({ success: true, data: result });
     },
   });
 
