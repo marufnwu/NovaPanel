@@ -149,6 +149,9 @@ export async function createServer() {
     }
 
     // Unexpected errors
+    const err = error as Error;
+    console.error('[SERVER] Unexpected error type:', err?.constructor?.name, 'message:', err?.message, 'stack:', err?.stack);
+    console.error('[SERVER] Error keys:', Object.keys(error || {}));
     logger.error({ error, url: req.url, method: req.method }, 'Unhandled error');
     return reply.status(500).send({
       success: false,
