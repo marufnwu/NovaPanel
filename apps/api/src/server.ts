@@ -68,6 +68,7 @@ export async function createServer() {
   // Handle empty JSON bodies (Content-Type: application/json with Content-Length: 0)
   fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
     const bodyStr = typeof body === 'string' ? body : body.toString();
+    console.error('[JSON PARSER] Raw body:', JSON.stringify(bodyStr));
     if (!bodyStr || bodyStr.trim() === '') {
       done(null, {});
       return;
@@ -75,7 +76,9 @@ export async function createServer() {
     try {
       done(null, JSON.parse(bodyStr));
     } catch (err) {
-      done(err as Error | null);
+      const error = err as Error;
+      console.error('[JSON PARSER] Parse error:', error.message);
+      done(error);
     }
   });
 
