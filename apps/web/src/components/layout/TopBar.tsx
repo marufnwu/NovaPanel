@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+﻿import { useState, useRef, useEffect } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useAuthStore } from '../../store/auth.store';
 import { useLogout } from '../../api/hooks/auth';
 import { useUnreadCount, useNotifications, useMarkAsRead, useMarkAllAsRead, type Notification } from '../../api/hooks/notifications';
-import { LogOut, Settings, ShieldCheck, Bell, CheckCheck, X, Shield, AlertTriangle, Server, Clock, Database, HardDrive } from 'lucide-react';
+import { useJobNotifications } from '../jobs/JobNotificationProvider';
+import { LogOut, Settings, ShieldCheck, Bell, CheckCheck, X, Shield, AlertTriangle, Server, Clock, Database, HardDrive, Activity } from 'lucide-react';
 import { ThemeToggle } from '../ui/ThemeToggle';
 
 const NOTIFICATION_ICONS: Record<string, typeof Bell> = {
@@ -82,11 +83,11 @@ export function TopBar() {
   const { data: notifData } = useNotifications(5, 0, { refetchInterval: 30_000 });
   const markRead = useMarkAsRead();
   const markAllRead = useMarkAllAsRead();
+  const { runningCount } = useJobNotifications();
 
   const unreadCount = unreadData?.count || 0;
   const recentNotifications = notifData?.notifications || [];
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -105,8 +106,18 @@ export function TopBar() {
     <header className="flex h-14 items-center justify-between border-b border-border bg-card px-6">
       <div />
       <div className="flex items-center gap-3">
-        {/* Theme Toggle */}
         <ThemeToggle />
+
+        {/* Active Jobs Badge */}
+        {runningCount > 0 && (
+          <div
+            className="flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+            title={`${runningCount} active background job(s)`}
+          >
+            <Activity className="h-3.5 w-3.5 animate-pulse" />
+            <span>{runningCount} job{runningCount !== 1 ? 's' : ''}</span>
+          </div>
+        )}
 
         {/* Notification Bell */}
         <div className="relative" ref={dropdownRef}>
@@ -123,10 +134,8 @@ export function TopBar() {
             )}
           </button>
 
-          {/* Notification Dropdown Panel */}
           {showNotifications && (
             <div className="absolute right-0 top-full mt-2 w-96 rounded-lg border border-border bg-card shadow-lg z-50">
-              {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                 <h3 className="text-sm font-semibold">Notifications</h3>
                 <div className="flex items-center gap-2">
@@ -147,7 +156,6 @@ export function TopBar() {
                 </div>
               </div>
 
-              {/* Notification List */}
               <div className="max-h-80 overflow-y-auto">
                 {recentNotifications.length === 0 ? (
                   <div className="px-4 py-8 text-center">
@@ -165,7 +173,6 @@ export function TopBar() {
                 )}
               </div>
 
-              {/* Footer */}
               {recentNotifications.length > 0 && (
                 <div className="border-t border-border px-4 py-2">
                   <Link

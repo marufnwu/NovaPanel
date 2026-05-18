@@ -5,6 +5,7 @@ import { useServerContext } from '../../api/hooks/settings';
 import { useTunnelStatus } from '../../api/hooks/tunnel';
 import {
   useSslCertificates,
+  useExpiringCerts,
   useIssueLetsEncrypt,
   useUploadCustomCert,
   useGenerateSelfSigned,
@@ -22,11 +23,13 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { ActionDropdown } from '../../components/ui/ActionDropdown';
+import { toast } from '../../lib/toast';
 import {
   ShieldCheck, Plus, Trash2, RefreshCw, Download, Lock,
   FileText, Key, Link2, ChevronLeft, X, AlertTriangle,
   CheckCircle2, XCircle, Clock, Shield, Search, Globe,
-  Zap, Eye, Copy, AlertCircle, Info, ChevronDown, ChevronUp,
+  Zap, Eye, Copy, AlertCircle, Info, ChevronDown, ChevronUp, MoreVertical,
 } from 'lucide-react';
 import type { SslCertificate, ChainValidationResult, MixedContentResult } from '../../api/hooks/ssl';
 
@@ -1070,7 +1073,7 @@ function CertDetail({ cert, onBack }: { cert: SslCertificate; onBack: () => void
         message={`This will remove the SSL certificate for '${cert.domain}'. The site will become inaccessible via HTTPS. This cannot be undone.`}
         variant="danger"
         confirmText="Remove Certificate"
-        onConfirm={() => deleteCert.mutate(cert.domainId, { onSuccess: onBack })}
+        onConfirm={() => deleteCert.mutate(cert.domainId)}
         onCancel={() => setShowDeleteConfirm(false)}
       />
     </div>
@@ -1083,9 +1086,13 @@ function CertDetail({ cert, onBack }: { cert: SslCertificate; onBack: () => void
 export function SslPage() {
   const { data: domains } = useDomains();
   const { data: certs, isLoading, isError, refetch } = useSslCertificates();
+  const { data: expiringCerts } = useExpiringCerts(30);
+  const renewCertificate = useRenewCertificate();
   const [showIssue, setShowIssue] = useState(false);
   const [selectedCert, setSelectedCert] = useState<SslCertificate | null>(null);
   const [search, setSearch] = useState('');
+  const [view, setView] = useState<'all' | 'expiring'>('all');
+  const [renewTarget, setRenewTarget] = useState<SslCertificate | null>(null);
 
   if (isLoading) return <LoadingSpinner />;
 
@@ -1113,7 +1120,8 @@ export function SslPage() {
     return <CertDetail cert={selectedCert} onBack={() => setSelectedCert(null)} />;
   }
 
-  const filtered = (certs || []).filter((c: SslCertificate) =>
+  const displayCerts = view === 'expiring' ? (expiringCerts || []) : (certs || []);
+  const filtered = displayCerts.filter((c: SslCertificate) =>
     c.domain.toLowerCase().includes(search.toLowerCase()),
   );
 
@@ -1132,6 +1140,25 @@ export function SslPage() {
         }
       />
 
+      {/* Tab Bar */}
+      {expiringCerts && expiringCerts.length > 0 && (
+        <div className="mb-4 flex items-center gap-1 rounded-lg border border-border bg-card p-1 w-fit">
+          <button
+            onClick={() => setView('all')}
+            className={`rounded px-4 py-1.5 text-sm font-medium transition-colors ${view === 'all' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+          >
+            All Certificates
+          </button>
+          <button
+            onClick={() => setView('expiring')}
+            className={`rounded px-4 py-1.5 text-sm font-medium transition-colors flex items-center gap-2 ${view === 'expiring' ? 'bg-red-600 text-white' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+          >
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Expiring Soon ({expiringCerts.length})
+          </button>
+        </div>
+      )}
+
       {/* Search */}
       {certs && certs.length > 0 && (
         <div className="mb-4">
@@ -1145,20 +1172,26 @@ export function SslPage() {
       )}
 
       {/* Empty state */}
-      {!certs?.length ? (
+      {!displayCerts.length ? (
         <EmptyState
           icon={ShieldCheck}
-          title="No certificates"
-          description="Issue your first SSL certificate to secure your domains."
+          title={view === 'expiring' ? 'No expiring certificates' : 'No certificates'}
+          description={view === 'expiring' ? 'All your certificates are healthy.' : 'Issue your first SSL certificate to secure your domains.'}
           action={
-            <button
-              onClick={() => setShowIssue(true)}
-              className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              <Plus className="h-4 w-4" /> Issue Certificate
-            </button>
+            view === 'all' ? (
+              <button
+                onClick={() => setShowIssue(true)}
+                className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                <Plus className="h-4 w-4" /> Issue Certificate
+              </button>
+            ) : undefined
           }
         />
+      ) : filtered.length === 0 && view === 'expiring' ? (
+        <div className="py-12 text-center text-muted-foreground">
+          No expiring certificates in your search results.
+        </div>
       ) : filtered.length === 0 ? (
         <div className="py-12 text-center text-muted-foreground">
           No certificates match your search.
@@ -1171,31 +1204,39 @@ export function SslPage() {
             const isExpiring = daysLeft !== null && daysLeft > 0 && daysLeft <= 30;
 
             const statusColor = isExpired
-              ? 'border-red-500/30 bg-red-500/5'
-              : isExpiring
-                ? 'border-yellow-500/30 bg-yellow-500/5'
-                : 'border-border bg-card';
+              ? 'border-red-500/50 bg-red-500/10'
+              : daysLeft !== null && daysLeft <= 7
+                ? 'border-red-500/50 bg-red-500/10'
+                : isExpiring
+                  ? 'border-yellow-500/30 bg-yellow-500/5'
+                  : 'border-border bg-card';
 
-            const badgeColor = isExpired
+            const badgeColor = isExpired || (daysLeft !== null && daysLeft <= 7)
               ? 'bg-red-500/10 text-red-500'
               : isExpiring
                 ? 'bg-yellow-500/10 text-yellow-500'
                 : 'bg-green-500/10 text-green-500';
 
             return (
-              <button
+              <div
                 key={c.id}
-                onClick={() => setSelectedCert(c)}
                 className={`rounded-lg border p-4 text-left transition-colors hover:border-primary/50 ${statusColor}`}
               >
                 <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSelectedCert(c)}
+                    className="flex items-center gap-2 flex-1"
+                  >
                     <Lock className={`h-4 w-4 ${isExpired ? 'text-red-500' : isExpiring ? 'text-yellow-500' : 'text-green-500'}`} />
                     <span className="font-medium">{c.domain}</span>
-                  </div>
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${badgeColor}`}>
-                    {isExpired ? 'Expired' : isExpiring ? `${daysLeft}d left` : 'Valid'}
-                  </span>
+                  </button>
+                  <ActionDropdown
+                    items={[
+                      { label: 'View Details', icon: <Eye className="h-3.5 w-3.5" />, onClick: () => setSelectedCert(c) },
+                      { label: 'Renew', icon: <RefreshCw className="h-3.5 w-3.5" />, onClick: () => setRenewTarget(c) },
+                    ]}
+                    className="mt-0"
+                  />
                 </div>
 
                 <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
@@ -1214,7 +1255,17 @@ export function SslPage() {
                     </span>
                   )}
                 </div>
-              </button>
+                {view === 'expiring' && (
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setRenewTarget(c); }}
+                      className="flex items-center gap-1.5 rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                    >
+                      <RefreshCw className="h-3 w-3" /> Renew Now
+                    </button>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -1222,6 +1273,25 @@ export function SslPage() {
 
       {/* Issue modal */}
       {showIssue && <IssueModal onClose={() => setShowIssue(false)} />}
+
+      {/* Renew confirm dialog */}
+      <ConfirmDialog
+        open={!!renewTarget}
+        onConfirm={() => {
+          if (renewTarget) {
+            renewCertificate.mutate(renewTarget.domainId, {
+              onSuccess: () => toast.success(`Renewal started for ${renewTarget.domain}`),
+              onError: (e: Error) => toast.error(e.message || 'Failed to start renewal'),
+            });
+          }
+          setRenewTarget(null);
+        }}
+        onCancel={() => setRenewTarget(null)}
+        title="Renew SSL Certificate"
+        message={`Start the SSL renewal process for "${renewTarget?.domain}"? This will run in the background.`}
+        confirmText="Renew"
+        variant="warning"
+      />
     </div>
   );
 }

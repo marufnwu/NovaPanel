@@ -5,7 +5,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { FolderUp, Plus, Trash2, Key, Edit2, Copy, Check, X, Server, Settings, Clock, MapPin, Save, Eye, EyeOff } from 'lucide-react';
+import { FolderUp, Plus, Trash2, Key, Edit2, Copy, Check, X, Server, Settings, Clock, MapPin, Save, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 
 function CreateAccountModal({ domainId, onClose }: { domainId: string; onClose: () => void }) {
   const create = useCreateFtpAccount();
@@ -338,13 +338,32 @@ function FtpGlobalSettings() {
 export function FtpPage() {
   const { data: domains } = useDomains();
   const [domainId, setDomainId] = useState('');
-  const { data: accounts, isLoading } = useFtpAccounts(domainId);
+  const { data: accounts, isLoading, isError, refetch } = useFtpAccounts(domainId);
   const deleteAccount = useDeleteFtpAccount();
   const [showCreate, setShowCreate] = useState(false);
   const [editAccount, setEditAccount] = useState<FtpAccount | null>(null);
   const [passwordAccount, setPasswordAccount] = useState<FtpAccount | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<FtpAccount | null>(null);
+
+  if (isError) {
+    return (
+      <div>
+        <PageHeader title="FTP Accounts" description="Manage FTP access accounts per domain" />
+        <div className="flex flex-col items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 py-12">
+          <AlertTriangle className="h-10 w-10 text-red-500" />
+          <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load FTP accounts</h3>
+          <p className="mt-1 text-sm text-muted-foreground">An error occurred while fetching FTP accounts.</p>
+          <button
+            onClick={() => refetch()}
+            className="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

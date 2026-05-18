@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+﻿import type { FastifyInstance } from 'fastify';
 import { StatsService } from './stats.service.js';
 import { requireAuth } from '../auth/auth.middleware.js';
 
@@ -94,12 +94,9 @@ export default async function statsRoutes(fastify: FastifyInstance) {
   fastify.get('/tcp-connections', {
     preHandler: [requireAuth],
     handler: async () => {
-      try {
-        const data = await statsService.getTcpConnections();
-        return { success: true, data };
-      } catch (error: any) {
-        return { success: true, data: { established: 0, timeWait: 0, closeWait: 0, total: 0 } };
-      }
+      // Return null instead of fake zeros when metric is unavailable
+      const data = await statsService.getTcpConnections();
+      return { success: true, data };
     },
   });
 
@@ -107,12 +104,9 @@ export default async function statsRoutes(fastify: FastifyInstance) {
   fastify.get('/fd', {
     preHandler: [requireAuth],
     handler: async () => {
-      try {
-        const data = await statsService.getFdStats();
-        return { success: true, data };
-      } catch (error: any) {
-        return { success: true, data: { openFd: 0, maxFd: 65536, usagePercent: 0 } };
-      }
+      // Return null instead of fake zeros when metric is unavailable
+      const data = await statsService.getFdStats();
+      return { success: true, data };
     },
   });
 
@@ -120,12 +114,9 @@ export default async function statsRoutes(fastify: FastifyInstance) {
   fastify.get('/disk-io', {
     preHandler: [requireAuth],
     handler: async () => {
-      try {
-        const data = await statsService.getDiskIOStats();
-        return { success: true, data };
-      } catch (error: any) {
-        return { success: true, data: { readBytesSec: 0, writeBytesSec: 0, readOpsSec: 0, writeOpsSec: 0 } };
-      }
+      // Return null instead of fake zeros when metric is unavailable
+      const data = await statsService.getDiskIOStats();
+      return { success: true, data };
     },
   });
 

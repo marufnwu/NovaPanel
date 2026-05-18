@@ -1,0 +1,27 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "mcp": {
+    "ssh-mcp-server": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@fangjunjie/ssh-mcp-server",
+        "--host",
+        "192.168.0.211",
+        "--port",
+        "22",
+        "--username",
+        "maruf",
+        "--privateKey",
+        "C:\\Users\\Maruf\\.ssh\\id_rsa"
+      ],
+      "alwaysAllow": [
+        "list-servers",
+        "execute-command",
+        "upload",
+        "download"
+      ]
+    }
+  }
+}

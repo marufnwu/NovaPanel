@@ -1,4 +1,4 @@
-import si from 'systeminformation';
+﻿import si from 'systeminformation';
 import { loadavg, hostname as osHostname, type } from 'node:os';
 import { createReadStream, existsSync } from 'node:fs';
 import { createGunzip } from 'node:zlib';
@@ -191,7 +191,6 @@ export class StatsService {
     }
 
     if (!active) {
-      // Get last 20 journal lines for debugging
       const journal = await run('journalctl', ['-u', serviceName, '-n', '20', '--no-pager'], { sudo: false });
       logger.debug({ service: serviceName, stdout: journal.stdout, stderr: journal.stderr, exitCode: journal.exitCode }, 'journalctl result for failed restart');
       return { success: false, log: journal.stdout };
@@ -207,7 +206,6 @@ export class StatsService {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new Error('Domain not found');
 
-    // Get disk usage via du
     const docRoot = domain.documentRoot || `/var/www/vhosts/${domain.id}`;
     const result = await run('du', ['-sm', docRoot], { sudo: true });
     const usedMb = parseInt(result.stdout.split('\t')[0], 10) || 0;
@@ -249,7 +247,6 @@ export class StatsService {
       const [{ total: totalFtp }] = await db.select({ total: count() }).from(ftpAccounts);
       const [{ total: totalCron }] = await db.select({ total: count() }).from(cronJobs).where(eq(cronJobs.isActive, true));
 
-      // Expiring SSL certs (< 30 days)
       const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       let expiringCertsCount = 0;
       try {
@@ -257,7 +254,6 @@ export class StatsService {
           .where(lt(sslCertificates.expiresAt, thirtyDaysFromNow));
         expiringCertsCount = expiringCerts.length;
       } catch (error: any) {
-        // SSL table may have issues — return 0 gracefully
         logger.warn({ error: error.message }, 'Failed to query expiring SSL certs — returning 0');
       }
 
@@ -287,7 +283,6 @@ export class StatsService {
       const certs = await db.select().from(sslCertificates)
         .where(lt(sslCertificates.expiresAt, threshold));
 
-      // Enrich with domain names
       const allDomains = await db.select({
         id: domains.id,
         name: domains.name,
@@ -305,7 +300,6 @@ export class StatsService {
       }));
     } catch (error: any) {
       logger.error({ error: error.message }, 'Failed to get expiring SSL certs');
-      // Return empty array instead of throwing — allows dashboard to still render
       return [];
     }
   }
@@ -334,11 +328,16 @@ export class StatsService {
   }
 
   /**
-   * Get TCP connection statistics
+   * Get TCP connection statistics.
+   * Returns null if the command fails — caller should display "N/A".
    */
-  async getTcpConnections(): Promise<TcpConnectionStats> {
+  async getTcpConnections(): Promise<TcpConnectionStats | null> {
     try {
       const result = await run('ss', ['-s']);
+      if (!result.success) {
+        logger.warn({ stderr: result.stderr, exitCode: result.exitCode }, 'ss command failed');
+        return null;
+      }
       const output = result.stdout;
 
       let established = 0;
@@ -346,7 +345,6 @@ export class StatsService {
       let closeWait = 0;
       let total = 0;
 
-      // Parse "ss -s" output
       const estMatch = output.match(/ESTAB\s+(\d+)/);
       if (estMatch) established = parseInt(estMatch[1], 10);
 
@@ -361,38 +359,39 @@ export class StatsService {
       else total = established + timeWait + closeWait;
 
       return { established, timeWait, closeWait, total };
-    } catch {
-      return { established: 0, timeWait: 0, closeWait: 0, total: 0 };
+    } catch (error: any) {
+      logger.warn({ error: error.message }, 'getTcpConnections failed — returning null');
+      return null;
     }
   }
 
   /**
-   * Get file descriptor statistics
+   * Get file descriptor statistics.
+   * Returns null if the command fails — caller should display "N/A".
    */
-  async getFdStats(): Promise<FdStats> {
+  async getFdStats(): Promise<FdStats | null> {
     try {
       const result = await run('cat', ['/proc/sys/fs/file-nr']);
+      if (!result.success) {
+        logger.warn({ stderr: result.stderr, exitCode: result.exitCode }, 'getFdStats failed');
+        return null;
+      }
       const parts = result.stdout.trim().split(/\s+/);
       const openFd = parseInt(parts[0], 10) || 0;
       const maxFd = parseInt(parts[2], 10) || 0;
       const usagePercent = maxFd > 0 ? Math.round((openFd / maxFd) * 100) : 0;
       return { openFd, maxFd, usagePercent };
-    } catch {
-      // Fallback: try sysctl
-      try {
-        const result = await run('cat', ['/proc/sys/fs/file-max']);
-        const maxFd = parseInt(result.stdout.trim(), 10) || 65536;
-        return { openFd: 0, maxFd, usagePercent: 0 };
-      } catch {
-        return { openFd: 0, maxFd: 65536, usagePercent: 0 };
-      }
+    } catch (error: any) {
+      logger.warn({ error: error.message }, 'getFdStats failed — returning null');
+      return null;
     }
   }
 
   /**
-   * Get disk I/O statistics
+   * Get disk I/O statistics.
+   * Returns null if the command fails — caller should display "N/A".
    */
-  async getDiskIOStats(): Promise<DiskIOStats> {
+  async getDiskIOStats(): Promise<DiskIOStats | null> {
     try {
       const stats = await si.disksIO();
       return {
@@ -401,8 +400,9 @@ export class StatsService {
         readOpsSec: Math.round(stats.rIO_sec || 0),
         writeOpsSec: Math.round(stats.wIO_sec || 0),
       };
-    } catch {
-      return { readBytesSec: 0, writeBytesSec: 0, readOpsSec: 0, writeOpsSec: 0 };
+    } catch (error: any) {
+      logger.warn({ error: error.message }, 'getDiskIOStats failed — returning null');
+      return null;
     }
   }
 
@@ -421,19 +421,13 @@ export class StatsService {
 
       for (const domain of allDomains) {
         try {
-          // Determine log directory: prefer /var/www/{domain}/logs/ if it exists,
-          // otherwise derive from documentRoot
           const defaultLogDir = `/var/www/${domain.name}/logs`;
-
-          // For parked/redirect/mail-only domains, documentRoot may be null
           const docRoot = domain.documentRoot;
 
-          // Check if domain's documentRoot is under /var/www/{domain}/
           let logDir: string;
           if (docRoot && docRoot.includes(`/var/www/${domain.name}`)) {
             logDir = docRoot.replace(/\/public$/, '/logs').replace(/\/httpdocs$/, '/logs');
           } else {
-            // Fallback to default path
             logDir = defaultLogDir;
           }
 
@@ -448,23 +442,19 @@ export class StatsService {
           let incomingBytes = 0;
           let outgoingBytes = 0;
 
-          // Parse the active log file
           if (existsSync(logFile)) {
             const result = await this.parseAccessLog(logFile);
             incomingBytes += result.incoming;
             outgoingBytes += result.outgoing;
           }
 
-          // Parse rotated log files (some may be gzipped)
           for (const rotatedFile of rotatedFiles) {
             if (existsSync(rotatedFile)) {
               try {
                 const result = await this.parseAccessLog(rotatedFile);
                 incomingBytes += result.incoming;
                 outgoingBytes += result.outgoing;
-              } catch {
-                // Skip files that can't be parsed
-              }
+              } catch {}
             }
           }
 
@@ -476,7 +466,6 @@ export class StatsService {
             totalBytes: incomingBytes + outgoingBytes,
           });
         } catch {
-          // Return zeros for domains that fail
           stats.push({
             domainId: domain.id,
             domainName: domain.name,
@@ -493,16 +482,6 @@ export class StatsService {
     }
   }
 
-  /**
-   * Parse an nginx access log file (plain or gzipped) and calculate bandwidth.
-   *
-   * Nginx combined log format:
-   * $remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent"
-   *
-   * We extract:
-   * - $body_bytes_sent (field 7 in the combined format) → incomingBytes
-   * - Request line length as estimate for outgoingBytes
-   */
   private async parseAccessLog(filePath: string): Promise<{ incoming: number; outgoing: number }> {
     const isGzipped = filePath.endsWith('.gz');
 
@@ -510,20 +489,11 @@ export class StatsService {
       let incoming = 0;
       let outgoing = 0;
 
-      // Combined log format regex:
-      // Field 1: $remote_addr
-      // Field 2: "-"
-      // Field 3: $remote_user (or "-")
-      // Field 4: [$time_local]
-      // Field 5: "$request"
-      // Field 6: $status
-      // Field 7: $body_bytes_sent
       const logRegex = /^(\S+)\s+-\s+(\S+)\s+\[([^\]]+)\]\s+"([^"]+)"\s+(\d+)\s+(\d+)/;
 
       let stream: NodeJS.ReadableStream;
 
       if (isGzipped) {
-        // For gzipped files, use zcat + gunzip via stream
         const { spawn } = require('node:child_process');
         const zcat = spawn('sudo', ['zcat', filePath]);
         const gunzip = createGunzip();
@@ -541,7 +511,6 @@ export class StatsService {
           if (match) {
             const bodyBytesSent = parseInt(match[6], 10) || 0;
             const requestLine = match[4] || '';
-            // Estimate outgoing bytes as request line length (average overhead per request ~200 bytes)
             const requestLength = requestLine.length + 200;
 
             incoming += bodyBytesSent;

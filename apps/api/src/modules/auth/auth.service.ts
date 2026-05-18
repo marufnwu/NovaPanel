@@ -1,4 +1,4 @@
-import { db } from '../../db/index.js';
+﻿import { db } from '../../db/index.js';
 import { users, sessions, tempTokens, twoFactorBackupCodes } from '../../db/schema/index.js';
 import { eq, and, gt, isNull, lt } from 'drizzle-orm';
 import { verifyPassword, generateToken, hashToken, encrypt, decrypt, hashPassword, sha256 } from '../../utils/crypto.js';
@@ -9,6 +9,7 @@ import { logger } from '../../config/logger.js';
 import { randomBytes, createHash } from 'node:crypto';
 import { auditService } from '../audit/audit.service.js';
 import { env } from '../../config/env.js';
+import { redisClient } from '../../services/redis.js';
 
 const SESSION_DURATION_HOURS = 2;
 const REMEMBER_ME_DAYS = 30;
@@ -17,6 +18,8 @@ const LOCKOUT_MINUTES = 15;
 const TEMP_TOKEN_DURATION_MINUTES = 5;
 const PASSWORD_RESET_DURATION_HOURS = 1;
 const BACKUP_CODE_COUNT = 10;
+const RESET_RATE_LIMIT_HOURS = 1;
+const MAX_RESET_REQUESTS_PER_EMAIL = 3;
 
 export class AuthService {
   // --- Login ---
@@ -382,15 +385,66 @@ export class AuthService {
   // =====================
 
   /**
-   * Generate a password reset token for a user and return the raw token.
-   * The token is stored as a SHA-256 hash in the users table.
+   * Check rate limit for password reset requests per email.
+   * Returns { allowed: true } or { allowed: false, retryAfterSeconds: number }.
    */
-  async forgotPassword(email: string, ipAddress?: string): Promise<{ success: boolean; message: string }> {
+  private async checkResetRateLimit(email: string): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
+    const redis = redisClient.getClient();
+    const key = `pwreset:ratelimit:${email}`;
+    const ttlSeconds = RESET_RATE_LIMIT_HOURS * 3600;
+
+    try {
+      const current = await redis.get(key);
+      if (current !== null && parseInt(current, 10) >= MAX_RESET_REQUESTS_PER_EMAIL) {
+        const ttl = await redis.ttl(key);
+        return { allowed: false, retryAfterSeconds: ttl > 0 ? ttl : RESET_RATE_LIMIT_HOURS * 3600 };
+      }
+      return { allowed: true };
+    } catch (err) {
+      logger.warn({ err, email }, 'Redis rate limit check failed — allowing request');
+      return { allowed: true };
+    }
+  }
+
+  /**
+   * Increment the rate limit counter for a password reset request.
+   */
+  private async incrementResetRateLimit(email: string): Promise<void> {
+    const redis = redisClient.getClient();
+    const key = `pwreset:ratelimit:${email}`;
+    const ttlSeconds = RESET_RATE_LIMIT_HOURS * 3600;
+
+    try {
+      const pipeline = redis.pipeline();
+      pipeline.incr(key);
+      pipeline.expire(key, ttlSeconds);
+      await pipeline.exec();
+    } catch (err) {
+      logger.warn({ err, email }, 'Redis rate limit increment failed');
+    }
+  }
+
+  /**
+   * Generate a password reset token for a user.
+   * Stores raw token in Redis (15-min TTL) and hashed token in DB.
+   * Returns the raw token so it can be displayed (no email configured yet).
+   */
+  async forgotPassword(email: string, ipAddress?: string): Promise<{ success: boolean; message: string; resetToken?: string; retryAfterSeconds?: number }> {
     const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
     if (!user) {
       // Don't reveal whether email exists — still return success
       logger.info({ email }, 'Password reset requested for unknown email');
       return { success: true, message: 'If the email exists, a reset link has been sent' };
+    }
+
+    // Check rate limit
+    const rateCheck = await this.checkResetRateLimit(email);
+    if (!rateCheck.allowed) {
+      throw new AppError(
+        429,
+        'RESET_RATE_LIMITED',
+        `Too many password reset requests. Please try again in ${Math.ceil((rateCheck.retryAfterSeconds ?? 3600) / 60)} minutes.`,
+      );
     }
 
     // Generate reset token
@@ -404,7 +458,20 @@ export class AuthService {
       passwordResetExpiresAt: expiresAt,
     }).where(eq(users.id, user.id));
 
-    logger.info({ userId: user.id }, 'Password reset token generated');
+    // Store raw token in Redis with 15-minute TTL for single-use verification
+    const redisKey = `pwreset:${user.id}`;
+    const redisTtl = 15 * 60; // 15 minutes
+    try {
+      const redis = redisClient.getClient();
+      await redis.setex(redisKey, redisTtl, rawToken);
+    } catch (err) {
+      logger.warn({ err, userId: user.id }, 'Failed to store reset token in Redis — DB token will still work');
+    }
+
+    // Increment rate limit counter
+    await this.incrementResetRateLimit(email);
+
+    logger.info({ userId: user.id }, 'Password reset token generated and stored in Redis');
 
     auditService.log({
       userId: user.id,
@@ -413,17 +480,44 @@ export class AuthService {
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    // TODO: Send email with reset link containing rawToken
-    // For now, return the token in development (remove in production)
-    return { success: true, message: 'If the email exists, a reset link has been sent' };
+    // Return the raw token for development (no email configured)
+    return {
+      success: true,
+      message: 'If the email exists, a reset link has been sent. For development, your reset token is shown below.',
+      resetToken: rawToken,
+    };
   }
 
   /**
-   * Verify that a password reset token is valid without consuming it.
+   * Verify that a password reset token is valid (checks Redis primary + DB fallback).
    */
   async verifyResetToken(token: string): Promise<{ valid: boolean; email?: string }> {
-    const tokenHash = createHash('sha256').update(token).digest('hex');
+    // Try Redis first (primary, single-use)
+    const redis = redisClient.getClient();
+    const allUsers = await db.select({ id: users.id, email: users.email }).from(users);
+    let userId: string | null = null;
+    let userEmail: string | null = null;
 
+    for (const user of allUsers) {
+      const redisKey = `pwreset:${user.id}`;
+      try {
+        const stored = await redis.get(redisKey);
+        if (stored === token) {
+          userId = user.id;
+          userEmail = user.email;
+          break;
+        }
+      } catch {
+        // Redis unavailable — fall through to DB check
+      }
+    }
+
+    if (userId && userEmail) {
+      return { valid: true, email: userEmail };
+    }
+
+    // Fallback: verify against DB hash (multi-use until consumed)
+    const tokenHash = createHash('sha256').update(token).digest('hex');
     const [user] = await db
       .select()
       .from(users)
@@ -441,22 +535,48 @@ export class AuthService {
   }
 
   /**
-   * Reset a user's password using a valid reset token.
-   * Consumes the token (single-use).
+   * Reset a user'\''s password using a valid reset token.
+   * Consumes the Redis key on success (single-use). Falls back to DB token if Redis unavailable.
    */
   async resetPassword(token: string, newPassword: string, ipAddress?: string): Promise<{ success: boolean }> {
-    // Validate token
-    const tokenHash = createHash('sha256').update(token).digest('hex');
+    // Find user by scanning Redis keys
+    let userId: string | null = null;
+    const redis = redisClient.getClient();
+    const allUsers = await db.select({ id: users.id, username: users.username }).from(users);
 
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(and(
-        eq(users.passwordResetToken, tokenHash),
-        gt(users.passwordResetExpiresAt, new Date()),
-      ))
-      .limit(1);
+    for (const user of allUsers) {
+      const redisKey = `pwreset:${user.id}`;
+      try {
+        const stored = await redis.get(redisKey);
+        if (stored === token) {
+          userId = user.id;
+          break;
+        }
+      } catch {
+        // Redis unavailable
+      }
+    }
 
+    // Fallback: find by DB hash
+    if (!userId) {
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(and(
+          eq(users.passwordResetToken, tokenHash),
+          gt(users.passwordResetExpiresAt, new Date()),
+        ))
+        .limit(1);
+
+      if (!user) {
+        throw new AppError(400, 'INVALID_RESET_TOKEN', 'Invalid or expired reset token');
+      }
+      userId = user.id;
+    }
+
+    // Get full user record
+    const [user] = await db.select().from(users).where(eq(users.id, userId!)).limit(1);
     if (!user) {
       throw new AppError(400, 'INVALID_RESET_TOKEN', 'Invalid or expired reset token');
     }
@@ -465,7 +585,15 @@ export class AuthService {
       throw new AppError(400, 'WEAK_PASSWORD', 'Password must be at least 8 characters');
     }
 
-    // Hash new password and clear reset token
+    // Delete Redis key (consume token)
+    const redisKey = `pwreset:${user.id}`;
+    try {
+      await redis.del(redisKey);
+    } catch (err) {
+      logger.warn({ err, userId: user.id }, 'Failed to delete Redis reset token');
+    }
+
+    // Hash new password and clear DB reset token fields
     const newHash = await hashPassword(newPassword);
     await db.update(users).set({
       passwordHash: newHash,
@@ -478,7 +606,7 @@ export class AuthService {
     // Invalidate all existing sessions for security
     await db.delete(sessions).where(eq(sessions.userId, user.id));
 
-    logger.info({ userId: user.id }, 'Password reset completed');
+    logger.info({ userId: user.id }, 'Password reset completed, Redis token consumed');
 
     auditService.log({
       userId: user.id,

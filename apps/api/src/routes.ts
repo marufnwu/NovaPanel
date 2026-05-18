@@ -1,11 +1,14 @@
-import type { FastifyInstance } from 'fastify';
+﻿import type { FastifyInstance } from 'fastify';
 
 export async function registerRoutes(fastify: FastifyInstance) {
   // Health check
   fastify.get('/api/v1/health', async () => ({
-    status: 'ok',
-    version: '1.0.0',
-    timestamp: new Date().toISOString(),
+    success: true,
+    data: {
+      status: 'ok',
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+    },
   }));
 
   // Phase 3: Auth
@@ -50,7 +53,12 @@ export async function registerRoutes(fastify: FastifyInstance) {
   // Phase 15: Terminal + Logs
   const { registerTerminalWs } = await import('./modules/terminal/terminal.ws.js');
   await registerTerminalWs(fastify);
-  // TODO: await fastify.register(import('./modules/logs/logs.routes.js'), { prefix: '/api/v1' });
+  // Logs module
+  await fastify.register(import('./modules/logs/logs.routes.js'), { prefix: '/api/v1' });
+
+  // Background Jobs WebSocket
+  const { registerJobsWs } = await import('./modules/jobs/jobs.ws.js');
+  await registerJobsWs(fastify);
 
   // Phase 16: Cron + Firewall
   await fastify.register(import('./modules/cron/cron.routes.js'), { prefix: '/api/v1' });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLogin, useLogin2FA } from '../../api/hooks/auth';
 import { useAuthStore } from '../../store/auth.store';
 import { LoginForm } from './LoginForm';
@@ -14,9 +14,14 @@ export function LoginPage() {
   const [lockedUntil, setLockedUntil] = useState<string | null>(null);
   const [remainingAttempts, setRemainingAttempts] = useState<number | undefined>(undefined);
 
-  // Redirect if already authenticated
+  // Redirect if already authenticated - useEffect to avoid side effects during render
+  useEffect(() => {
+    if (isAuthenticated) {
+      window.location.href = '/';
+    }
+  }, [isAuthenticated]);
+
   if (isAuthenticated) {
-    window.location.href = '/';
     return null;
   }
 

@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+﻿import type { FastifyInstance } from 'fastify';
 import { requireAuth, requireRole } from '../auth/auth.middleware.js';
 import { settingsService } from './settings.service.js';
 import {
@@ -318,5 +318,11 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
       const data = updateDataRetentionSchema.parse(req.body);
       return { success: true, data: await settingsService.updateDataRetention(data, req.user.id, req.ip) };
     },
+  });
+
+  // GET /settings/features
+  fastify.get('/settings/features', async () => {
+    const { detectServerFeatures } = await import('./features.service.js');
+    return { success: true, data: await detectServerFeatures() };
   });
 }

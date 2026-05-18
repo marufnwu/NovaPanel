@@ -214,7 +214,21 @@ export function useRevokeAllOtherSessions() {
 export function useForgotPassword() {
   return useMutation({
     mutationFn: (data: { email: string }) =>
-      api.post<{ message: string }>('/auth/forgot-password', data),
+      api.post<{ message: string; resetToken?: string }>('/auth/forgot-password', data),
+  });
+}
+
+export function useVerifyResetToken() {
+  return useMutation({
+    mutationFn: (data: { token: string }) =>
+      api.post<{ valid: boolean; email?: string }>('/auth/verify-reset-token', data),
+  });
+}
+
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: (data: { token: string; newPassword: string }) =>
+      api.post<{ success: boolean }>('/auth/reset-password', data),
   });
 }
 

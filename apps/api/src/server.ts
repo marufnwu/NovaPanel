@@ -79,6 +79,24 @@ export async function createServer() {
     }
   });
 
+  // Auto-wrap JSON responses for API routes with consistent format
+  fastify.addHook('onSend', async (request, reply, payload) => {
+    if (!request.url.startsWith('/api/')) return payload;
+    const contentType = reply.getHeader('content-type');
+    if (typeof contentType === 'string' && contentType.includes('application/json')) {
+      try {
+        const body = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        if (body && typeof body === 'object' && !('success' in body)) {
+          const wrapped = { success: true, data: body };
+          return JSON.stringify(wrapped);
+        }
+      } catch {
+        return payload;
+      }
+    }
+    return payload;
+  });
+
   // Global error handler
   fastify.setErrorHandler((error, req, reply) => {
     if (error instanceof AppError) {

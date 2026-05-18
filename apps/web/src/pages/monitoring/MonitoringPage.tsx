@@ -761,10 +761,10 @@ export function MonitoringPage() {
             <span className="text-sm text-muted-foreground">Open File Descriptors</span>
             <FileText className="h-5 w-5 text-cyan-500" />
           </div>
-          <div className="text-2xl font-bold">{(fdStats?.openFd ?? 0).toLocaleString()}</div>
+          <div className="text-2xl font-bold">{fdStats != null ? fdStats.openFd.toLocaleString() : 'N/A'}</div>
           <div className="text-xs text-muted-foreground">
-            of {(fdStats?.maxFd ?? 0).toLocaleString()} limit
-            {fdStats && (
+            of {fdStats != null ? fdStats.maxFd.toLocaleString() : 'N/A'} limit
+            {fdStats != null && (
               <span className={`ml-1 ${fdStats.usagePercent > 80 ? 'text-red-500' : fdStats.usagePercent > 60 ? 'text-yellow-500' : 'text-green-500'}`}>
                 ({fdStats.usagePercent.toFixed(1)}%)
               </span>
@@ -784,13 +784,13 @@ export function MonitoringPage() {
             <span className="text-sm text-muted-foreground">Active TCP Connections</span>
             <Network className="h-5 w-5 text-indigo-500" />
           </div>
-          <div className="text-2xl font-bold">{tcpStats?.established ?? 0}</div>
+          <div className="text-2xl font-bold">{tcpStats != null ? tcpStats.established.toLocaleString() : 'N/A'}</div>
           <div className="text-xs text-muted-foreground">
             {tcpStats ? (
               <span>
                 {tcpStats.established} est · {tcpStats.timeWait} timewait · {tcpStats.closeWait} closewait
               </span>
-            ) : 'established'}
+            ) : 'No data available'}
           </div>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
@@ -798,16 +798,16 @@ export function MonitoringPage() {
             <span className="text-sm text-muted-foreground">Disk Read Speed</span>
             <HardDrive className="h-5 w-5 text-amber-500" />
           </div>
-          <div className="text-2xl font-bold">{formatBytes(diskIO?.readBytesSec ?? 0)}/s</div>
-          <div className="text-xs text-muted-foreground">{diskIO?.readOpsSec?.toFixed(1) ?? '—'} ops/s</div>
+          <div className="text-2xl font-bold">{diskIO != null ? `${formatBytes(diskIO.readBytesSec)}/s` : 'N/A'}</div>
+          <div className="text-xs text-muted-foreground">{diskIO != null ? `${diskIO.readOpsSec.toFixed(1)} ops/s` : '—'} ops/s</div>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm text-muted-foreground">Disk Write Speed</span>
             <HardDrive className="h-5 w-5 text-red-500" />
           </div>
-          <div className="text-2xl font-bold">{formatBytes(diskIO?.writeBytesSec ?? 0)}/s</div>
-          <div className="text-xs text-muted-foreground">{diskIO?.writeOpsSec?.toFixed(1) ?? '—'} ops/s</div>
+          <div className="text-2xl font-bold">{diskIO != null ? `${formatBytes(diskIO.writeBytesSec)}/s` : 'N/A'}</div>
+          <div className="text-xs text-muted-foreground">{diskIO != null ? `${diskIO.writeOpsSec.toFixed(1)} ops/s` : '—'}</div>
         </div>
       </div>
 

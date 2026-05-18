@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+﻿import { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal as TerminalIcon, Maximize2, Minimize2, Download, Plus, X, ClipboardPaste, Minus, RotateCw, Clock } from 'lucide-react';
 import { useAuthStore } from '../../store/auth.store';
 import '@xterm/xterm/css/xterm.css';
@@ -43,7 +43,7 @@ function getStoredFontSize(): number {
       const size = parseInt(stored, 10);
       if (size >= MIN_FONT_SIZE && size <= MAX_FONT_SIZE) return size;
     }
-  } catch {}
+  } catch (e) { console.error("Terminal error:", e); }
   return DEFAULT_FONT_SIZE;
 }
 
@@ -54,7 +54,7 @@ function getStoredTimeout(): number {
       const val = parseInt(stored, 10);
       if (val >= 5 && val <= 480) return val;
     }
-  } catch {}
+  } catch (e) { console.error("Terminal error:", e); }
   return DEFAULT_TIMEOUT_MINUTES;
 }
 
@@ -141,7 +141,7 @@ function TerminalInstance({ tabId, userId, fontSize, fullscreen, onStatusChange 
           if (dims) {
             ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
           }
-        } catch {}
+        } catch (e) { console.error("Terminal error:", e); }
       }
     };
 
@@ -150,9 +150,7 @@ function TerminalInstance({ tabId, userId, fontSize, fullscreen, onStatusChange 
       attemptReconnect();
     };
 
-    ws.onerror = () => {
-      // onclose will fire after onerror
-    };
+    ws.onerror = (e) => { console.error("WebSocket error:", e); };
 
     ws.onmessage = (event) => {
       try {
@@ -171,7 +169,7 @@ function TerminalInstance({ tabId, userId, fontSize, fullscreen, onStatusChange 
         } else if (msg.type === 'error' && msg.data && termRef.current) {
           termRef.current.write(`\r\n\x1b[31mError: ${msg.data}\x1b[0m\r\n`);
         }
-      } catch {}
+      } catch (e) { console.error("Terminal error:", e); }
     };
   }, [userId, timeoutMinutes, sessionHash]);
 
@@ -269,7 +267,7 @@ function TerminalInstance({ tabId, userId, fontSize, fullscreen, onStatusChange 
 
       // Initial fit
       setTimeout(() => {
-        try { fitAddon.fit(); } catch {}
+        try { fitAddon.fit(); } catch (e) { console.error("Fit failed:", e); }
       }, 50);
 
       termRef.current = terminal;
@@ -321,7 +319,7 @@ function TerminalInstance({ tabId, userId, fontSize, fullscreen, onStatusChange 
       setTimeout(() => {
         try {
           if (fitAddonRef.current) fitAddonRef.current.fit();
-        } catch {}
+        } catch (e) { console.error("Terminal error:", e); }
       }, 50);
     }
   }, [fontSize]);
@@ -337,7 +335,7 @@ function TerminalInstance({ tabId, userId, fontSize, fullscreen, onStatusChange 
           if (dims && wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
           }
-        } catch {}
+        } catch (e) { console.error("Terminal error:", e); }
       }
     };
 
@@ -391,9 +389,7 @@ function TerminalInstance({ tabId, userId, fontSize, fullscreen, onStatusChange 
       if (text && wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'input', data: text }));
       }
-    } catch {
-      // Clipboard API not available or permission denied
-    }
+    } catch (e) { console.error("Clipboard read failed:", e); }
   }, []);
 
   // ─── Download Log ───────────────────────────────────────────────────────

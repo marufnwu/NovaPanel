@@ -90,34 +90,34 @@ export default async function websiteRoutes(fastify: FastifyInstance) {
   fastify.get('/:websiteId/ftp', async (req) => {
     const { websiteId } = req.params as { websiteId: string };
     const data = await ftpService.listByWebsite(websiteId);
-    return { data };
+    return { success: true, data };
   });
 
   // GET /api/v1/websites/:websiteId/cron — List cron jobs for a website
   fastify.get('/:websiteId/cron', async (req) => {
     const { websiteId } = req.params as { websiteId: string };
     const data = await cronService.listByWebsite(websiteId);
-    return { data };
+    return { success: true, data };
   });
 
   // GET /api/v1/websites/:websiteId/backups — List backups for a website
   fastify.get('/:websiteId/backups', async (req) => {
     const { websiteId } = req.params as { websiteId: string };
     const data = await backupService.listByWebsite(websiteId);
-    return { data };
+    return { success: true, data };
   });
 
   // GET /api/v1/websites/:websiteId/databases — List databases for a website
   fastify.get('/:websiteId/databases', async (req) => {
     const { websiteId } = req.params as { websiteId: string };
     const data = await databasesService.listByWebsite(websiteId);
-    return { data };
+    return { success: true, data };
   });
 
   // GET /api/v1/websites/:websiteId/apps — List installed apps for a website
   fastify.get('/:websiteId/apps', async (req) => {
     const { websiteId } = req.params as { websiteId: string };
     const data = await installerService.listByWebsite(websiteId);
-    return { data };
+    return { success: true, data };
   });
 }

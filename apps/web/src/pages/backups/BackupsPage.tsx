@@ -554,7 +554,7 @@ function StorageSettings() {
 /*  Main BackupsPage                                                   */
 /* ------------------------------------------------------------------ */
 export function BackupsPage() {
-  const { data: backups, isLoading } = useBackups();
+  const { data: backups, isLoading, isError, refetch } = useBackups();
   const { data: schedules } = useBackupSchedules();
   const deleteBackup = useDeleteBackup();
   const downloadBackup = useDownloadBackup();
@@ -576,6 +576,25 @@ export function BackupsPage() {
   }>({ open: false, title: '', message: '', onConfirm: () => {}, variant: 'danger' });
 
   if (isLoading) return <LoadingSpinner />;
+
+  if (isError) {
+    return (
+      <div>
+        <PageHeader title="Backups" description="Manage server backups and schedules" />
+        <div className="flex flex-col items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 py-12">
+          <AlertTriangle className="h-10 w-10 text-red-500" />
+          <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load backups</h3>
+          <p className="mt-1 text-sm text-muted-foreground">An error occurred while fetching backups.</p>
+          <button
+            onClick={() => refetch()}
+            className="mt-4 inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+          >
+            <RefreshCw className="h-4 w-4" /> Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleDownload = (backup: Backup) => {
     downloadBackup.mutate({ id: backup.id, filename: backup.filename });

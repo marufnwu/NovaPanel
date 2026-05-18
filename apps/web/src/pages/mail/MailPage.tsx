@@ -417,7 +417,7 @@ function ConnectionInfoCard({ domainName, hasPublicIp }: { domainName: string; h
 type Tab = 'mailboxes' | 'aliases' | 'settings' | 'security' | 'queue';
 
 export function MailPage() {
-  const { data: domains } = useDomains();
+  const { data: domains, isLoading: domainsLoading, isError: domainsError, refetch: refetchDomains } = useDomains();
   const { data: serverContext } = useServerContext();
   const [domainId, setDomainId] = useState('');
   const { data: info, isLoading, isError, refetch } = useMailDomainInfo(domainId);
@@ -436,11 +436,7 @@ export function MailPage() {
   }>({ open: false, title: '', message: '', onConfirm: () => {}, variant: 'danger' });
   const [dmarcPolicy, setDmarcPolicy] = useState<'none' | 'quarantine' | 'reject'>('none');
   const [dmarcReportEmail, setDmarcReportEmail] = useState('');
-
-  // Catch-all state
   const [catchAllDest, setCatchAllDest] = useState('');
-
-  // SpamAssassin state
   const [spamEnabled, setSpamEnabled] = useState(false);
   const [spamThreshold, setSpamThreshold] = useState(5);
 
@@ -483,6 +479,25 @@ export function MailPage() {
   if (info?.mailDomain && !catchAllDest && info.mailDomain.catchAllDestination) {
     syncFromServer();
   }
+
+  if (domainsLoading) return <LoadingSpinner />;
+
+  if (domainsError) return (
+    <div>
+      <PageHeader title="Mail Management" description="Manage email mailboxes, aliases, and security settings" />
+      <div className="flex flex-col items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 py-12">
+        <AlertTriangle className="h-10 w-10 text-red-500" />
+        <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load domains</h3>
+        <p className="mt-1 text-sm text-muted-foreground">An error occurred while fetching domains.</p>
+        <button
+          onClick={() => refetchDomains()}
+          className="mt-4 inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+        >
+          <RefreshCw className="h-4 w-4" /> Retry
+        </button>
+      </div>
+    </div>
+  );
 
   if (!domainId) {
     return (

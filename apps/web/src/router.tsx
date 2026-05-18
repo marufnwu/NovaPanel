@@ -5,6 +5,7 @@ import {
   Outlet,
   useParams,
 } from '@tanstack/react-router';
+import { PageErrorBoundary } from './components/ui/PageErrorBoundary';
 import { LoginPage } from './pages/login/LoginPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { AuthGuard } from './components/auth/AuthGuard';
@@ -31,7 +32,9 @@ import { NotificationsPage } from './pages/notifications/NotificationsPage';
 import { InstallerPage } from './pages/installer/InstallerPage';
 import { WebsitesPage } from './pages/websites/WebsitesPage';
 import { WebsiteDetailPage } from './pages/websites/WebsiteDetailPage';
+import { DatabaseDetailPage } from './pages/databases/DatabaseDetailPage';
 import { CloudflarePage } from './pages/cloudflare/CloudflarePage';
+import { ResetPasswordPage } from './pages/reset-password/ResetPasswordPage';
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -73,7 +76,11 @@ const websiteDetailRoute = createRoute({
   path: '/websites/$id',
   component: function WebsiteDetailWrapper() {
     const { id } = useParams({ from: '/protected/websites/$id' });
-    return <WebsiteDetailPage websiteId={id} />;
+    return (
+      <PageErrorBoundary title="Website detail crashed">
+        <WebsiteDetailPage websiteId={id} />
+      </PageErrorBoundary>
+    );
   },
 });
 
@@ -113,6 +120,19 @@ const databasesRoute = createRoute({
   component: DatabasesPage,
 });
 
+const databaseDetailRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/databases/$id',
+  component: function DatabaseDetailWrapper() {
+    const { id } = useParams({ from: '/protected/databases/$id' });
+    return (
+      <PageErrorBoundary title="Database detail crashed">
+        <DatabaseDetailPage databaseId={id} />
+      </PageErrorBoundary>
+    );
+  },
+});
+
 const ftpRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/ftp',
@@ -128,7 +148,13 @@ const filesRoute = createRoute({
 const terminalRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/terminal',
-  component: TerminalPage,
+  component: function TerminalWrapper() {
+    return (
+      <PageErrorBoundary title="Terminal crashed">
+        <TerminalPage />
+      </PageErrorBoundary>
+    );
+  },
 });
 
 const cronRoute = createRoute({
@@ -182,7 +208,13 @@ const serverSettingsRoute = createRoute({
 const monitoringRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/monitoring',
-  component: MonitoringPage,
+  component: function MonitoringWrapper() {
+    return (
+      <PageErrorBoundary title="Monitoring crashed">
+        <MonitoringPage />
+      </PageErrorBoundary>
+    );
+  },
 });
 
 const notificationsRoute = createRoute({
@@ -203,8 +235,15 @@ const cloudflareRoute = createRoute({
   component: CloudflarePage,
 });
 
+const resetPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/reset-password',
+  component: ResetPasswordPage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  resetPasswordRoute,
   protectedRoute.addChildren([
     indexRoute,
     domainsRoute,
@@ -216,6 +255,7 @@ const routeTree = rootRoute.addChildren([
     dnsRoute,
     mailRoute,
     databasesRoute,
+    databaseDetailRoute,
     ftpRoute,
     cloudflareRoute,
     filesRoute,

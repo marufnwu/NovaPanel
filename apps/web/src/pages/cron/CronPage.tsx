@@ -5,8 +5,9 @@ import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
+import { ActionDropdown } from '../../components/ui/ActionDropdown';
 import { toast } from '../../lib/toast';
-import { Clock, Plus, Trash2, Play, ToggleLeft, ToggleRight, Edit2, X, Terminal, History, Mail, ChevronDown, ChevronUp } from 'lucide-react';
+import { Clock, Plus, Trash2, Play, ToggleLeft, ToggleRight, Edit2, X, Terminal, History, Mail, ChevronDown, ChevronUp, AlertTriangle, RefreshCw } from 'lucide-react';
 
 const PRESETS = [
   { label: 'Every minute', value: '* * * * *' },
@@ -368,7 +369,7 @@ function RunResultModal({ result, exitCode, onClose }: { result: string; exitCod
 }
 
 export function CronPage() {
-  const { data: jobs, isLoading } = useCronJobs();
+  const { data: jobs, isLoading, isError, refetch } = useCronJobs();
   const deleteJob = useDeleteCronJob();
   const toggle = useToggleCronJob();
   const run = useRunCronJob();
@@ -394,6 +395,25 @@ export function CronPage() {
   };
 
   if (isLoading) return <LoadingSpinner />;
+
+  if (isError) {
+    return (
+      <div>
+        <PageHeader title="Cron Jobs" description="Manage scheduled tasks" />
+        <div className="flex flex-col items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 py-12">
+          <AlertTriangle className="h-10 w-10 text-red-500" />
+          <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load cron jobs</h3>
+          <p className="mt-1 text-sm text-muted-foreground">An error occurred while fetching cron jobs.</p>
+          <button
+            onClick={() => refetch()}
+            className="mt-4 inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+          >
+            <RefreshCw className="h-4 w-4" /> Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -454,22 +474,15 @@ export function CronPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
-                      <button
-                        onClick={() => toggleHistory(j.id)}
-                        className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="Run History"
-                      >
-                        <History className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => handleRun(j)} disabled={run.isPending} className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground" title="Run now">
-                        <Play className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => setEditJob(j)} className="rounded p-1.5 text-muted-foreground hover:bg-accent" title="Edit">
-                        <Edit2 className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => setDeleteTarget(j)} className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Delete">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <ActionDropdown
+                        items={[
+                          { label: j.isActive ? 'Pause' : 'Resume', icon: j.isActive ? <ToggleLeft className="h-3.5 w-3.5" /> : <ToggleRight className="h-3.5 w-3.5" />, onClick: () => toggle.mutate(j.id) },
+                          { label: 'Run Now', icon: <Play className="h-3.5 w-3.5" />, onClick: () => handleRun(j) },
+                          { label: 'Edit', icon: <Edit2 className="h-3.5 w-3.5" />, onClick: () => setEditJob(j) },
+                          { label: 'View History', icon: <History className="h-3.5 w-3.5" />, onClick: () => toggleHistory(j.id) },
+                          { label: 'Delete', icon: <Trash2 className="h-3.5 w-3.5" />, variant: 'danger', onClick: () => setDeleteTarget(j) },
+                        ]}
+                      />
                     </div>
                   </td>
                 </tr>

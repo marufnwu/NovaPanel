@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import {
   useWebsites,
   useCreateWebsite,
@@ -384,6 +385,7 @@ function SkeletonRows() {
 
 // --- Main Page ---
 export function WebsitesPage() {
+  const navigate = useNavigate();
   const { data: websites, isLoading, isError, refetch } = useWebsites();
   const { data: phpData } = usePhpVersions();
   const deleteWebsite = useDeleteWebsite();
@@ -573,10 +575,7 @@ export function WebsitesPage() {
                       <tr
                         key={w.id}
                         className="border-b border-border last:border-0 hover:bg-accent/50 cursor-pointer"
-                        onClick={() => {
-                          // Navigation will be wired in Phase 8 when router is updated
-                          // For now, this is a placeholder
-                        }}
+                        onClick={() => navigate({ to: '/websites/$id', params: { id: String(w.id) } })}
                       >
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">

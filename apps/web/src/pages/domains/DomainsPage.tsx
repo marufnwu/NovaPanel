@@ -49,18 +49,18 @@ import { usePhpVersions, DEFAULT_PHP_VERSIONS } from '../../api/hooks/php';
 import { useServerContext } from '../../api/hooks/settings';
 import { useTunnelRoutes, useCloudflareConfig, useTunnelStatus } from '../../api/hooks/tunnel';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { DomainStatusBadge } from './components/DomainStatusBadge';
-import { DomainTypeBadge } from './components/DomainTypeBadge';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
+import { ActionDropdown } from '../../components/ui/ActionDropdown';
+import { CopyButton } from '../../components/ui/CopyButton';
 import {
   Globe, Plus, Trash2, Ban, CheckCircle, X, FolderOpen, ExternalLink,
   Search, Shield, Server, ChevronRight, ArrowLeft, Link2, ArrowRightLeft,
   Edit3, Activity, AlertTriangle, Unplug, Mail, FileText, Info, Cloud,
   Lock, RefreshCw, Zap, ToggleLeft, ToggleRight, XCircle, Waypoints, Save,
-  Globe2, CheckCircle2, Upload, Star,
+  Globe2, CheckCircle2, Upload, Star, MoreVertical,
 } from 'lucide-react';
 import type { ApiError } from '../../api/client';
 import type { Domain } from '../../api/hooks/domains';
@@ -116,7 +116,7 @@ function LinkWebsiteModal({ domainId, onClose }: { domainId: string; onClose: ()
             onChange={(e) => setSelectedWebsiteId(e.target.value)}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           >
-            <option value="">— Select a website —</option>
+            <option value="">â€” Select a website â€”</option>
             {websites?.map((w) => (
               <option key={w.id} value={w.id}>{w.name}</option>
             ))}
@@ -418,7 +418,7 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
               className="w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               required
             >
-              <option value="">— Select a website —</option>
+              <option value="">â€” Select a website â€”</option>
               {websites?.map((w) => (
                 <option key={w.id} value={w.id}>{w.name}</option>
               ))}
@@ -426,7 +426,7 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
           </div>
         )}
 
-        {/* Document root & web settings — only shown when creating a website */}
+        {/* Document root & web settings â€” only shown when creating a website */}
         {form.websiteMode === 'create' && (
           <>
             <div>
@@ -553,7 +553,7 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
             {!hasActiveTunnel && (
               <div className="flex items-start gap-2 mt-2 text-xs text-orange-600 dark:text-orange-400">
                 <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
-                <span>No tunnels configured. <a href="/cloudflare" className="underline">Create a tunnel</a> in Cloudflare → Tunnels to enable this feature.</span>
+                <span>No tunnels configured. <a href="/cloudflare" className="underline">Create a tunnel</a> in Cloudflare â†’ Tunnels to enable this feature.</span>
               </div>
             )}
           </div>
@@ -581,44 +581,7 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
   );
 }
 
-// --- Delete Confirmation ---
-function DeleteConfirm({ domainName, onConfirm, onCancel, isLoading }: {
-  domainName: string; onConfirm: () => void; onCancel: () => void; isLoading: boolean;
-}) {
-  const [typed, setTyped] = useState('');
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
-        <h3 className="text-lg font-semibold text-destructive">Delete Domain</h3>
-        <p className="mt-2 text-sm text-muted-foreground">
-          This will permanently delete <strong>{domainName}</strong> and all associated DNS records, SSL certificates, and mail configuration.
-        </p>
-        <p className="mt-3 text-sm font-medium">
-          Type <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{domainName}</code> to confirm:
-        </p>
-        <input
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-          placeholder={domainName}
-          autoFocus
-        />
-        <div className="mt-4 flex justify-end gap-3">
-          <button onClick={onCancel} className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent">
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={typed !== domainName || isLoading}
-            className="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
-          >
-            {isLoading ? 'Deleting...' : 'Delete Domain'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+
 
 // --- Rename Domain Modal ---
 function RenameDomainModal({ domain, onClose }: { domain: Domain; onClose: () => void }) {
@@ -926,7 +889,7 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
                     <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600">
                       <CheckCircle className="h-3 w-3" /> Active
                     </span>
-                    <span className="text-sm">Tunnel route: <code className="rounded bg-muted px-1 text-xs">{domain.name}</code> → <code className="rounded bg-muted px-1 text-xs">{domainTunnelRoute.service}</code></span>
+                    <span className="text-sm">Tunnel route: <code className="rounded bg-muted px-1 text-xs">{domain.name}</code> â†’ <code className="rounded bg-muted px-1 text-xs">{domainTunnelRoute.service}</code></span>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     This domain is served through Cloudflare Tunnel. DNS, SSL, and caching are managed via Cloudflare.
@@ -973,7 +936,7 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
             </div>
             <div className="rounded-lg border border-border bg-card p-4">
               <p className="text-xs font-medium text-muted-foreground">Disk Usage</p>
-              <p className="mt-1 text-lg font-semibold">{domain.diskUsedMb ?? '—'} MB</p>
+              <p className="mt-1 text-lg font-semibold">{domain.diskUsedMb ?? 'â€”'} MB</p>
             </div>
           </div>
 
@@ -1255,7 +1218,7 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
                 <thead className="border-b border-border bg-muted/50">
                   <tr>
                     <th className="px-4 py-2 text-left font-medium">Alias</th>
-                    <th className="px-4 py-2 text-left font-medium">→ Target</th>
+                    <th className="px-4 py-2 text-left font-medium">â†’ Target</th>
                     <th className="px-4 py-2 text-right font-medium">Actions</th>
                   </tr>
                 </thead>
@@ -1436,6 +1399,8 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
               onRefresh={refetchCfDns}
               onCreate={createCfDns}
               onDelete={deleteCfDns}
+              // @ts-ignore
+              setConfirmDialog={setConfirmDialog}
             />
           )}
 
@@ -1459,6 +1424,8 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
               onRefresh={refetchCfFirewall}
               onCreate={createCfFirewall}
               onDelete={deleteCfFirewall}
+              // @ts-ignore
+              setConfirmDialog={setConfirmDialog}
             />
           )}
 
@@ -1471,6 +1438,8 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
               onRefresh={refetchCfRedirects}
               onCreate={createCfRedirect}
               onDelete={deleteCfRedirect}
+              // @ts-ignore
+              setConfirmDialog={setConfirmDialog}
             />
           )}
         </div>
@@ -1491,6 +1460,10 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
 // Cloudflare Tab Sub-Components
 // =========================================================================
 
+type CfConfirmDialog = {
+  (val: { open: boolean; title: string; message: string; onConfirm: () => void; variant?: 'danger' | 'warning' | 'info'; requireTyping?: string }): void;
+};
+
 function DomainCfDnsTab({
   domainId,
   domainName,
@@ -1499,6 +1472,7 @@ function DomainCfDnsTab({
   onRefresh,
   onCreate,
   onDelete,
+  setConfirmDialog,
 }: {
   domainId: string;
   domainName: string;
@@ -1507,6 +1481,7 @@ function DomainCfDnsTab({
   onRefresh: () => void;
   onCreate: ReturnType<typeof useCreateDomainCloudflareDns>;
   onDelete: ReturnType<typeof useDeleteDomainCloudflareDns>;
+  setConfirmDialog: CfConfirmDialog;
 }) {
   const [showCreate, setShowCreate] = useState(false);
   const [newRecord, setNewRecord] = useState({ type: 'A', name: '', content: '', proxied: false, ttl: 1 });
@@ -1555,12 +1530,16 @@ function DomainCfDnsTab({
                   <td className="px-4 py-2 text-right">
                     <button
                       onClick={() => {
-                        if (confirm('Delete this DNS record?')) {
-                          onDelete.mutate(record.id, {
+                        setConfirmDialog({
+                          open: true,
+                          title: 'Delete DNS Record',
+                          message: `Delete ${record.type} record "${record.name}"? This cannot be undone.`,
+                          variant: 'danger',
+                          onConfirm: () => onDelete.mutate(record.id, {
                             onSuccess: () => toast.success('DNS record deleted'),
                             onError: (e: Error) => toast.error(e.message),
-                          });
-                        }
+                          }),
+                        });
                       }}
                       className="rounded p-1 text-destructive hover:bg-destructive/10"
                     >
@@ -1732,6 +1711,7 @@ function DomainCfFirewallTab({
   onRefresh,
   onCreate,
   onDelete,
+  setConfirmDialog,
 }: {
   domainId: string;
   rules: DomainCloudflareFirewallRule[];
@@ -1739,6 +1719,7 @@ function DomainCfFirewallTab({
   onRefresh: () => void;
   onCreate: ReturnType<typeof useCreateDomainCloudflareFirewall>;
   onDelete: ReturnType<typeof useDeleteDomainCloudflareFirewall>;
+  setConfirmDialog: CfConfirmDialog;
 }) {
   const [showCreate, setShowCreate] = useState(false);
   const [newRule, setNewRule] = useState({ action: 'block', expression: '', description: '' });
@@ -1784,12 +1765,16 @@ function DomainCfFirewallTab({
                   <td className="px-4 py-2 text-right">
                     <button
                       onClick={() => {
-                        if (confirm('Delete this firewall rule?')) {
-                          onDelete.mutate(rule.id, {
+                        setConfirmDialog({
+                          open: true,
+                          title: 'Delete Firewall Rule',
+                          message: `Delete firewall rule "${rule.description || rule.id}"?`,
+                          variant: 'danger',
+                          onConfirm: () => onDelete.mutate(rule.id, {
                             onSuccess: () => toast.success('Firewall rule deleted'),
                             onError: (e: Error) => toast.error(e.message),
-                          });
-                        }
+                          }),
+                        });
                       }}
                       className="rounded p-1 text-destructive hover:bg-destructive/10"
                     >
@@ -1869,6 +1854,7 @@ function DomainCfRedirectsTab({
   onRefresh,
   onCreate,
   onDelete,
+  setConfirmDialog,
 }: {
   domainId: string;
   rules: DomainCloudflareRedirectRule[];
@@ -1876,6 +1862,7 @@ function DomainCfRedirectsTab({
   onRefresh: () => void;
   onCreate: ReturnType<typeof useCreateDomainCloudflareRedirect>;
   onDelete: ReturnType<typeof useDeleteDomainCloudflareRedirect>;
+  setConfirmDialog: CfConfirmDialog;
 }) {
   const [showCreate, setShowCreate] = useState(false);
   const [newRule, setNewRule] = useState({ sourcePattern: '', destinationUrl: '', redirectType: '301' });
@@ -1917,12 +1904,16 @@ function DomainCfRedirectsTab({
                   <td className="px-4 py-2 text-right">
                     <button
                       onClick={() => {
-                        if (confirm('Delete this redirect rule?')) {
-                          onDelete.mutate(rule.id, {
+                        setConfirmDialog({
+                          open: true,
+                          title: 'Delete Redirect',
+                          message: `Delete redirect from "${rule.sourcePattern}"?`,
+                          variant: 'danger',
+                          onConfirm: () => onDelete.mutate(rule.id, {
                             onSuccess: () => toast.success('Redirect deleted'),
                             onError: (e: Error) => toast.error(e.message),
-                          });
-                        }
+                          }),
+                        });
                       }}
                       className="rounded p-1 text-destructive hover:bg-destructive/10"
                     >
@@ -2024,7 +2015,6 @@ export function DomainsPage() {
 
   const [showCreate, setShowCreate] = useState(false);
   const [createdDomain, setCreatedDomain] = useState<{ name: string; documentRoot: string } | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Domain | null>(null);
   const [selectedDomain, setSelectedDomain] = useState<Domain | null>(null);
   const [renameTarget, setRenameTarget] = useState<Domain | null>(null);
 
@@ -2036,8 +2026,10 @@ export function DomainsPage() {
     message: string;
     onConfirm: () => void;
     variant?: 'danger' | 'warning' | 'info';
+    requireTyping?: string;
   }>({ open: false, title: '', message: '', onConfirm: () => {}, variant: 'danger' });
   const [suspendTarget, setSuspendTarget] = useState<Domain | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Domain | null>(null);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -2152,21 +2144,40 @@ export function DomainsPage() {
                     <span className="font-mono text-xs">{createdDomain.documentRoot}</span>
                   </div>
                 )}
-                <Link
-                  to="/cloudflare"
-                  className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                >
-                  <ExternalLink className="h-4 w-4" /> Set Up Tunnel
-                </Link>
-                {createdDomain.documentRoot && (
-                  <Link
-                    to="/files"
-                    search={{ website: createdDomain.name }}
-                    className="mt-3 ml-2 inline-flex items-center gap-2 rounded-md border border-primary bg-background px-4 py-2 text-sm font-medium text-primary hover:bg-accent"
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const form = { name: createdDomain.name };
+                      setCreatedDomain(null);
+                      setShowCreate(true);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                   >
-                    <Upload className="h-4 w-4" /> Upload Files
+                    <Globe className="h-4 w-4" /> Create Website for {createdDomain.name}
+                  </button>
+                  <Link
+                    to="/dns"
+                    search={{ domain: createdDomain.name }}
+                    className="inline-flex items-center gap-2 rounded-md border border-primary bg-background px-4 py-2 text-sm font-medium text-primary hover:bg-accent"
+                  >
+                    <Server className="h-4 w-4" /> Manage DNS
                   </Link>
-                )}
+                  <Link
+                    to="/cloudflare"
+                    className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
+                  >
+                    <ExternalLink className="h-4 w-4" /> Set Up Tunnel
+                  </Link>
+                  {createdDomain.documentRoot && (
+                    <Link
+                      to="/files"
+                      search={{ website: createdDomain.name }}
+                      className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-accent"
+                    >
+                      <Upload className="h-4 w-4" /> Upload Files
+                    </Link>
+                  )}
+                </div>
               </div>
             </div>
             <button onClick={() => setCreatedDomain(null)} className="text-green-600 hover:text-green-800">
@@ -2315,7 +2326,7 @@ export function DomainsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <DomainStatusBadge domainId={d.id} />
+                    {/* <DomainStatusBadge domainId={d.id} /> */}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -2328,7 +2339,7 @@ export function DomainsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
-                      <DomainTypeBadge type={d.type || 'primary'} />
+                      {/* <DomainTypeBadge type={d.type || 'primary'} /> */}
                       {d.isPrimary === true && (
                         <span className="inline-flex items-center gap-0.5 rounded bg-yellow-500/10 px-1.5 py-0.5 text-[10px] font-medium text-yellow-600 dark:text-yellow-400" title="Primary Domain">
                           <Star className="h-2.5 w-2.5 fill-yellow-500 text-yellow-500" /> Primary
@@ -2340,7 +2351,7 @@ export function DomainsPage() {
                     {d.sslEnabled ? (
                       <Shield className="h-4 w-4 text-green-500" />
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-muted-foreground">â€”</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -2353,64 +2364,39 @@ export function DomainsPage() {
                         <Server className="h-3 w-3" /> View
                       </a>
                     ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
+                      <span className="text-xs text-muted-foreground">â€”</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => setRenameTarget(d)}
-                        className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="Rename"
-                      >
-                        <Edit3 className="h-4 w-4" />
-                      </button>
-                      {d.status === 'active' ? (
-                        <button
-                          onClick={() => setSuspendTarget(d)}
-                          className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Suspend"
-                        >
-                          <Ban className="h-4 w-4" />
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => activateDomain.mutate(d.id, {
-                            onSuccess: () => toast.success(`${d.name} activated`),
-                            onError: (e: Error) => toast.error(e.message || 'Failed to activate'),
-                          })}
-                          className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Activate"
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setDeleteTarget(d)}
-                        className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        title="Delete"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => setSelectedDomain(d)}
-                        className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="Details"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
-                      {d.isPrimary === false && (
-                        <button
-                          onClick={() => makePrimary.mutate(d.id, {
-                            onSuccess: () => toast.success(`${d.name} set as primary`),
-                            onError: (e: Error) => toast.error(e.message || 'Failed to set as primary'),
-                          })}
-                          className="rounded p-1.5 text-muted-foreground hover:bg-yellow-500/10 hover:text-yellow-600"
-                          title="Make Primary"
-                        >
-                          <Star className="h-4 w-4" />
-                        </button>
-                      )}
+                      <ActionDropdown
+                        items={[
+                          { label: 'Rename', icon: <Edit3 className="h-3.5 w-3.5" />, onClick: () => setRenameTarget(d) },
+                          {
+                            label: d.status === 'active' ? 'Suspend' : 'Activate',
+                            icon: d.status === 'active' ? <Ban className="h-3.5 w-3.5" /> : <CheckCircle className="h-3.5 w-3.5" />,
+                            onClick: () => d.status === 'active' ? setSuspendTarget(d) : activateDomain.mutate(d.id, {
+                              onSuccess: () => toast.success(`${d.name} activated`),
+                              onError: (e: Error) => toast.error(e.message || 'Failed to activate'),
+                            }),
+                          },
+                          { label: 'View Details', icon: <ChevronRight className="h-3.5 w-3.5" />, onClick: () => setSelectedDomain(d) },
+                          ...(d.isPrimary === false ? [{ label: 'Make Primary', icon: <Star className="h-3.5 w-3.5" />, onClick: () => makePrimary.mutate(d.id, { onSuccess: () => toast.success(`${d.name} set as primary`), onError: (e: Error) => toast.error(e.message || 'Failed to set as primary') }) }] : []),
+                          { label: 'Delete', icon: <Trash2 className="h-3.5 w-3.5" />, variant: 'danger', onClick: () => {
+                            setConfirmDialog({
+                              open: true,
+                              title: 'Delete Domain',
+                              message: `This will permanently delete "${d.name}" and all associated DNS records, SSL certificates, and mail configuration.`,
+                              variant: 'danger',
+                              requireTyping: d.name,
+                              onConfirm: () => deleteDomain.mutate(d.id, {
+                                onSuccess: () => toast.success(`Domain ${d.name} deleted`),
+                                onError: (err: Error) => toast.error(err.message || 'Failed to delete domain'),
+                              }),
+                            });
+                          }},
+                        ]}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -2466,15 +2452,7 @@ export function DomainsPage() {
         isLoading={bulkMutationLoading}
       />
 
-      {/* Delete Confirmation Modal */}
-      {deleteTarget && (
-        <DeleteConfirm
-          domainName={deleteTarget.name}
-          onConfirm={handleDelete}
-          onCancel={() => setDeleteTarget(null)}
-          isLoading={deleteDomain.isPending}
-        />
-      )}
+      
 
       {/* Rename Modal */}
       {renameTarget && (

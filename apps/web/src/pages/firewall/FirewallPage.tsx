@@ -414,9 +414,9 @@ function ConfirmModal({
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export function FirewallPage() {
-  const { data: status, isLoading: statusLoading } = useFirewallStatus();
-  const { data: rules, isLoading: rulesLoading } = useFirewallRules();
-  const { data: jails, isLoading: jailsLoading } = useFail2BanJails();
+  const { data: status, isLoading: statusLoading, isError: statusError } = useFirewallStatus();
+  const { data: rules, isLoading: rulesLoading, isError: rulesError } = useFirewallRules();
+  const { data: jails, isLoading: jailsLoading, isError: jailsError } = useFail2BanJails();
   const addRule = useAddFirewallRule();
   const deleteRule = useDeleteFirewallRule();
   const applyPreset = useApplyFirewallPreset();
@@ -424,13 +424,32 @@ export function FirewallPage() {
   const toggleRule = useToggleRule();
 
   const [tab, setTab] = useState<TabKey>('rules');
-  const [showAdd, setShowAdd] = useState(false);
   const [unbanTarget, setUnbanTarget] = useState<F2BJail | null>(null);
   const [showBanIp, setShowBanIp] = useState(false);
   const [showReset, setShowReset] = useState(false);
   const [deleteRuleTarget, setDeleteRuleTarget] = useState<number | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
 
-  if (rulesLoading) return <LoadingSpinner />;
+  if (rulesLoading || statusLoading || jailsLoading) return <LoadingSpinner />;
+
+  if (rulesError || statusError || jailsError) {
+    return (
+      <div>
+        <PageHeader title="Firewall" description="Manage UFW rules, Fail2Ban, and SSH settings" />
+        <div className="flex flex-col items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 py-12">
+          <AlertTriangle className="h-10 w-10 text-red-500" />
+          <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load firewall data</h3>
+          <p className="mt-1 text-sm text-muted-foreground">An error occurred while fetching firewall rules and status.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+          >
+            <RefreshCw className="h-4 w-4" /> Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const TABS: { key: TabKey; label: string; icon: typeof Shield }[] = [
     { key: 'rules', label: 'UFW Rules', icon: Shield },

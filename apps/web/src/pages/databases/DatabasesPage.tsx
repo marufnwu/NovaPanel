@@ -1,20 +1,14 @@
 import { useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useDatabases, useDatabaseInfo, useCreateDatabase, useDeleteDatabase, useCreateDbUser, useDeleteDbUser, useExportDatabase, useImportDatabase, useRepairDatabase, useOptimizeDatabase, useCloneDatabase, useRunQuery, useChangeDbPassword } from '../../api/hooks/databases';
-import type { Database, DatabaseInfo as DbInfo } from '../../api/hooks/databases';
+import type { Database } from '../../api/hooks/databases';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
-import { Database as DatabaseIcon, Plus, Trash2, Download, UserPlus, Server, Search, Play, Copy, X, ArrowLeft, Table2, KeyRound, ShieldOff, Loader2, Eye, EyeOff } from 'lucide-react';
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
+import { ActionDropdown } from '../../components/ui/ActionDropdown';
+import { Database as DatabaseIcon, Plus, Trash2, Download, UserPlus, Server, Search, Play, Copy, X, ArrowLeft, Table2, KeyRound, ShieldOff, Loader2, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 
 function CreateDbModal({ onClose }: { onClose: () => void }) {
   const createDb = useCreateDatabase();
@@ -567,15 +561,34 @@ function DbDetailModal({ database, onBack }: { database: Database; onBack: () =>
 }
 
 export function DatabasesPage() {
-  const { data: databases, isLoading } = useDatabases();
+  const navigate = useNavigate();
+  const { data: databases, isLoading, isError, refetch } = useDatabases();
   const deleteDb = useDeleteDatabase();
   const [showCreate, setShowCreate] = useState(false);
   const [showUser, setShowUser] = useState(false);
-  const [selectedDb, setSelectedDb] = useState<Database | null>(null);
   const [userDbId, setUserDbId] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Database | null>(null);
 
   if (isLoading) return <LoadingSpinner />;
+
+  if (isError) {
+    return (
+      <div>
+        <PageHeader title="Databases" description="Manage MySQL and PostgreSQL databases" />
+        <div className="flex flex-col items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 py-12">
+          <AlertTriangle className="h-10 w-10 text-red-500" />
+          <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load databases</h3>
+          <p className="mt-1 text-sm text-muted-foreground">An error occurred while fetching databases.</p>
+          <button
+            onClick={() => refetch()}
+            className="mt-4 inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -627,18 +640,18 @@ export function DatabasesPage() {
                 {databases.map((d) => (
                   <tr key={d.id} className="border-b border-border last:border-0 hover:bg-muted/30">
                     <td className="px-4 py-3">
-                      <button onClick={() => setSelectedDb(d)} className="font-medium hover:text-primary">{d.name}</button>
+                      <button onClick={() => navigate({ to: '/databases/$id', params: { id: d.id } })} className="font-medium hover:text-primary">{d.name}</button>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground uppercase">{d.engine}</td>
                     <td className="px-4 py-3 text-muted-foreground">{new Date(d.createdAt).toLocaleDateString()}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-1">
-                        <button onClick={() => setSelectedDb(d)} className="rounded p-1.5 text-muted-foreground hover:bg-accent" title="Details">
-                          <Search className="h-4 w-4" />
-                        </button>
-                        <button onClick={() => setDeleteTarget(d)} className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Delete">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        <ActionDropdown
+                          items={[
+                            { label: 'View Details', icon: <Eye className="h-3.5 w-3.5" />, onClick: () => navigate({ to: '/databases/$id', params: { id: d.id } }) },
+                            { label: 'Delete', icon: <Trash2 className="h-3.5 w-3.5" />, variant: 'danger', onClick: () => setDeleteTarget(d) },
+                          ]}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -646,12 +659,6 @@ export function DatabasesPage() {
               </tbody>
             </table>
           </ResponsiveTable>
-        </div>
-      )}
-
-      {selectedDb && (
-        <div className="fixed inset-0 z-40 bg-background p-6 overflow-auto">
-          <DbDetailModal database={selectedDb} onBack={() => setSelectedDb(null)} />
         </div>
       )}
 
