@@ -62,27 +62,43 @@ export default async function authRoutes(fastify: FastifyInstance) {
   fastify.post('/login', {
     config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
     handler: async (req, reply) => {
-      const { username, password, rememberMe } = loginSchema.parse(req.body);
-      const result = await authService.login(username, password, rememberMe, req.ip);
-
-      if ('requiresTwoFactor' in result) {
-        return reply.send({
-          success: true,
-          data: { requiresTwoFactor: true, tempToken: result.tempToken },
-        });
+      let username: string, password: string, rememberMe: boolean;
+      try {
+        const parsed = loginSchema.parse(req.body);
+        username = parsed.username;
+        password = parsed.password;
+        rememberMe = parsed.rememberMe || false;
+      } catch (err) {
+        console.error('[AUTH] Schema parse error:', err);
+        throw err;
       }
+      console.error('[AUTH] Login attempt for username:', username);
+      try {
+        const result = await authService.login(username, password, rememberMe, req.ip);
+        console.error('[AUTH] Login success, result keys:', Object.keys(result));
 
-      // Set session cookie
-      const isRemember = rememberMe || false;
-      reply.setCookie('sf_session', result.sessionId, {
-        httpOnly: true,
-        secure: req.protocol === 'https',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: isRemember ? 30 * 24 * 60 * 60 : 2 * 60 * 60, // 30 days or 2 hours
-      });
+        if ('requiresTwoFactor' in result) {
+          return reply.send({
+            success: true,
+            data: { requiresTwoFactor: true, tempToken: result.tempToken },
+          });
+        }
 
-      return reply.send({ success: true, data: result });
+        // Set session cookie
+        const isRemember = rememberMe || false;
+        reply.setCookie('sf_session', result.sessionId, {
+          httpOnly: true,
+          secure: req.protocol === 'https',
+          sameSite: 'lax',
+          path: '/',
+          maxAge: isRemember ? 30 * 24 * 60 * 60 : 2 * 60 * 60, // 30 days or 2 hours
+        });
+
+        return reply.send({ success: true, data: result });
+      } catch (err) {
+        console.error('[AUTH] Login error caught in handler:', err, 'Error constructor:', err?.constructor?.name);
+        throw err;
+      }
     },
   });
 
