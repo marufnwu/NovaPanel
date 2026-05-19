@@ -4,7 +4,8 @@ import type { SystemService, ServiceInfo, ServiceStatus } from './types.js';
 import { logger } from '../config/logger.js';
 import * as sudoFs from './sudo-fs.js';
 import { db } from '../db/index.js';
-import { websites } from '../db/schema/websites.js';
+import { websites } from '../db/schema/websites.js';  // Keep for backward compat
+import { sites, siteRuntimes } from '../db/schema/index.js';
 import { domains } from '../db/schema/domains.js';
 import { eq, and } from 'drizzle-orm';
 
@@ -130,48 +131,73 @@ export class NginxService implements SystemService {
    * - Each subdomain gets its own server block
    * - Suspended domains get a 503 block instead of their normal block
    */
-  async generateWebsiteConfig(websiteId: string): Promise<void> {
-    // 1. Look up website
+async generateWebsiteConfig(websiteId: string): Promise<void> {
+  // 1. Look up site (try new sites table first, fall back to websites for migration)
+  const [site] = await db.select().from(sites).where(eq(sites.id, websiteId)).limit(1);
+  
+  let siteData = site;
+  let phpVersion = '8.2'; // default
+  
+  if (!siteData) {
+    // Fall back to old websites table for migration period
     const [website] = await db.select().from(websites).where(eq(websites.id, websiteId)).limit(1);
-    if (!website) throw new Error(`Website not found: ${websiteId}`);
-
-    // 2. Find all domains attached to this website
-    const attachedDomains = await db.select().from(domains).where(eq(domains.websiteId, websiteId));
-
-    // 3. Group domains by type
-    const primaryDomain = attachedDomains.find(d => d.type === 'primary' && d.isPrimary);
-    const addonDomains = attachedDomains.filter(d => d.type === 'addon');
-    const parkedDomains = attachedDomains.filter(d => d.type === 'parked');
-    const subdomainDomains = attachedDomains.filter(d => d.type === 'subdomain');
-
-    // 4. Build config
-    let config = this.generateConfigHeader(website.name, websiteId);
-
-    // Primary + parked domains (port 80)
-    if (primaryDomain) {
-      config += this.buildPrimaryServerBlock(primaryDomain, parkedDomains, website);
-    } else if (parkedDomains.length > 0) {
-      // No primary but has parked - find first parked's parent to get docroot
-      logger.warn({ websiteId }, 'Parked domains exist but no primary domain found');
+    if (!website) throw new Error(`Website/Site not found: ${websiteId}`);
+    siteData = {
+      id: website.id,
+      name: website.name,
+      systemUser: website.systemUser,
+      homeDir: website.homeDir,
+      status: website.status,
+      diskUsedMb: website.diskUsedMb,
+      bandwidthUsedMb: website.bandwidthUsedMb,
+      createdAt: website.createdAt,
+    };
+    phpVersion = website.phpVersion || '8.2';
+  } else {
+    // Get runtime config from site_runtimes
+    const [runtime] = await db.select().from(siteRuntimes).where(eq(siteRuntimes.siteId, websiteId)).limit(1);
+    if (runtime?.runtimeConfig) {
+      const config = runtime.runtimeConfig as any;
+      phpVersion = config.phpVersion || config.version || '8.2';
     }
+  }
 
-    // Addon domains
-    for (const addon of addonDomains) {
-      if (addon.status === 'suspended') {
-        config += this.buildSuspendedBlock(addon);
-      } else {
-        config += this.buildAddonServerBlock(addon, website);
-      }
-    }
+  // 2. Find all domains attached to this site
+  const attachedDomains = await db.select().from(domains).where(eq(domains.websiteId, websiteId));
 
-    // Subdomain domains
-    for (const subdomain of subdomainDomains) {
-      if (subdomain.status === 'suspended') {
-        config += this.buildSuspendedBlock(subdomain);
-      } else {
-        config += this.buildSubdomainServerBlock(subdomain, website);
-      }
+  // 3. Group domains by type
+  const primaryDomain = attachedDomains.find(d => d.type === 'primary' && d.isPrimary);
+  const addonDomains = attachedDomains.filter(d => d.type === 'addon');
+  const parkedDomains = attachedDomains.filter(d => d.type === 'parked');
+  const subdomainDomains = attachedDomains.filter(d => d.type === 'subdomain');
+
+  // 4. Build config
+  let config = this.generateConfigHeader(siteData.name, websiteId);
+
+  // Primary + parked domains (port 80)
+  if (primaryDomain) {
+    config += this.buildPrimaryServerBlock(primaryDomain, parkedDomains, siteData, phpVersion);
+  } else if (parkedDomains.length > 0) {
+    logger.warn({ websiteId }, 'Parked domains exist but no primary domain found');
+  }
+
+  // Addon domains
+  for (const addon of addonDomains) {
+    if (addon.status === 'suspended') {
+      config += this.buildSuspendedBlock(addon);
+    } else {
+      config += this.buildAddonServerBlock(addon, siteData, phpVersion);
     }
+  }
+
+  // Subdomain domains
+  for (const subdomain of subdomainDomains) {
+    if (subdomain.status === 'suspended') {
+      config += this.buildSuspendedBlock(subdomain);
+    } else {
+      config += this.buildSubdomainServerBlock(subdomain, siteData, phpVersion);
+    }
+}
 
     // Write config file
     const configPath = `${env.NGINX_SITES_AVAILABLE}/website-${websiteId}.conf`;
@@ -230,11 +256,11 @@ export class NginxService implements SystemService {
    * Build primary domain server block with parked domains merged into server_name.
    * Both HTTP and HTTPS blocks are included if SSL is enabled.
    */
-  private buildPrimaryServerBlock(primaryDomain: any, parkedDomains: any[], website: any): string {
+  private buildPrimaryServerBlock(primaryDomain: any, parkedDomains: any[], website: any, phpVersion?: string): string {
     const allServerNames = [primaryDomain.name, ...parkedDomains.map(p => p.name)];
     const serverNameLine = allServerNames.join(' ');
     const docRoot = this.resolveDocumentRoot(primaryDomain, website) || website.documentRoot;
-    const phpVersion = this.resolvePhpVersion(primaryDomain, website);
+    const resolvedPhpVersion = phpVersion ?? this.resolvePhpVersion(primaryDomain, website);
 
     let config = `\n# ── Primary + Parked domains (port 80) ───────\n`;
     config += `server {\n`;
@@ -247,8 +273,8 @@ export class NginxService implements SystemService {
     config += `    location / {\n`;
     config += `        try_files $uri $uri/ =404;\n`;
     config += `    }\n`;
-    if (phpVersion) {
-      config += this.renderPhpLocation(phpVersion);
+    if (resolvedPhpVersion) {
+      config += this.renderPhpLocation(resolvedPhpVersion);
     }
     config += `}\n`;
 
@@ -272,8 +298,8 @@ export class NginxService implements SystemService {
       config += `    location / {\n`;
       config += `        try_files $uri $uri/ =404;\n`;
       config += `    }\n`;
-      if (phpVersion) {
-        config += this.renderPhpLocation(phpVersion);
+      if (resolvedPhpVersion) {
+        config += this.renderPhpLocation(resolvedPhpVersion);
       }
       config += `}\n`;
     }
@@ -284,9 +310,9 @@ export class NginxService implements SystemService {
   /**
    * Build addon domain server block with its own docroot under addons/.
    */
-  private buildAddonServerBlock(addonDomain: any, website: any): string {
+  private buildAddonServerBlock(addonDomain: any, website: any, phpVersion?: string): string {
     const docRoot = this.resolveDocumentRoot(addonDomain, website) || `${website.homeDir}/addons/${addonDomain.id}/httpdocs`;
-    const phpVersion = this.resolvePhpVersion(addonDomain, website);
+    const resolvedPhpVersion = phpVersion ?? this.resolvePhpVersion(addonDomain, website);
 
     let config = `\n# ── Addon domain: ${addonDomain.name} (port 80) ─────────\n`;
     config += `server {\n`;
@@ -299,8 +325,8 @@ export class NginxService implements SystemService {
     config += `    location / {\n`;
     config += `        try_files $uri $uri/ =404;\n`;
     config += `    }\n`;
-    if (phpVersion) {
-      config += this.renderPhpLocation(phpVersion);
+    if (resolvedPhpVersion) {
+      config += this.renderPhpLocation(resolvedPhpVersion);
     }
     config += `}\n`;
 
@@ -319,8 +345,8 @@ export class NginxService implements SystemService {
       config += `    location / {\n`;
       config += `        try_files $uri $uri/ =404;\n`;
       config += `    }\n`;
-      if (phpVersion) {
-        config += this.renderPhpLocation(phpVersion);
+      if (resolvedPhpVersion) {
+        config += this.renderPhpLocation(resolvedPhpVersion);
       }
       config += `}\n`;
     }
@@ -331,9 +357,9 @@ export class NginxService implements SystemService {
   /**
    * Build subdomain server block with its own docroot under subdomains/.
    */
-  private buildSubdomainServerBlock(subdomainDomain: any, website: any): string {
+  private buildSubdomainServerBlock(subdomainDomain: any, website: any, phpVersion?: string): string {
     const docRoot = this.resolveDocumentRoot(subdomainDomain, website) || `${website.homeDir}/subdomains/${subdomainDomain.id}/httpdocs`;
-    const phpVersion = this.resolvePhpVersion(subdomainDomain, website);
+    const resolvedPhpVersion = phpVersion ?? this.resolvePhpVersion(subdomainDomain, website);
 
     let config = `\n# ── Subdomain: ${subdomainDomain.name} (port 80) ────\n`;
     config += `server {\n`;
@@ -346,8 +372,8 @@ export class NginxService implements SystemService {
     config += `    location / {\n`;
     config += `        try_files $uri $uri/ =404;\n`;
     config += `    }\n`;
-    if (phpVersion) {
-      config += this.renderPhpLocation(phpVersion);
+    if (resolvedPhpVersion) {
+      config += this.renderPhpLocation(resolvedPhpVersion);
     }
     config += `}\n`;
 
@@ -366,8 +392,8 @@ export class NginxService implements SystemService {
       config += `    location / {\n`;
       config += `        try_files $uri $uri/ =404;\n`;
       config += `    }\n`;
-      if (phpVersion) {
-        config += this.renderPhpLocation(phpVersion);
+      if (resolvedPhpVersion) {
+        config += this.renderPhpLocation(resolvedPhpVersion);
       }
       config += `}\n`;
     }
@@ -407,6 +433,19 @@ export class NginxService implements SystemService {
 
     await this.generateWebsiteConfig(targetWebsiteId);
     logger.info({ subdomainDomainId, targetWebsiteId }, 'Subdomain nginx config generated (v3)');
+  }
+
+  /**
+   * Generate nginx config for a site (v4 architecture - alias for generateWebsiteConfig).
+   * In v4, "site" replaces "website" as the primary entity.
+   * This method delegates to generateWebsiteConfig for backward compatibility.
+   */
+  async generateSiteConfig(siteId: string): Promise<void> {
+    // v4 architecture: sites and websites are equivalent
+    // This method exists to provide a semantic name for the new architecture
+    // while reusing the existing website-scoped config generation
+    await this.generateWebsiteConfig(siteId);
+    logger.info({ siteId }, 'Site nginx config generated (v4)');
   }
 
   /**

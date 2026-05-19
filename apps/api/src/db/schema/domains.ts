@@ -1,6 +1,7 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { websites } from './websites.js';
+import { sites } from './sites.js';
 
 export const domains = sqliteTable('domains', {
   id: text('id').primaryKey(),
@@ -22,10 +23,14 @@ export const domains = sqliteTable('domains', {
   // --- Domain/website separation (Phase 1) ---
   type: text('type', { enum: ['primary', 'addon', 'parked', 'subdomain', 'redirect', 'mail-only'] }).default('primary').notNull(),
   websiteId: text('website_id').references(() => websites.id, { onDelete: 'set null' }),
+  siteId: text('site_id').references(() => sites.id, { onDelete: 'set null' }),
   parentDomainId: text('parent_domain_id'),           // subdomain → parent domain; parked → domain it mirrors
 
   // Primary flag — at most one primary per website (enforced at service layer)
   isPrimary: integer('is_primary', { mode: 'boolean' }).default(false).notNull(),
+
+  // Subdomain flag - derived from type === 'subdomain'
+  isSubdomain: integer('is_subdomain', { mode: 'boolean' }).default(false).notNull(),
 
   // Redirect config (type = redirect only)
   redirectTarget: text('redirect_target'),

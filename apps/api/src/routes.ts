@@ -20,8 +20,8 @@ export async function registerRoutes(fastify: FastifyInstance) {
   // Phase 6: Domains
   await fastify.register(import('./modules/domains/domains.routes.js'), { prefix: '/api/v1/domains' });
 
-  // Websites (domain/website separation)
-  await fastify.register(import('./modules/websites/websites.routes.js'), { prefix: '/api/v1/websites' });
+  // Sites (v4 architecture - replaces websites)
+  await fastify.register(import('./modules/sites/sites.routes.js'), { prefix: '/api/v1/sites' });
 
   // Phase 7: Web Server + PHP (routes define their own /webserver/... and /php/... paths)
   await fastify.register(import('./modules/webserver/webserver.routes.js'), { prefix: '/api/v1' });

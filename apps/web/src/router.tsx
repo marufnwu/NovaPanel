@@ -32,6 +32,8 @@ import { NotificationsPage } from './pages/notifications/NotificationsPage';
 import { InstallerPage } from './pages/installer/InstallerPage';
 import { WebsitesPage } from './pages/websites/WebsitesPage';
 import { WebsiteDetailPage } from './pages/websites/WebsiteDetailPage';
+import { SitesPage } from './pages/sites/SitesPage';
+import { SiteDetailPage } from './pages/sites/SiteDetailPage';
 import { DatabaseDetailPage } from './pages/databases/DatabaseDetailPage';
 import { CloudflarePage } from './pages/cloudflare/CloudflarePage';
 import { ResetPasswordPage } from './pages/reset-password/ResetPasswordPage';
@@ -69,6 +71,25 @@ const websitesRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/websites',
   component: WebsitesPage,
+});
+
+const sitesRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/sites',
+  component: SitesPage,
+});
+
+const siteDetailRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/sites/$id',
+  component: function SiteDetailWrapper() {
+    const { id } = useParams({ from: '/protected/sites/$id' });
+    return (
+      <PageErrorBoundary title="Site detail crashed">
+        <SiteDetailPage />
+      </PageErrorBoundary>
+    );
+  },
 });
 
 const websiteDetailRoute = createRoute({
@@ -248,6 +269,8 @@ const routeTree = rootRoute.addChildren([
     indexRoute,
     domainsRoute,
     websitesRoute,
+    sitesRoute,
+    siteDetailRoute,
     websiteDetailRoute,
     webserverRoute,
     phpRoute,

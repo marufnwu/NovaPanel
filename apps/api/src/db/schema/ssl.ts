@@ -2,7 +2,7 @@ import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { domains } from './domains.js';
 
-export const sslCertificates = sqliteTable('ssl_certificates', {
+export const legacySslCertificates = sqliteTable('ssl_certificates', {
   id: text('id').primaryKey(),
   domainId: text('domain_id').references(() => domains.id),
   type: text('type', { enum: ['letsencrypt', 'custom', 'self-signed'] }).notNull(),
@@ -18,4 +18,6 @@ export const sslCertificates = sqliteTable('ssl_certificates', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 
-export type SslCertificate = typeof sslCertificates.$inferSelect;
+export const sslCertificates = legacySslCertificates;
+
+export type LegacySslCertificate = typeof legacySslCertificates.$inferSelect;
