@@ -13,8 +13,6 @@ import { redisClient } from '../../services/redis.js';
 
 const SESSION_DURATION_HOURS = 2;
 const REMEMBER_ME_DAYS = 30;
-const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_MINUTES = 15;
 const TEMP_TOKEN_DURATION_MINUTES = 5;
 const PASSWORD_RESET_DURATION_HOURS = 1;
 const BACKUP_CODE_COUNT = 10;
@@ -35,43 +33,20 @@ export class AuthService {
       throw new AppError(403, 'ACCOUNT_DISABLED', 'Account is disabled');
     }
 
-    // 3. Check if account is locked
-    if (user.lockedUntil && user.lockedUntil > new Date()) {
-      const remainingMs = user.lockedUntil.getTime() - Date.now();
-      const remainingMin = Math.ceil(remainingMs / 60000);
-      throw new AppError(423, 'ACCOUNT_LOCKED',
-        `Account locked due to too many failed attempts. Try again in ${remainingMin} minutes.`);
-    }
-
-    // 4. Verify password
+    // 3. Verify password
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
-      // Increment failed attempts
-      const newAttempts = (user.failedLoginAttempts || 0) + 1;
-      const updateData: Record<string, any> = { failedLoginAttempts: newAttempts };
-
-      if (newAttempts >= MAX_LOGIN_ATTEMPTS) {
-        updateData.lockedUntil = new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000);
-      }
-
-      await db.update(users).set(updateData).where(eq(users.id, user.id));
-
       // Audit log: login failure
       auditService.log({
         userId: user.id,
         action: 'auth.login.failed',
         resource: `user:${user.username}`,
-        details: JSON.stringify({ username, attempts: newAttempts }),
+        details: JSON.stringify({ username }),
         ipAddress,
       }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-      const remaining = Math.max(0, MAX_LOGIN_ATTEMPTS - newAttempts);
-      throw new AppError(401, 'INVALID_CREDENTIALS',
-        `Invalid username or password. ${remaining} attempt(s) remaining.`);
+      throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid username or password');
     }
-
-    // 5. Reset failed attempts on successful password
-    await db.update(users).set({ failedLoginAttempts: 0, lockedUntil: null }).where(eq(users.id, user.id));
 
     // 6. If 2FA is enabled, issue a tempToken instead of a session
     if (user.twoFactorEnabled) {
