@@ -9,7 +9,7 @@ import { mkdirSchema, renameSchema, chmodSchema, archiveSchema, extractSchema, s
 import { requireAuth } from '../auth/auth.middleware.js';
 import { db } from '../../db/index.js';
 import { domains } from '../../db/schema/domains.js';
-import { websites } from '../../db/schema/websites.js';
+import { sites } from '../../db/schema/sites.js';
 import { eq } from 'drizzle-orm';
 import { run } from '../../services/executor.js';
 import { AppError } from '../../errors.js';
@@ -34,12 +34,12 @@ const DANGEROUS_EXTENSIONS = [
  * 3. Otherwise → return DEFAULT_HOME_DIR
  */
 async function resolveHomeDir(domainId?: string, websiteId?: string): Promise<string> {
-  // Website-scoped: use the website's documentRoot directly
+  // Site-scoped: use the site's homeDir directly
   if (websiteId) {
     try {
-      const [website] = await db.select().from(websites).where(eq(websites.id, websiteId)).limit(1);
-      if (website) {
-        return website.documentRoot.replace(/\/+$/, '');
+      const [site] = await db.select().from(sites).where(eq(sites.id, websiteId)).limit(1);
+      if (site) {
+        return site.homeDir.replace(/\/+$/, '');
       }
     } catch {
       // Fall through to default

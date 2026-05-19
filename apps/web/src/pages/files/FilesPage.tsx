@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useDomains } from '../../api/hooks/domains';
-import { useWebsite, useWebsites } from '../../api/hooks/websites';
+import { useWebsite, useWebsites } from '../../api/hooks/sites';
 import {
   useDirectoryListing,
   useCreateDirectory,
@@ -1294,7 +1294,7 @@ export function FilesPage() {
   // Determine page header info
   const headerTitle = activeWebsiteId && website ? `File Manager — ${website.name}` : 'File Manager';
   const headerDescription = activeWebsiteId && website
-    ? `Browsing files for website: ${website.name} (${website.documentRoot})`
+    ? `Browsing files for site: ${website.name} (${website.homeDir})`
     : 'Browse and manage server files';
 
   if (editingFile) {
@@ -1316,7 +1316,7 @@ export function FilesPage() {
           <div className="flex items-center gap-2 rounded-md border border-primary bg-primary/5 px-3 py-2 text-sm">
             <Globe className="h-4 w-4 text-primary" />
             <span className="font-medium">{website?.name || 'Loading...'}</span>
-            <span className="text-muted-foreground">({website?.documentRoot})</span>
+            <span className="text-muted-foreground">({website?.homeDir})</span>
           </div>
         ) : (
           /* Website selector + Domain selector (when no URL websiteId) */

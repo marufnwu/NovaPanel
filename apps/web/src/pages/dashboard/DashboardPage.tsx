@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 
 // --- Helpers ---
 
@@ -266,7 +267,7 @@ function ServiceCard({ svc, onRestart, serverContext }: { svc: { name: string; d
   );
 }
 
-// --- CPU Sparkline Graph ---
+// --- CPU Sparkline Graph (recharts) ---
 
 type TimeRange = '1h' | '6h' | '24h';
 
@@ -277,17 +278,16 @@ const TIME_RANGE_MS: Record<TimeRange, number> = {
 };
 
 const MAX_POINTS: Record<TimeRange, number> = {
-  '1h': 720,   // every 5s for 1h
-  '6h': 720,   // every 30s for 6h
-  '24h': 576,  // every 150s for 24h
+  '1h': 720,
+  '6h': 720,
+  '24h': 576,
 };
 
 function CpuSparkline({ currentUsage }: { currentUsage: number }) {
   const [timeRange, setTimeRange] = useState<TimeRange>('1h');
-  const [dataPoints, setDataPoints] = useState<{ timestamp: number; value: number }[]>([]);
+  const [dataPoints, setDataPoints] = useState<{ t: number; v: number }[]>([]);
   const prevValueRef = useRef(currentUsage);
 
-  // Collect data points every 5 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       setDataPoints(prev => {
@@ -295,13 +295,11 @@ function CpuSparkline({ currentUsage }: { currentUsage: number }) {
         const maxPoints = MAX_POINTS[timeRange];
         const rangeMs = TIME_RANGE_MS[timeRange];
         const cutoff = now - rangeMs;
-
-        // Use the latest value (polled every 5s by refetchInterval)
-        const newPoint = { timestamp: now, value: prevValueRef.current };
-        const filtered = prev.filter(p => p.timestamp > cutoff);
+        const val = prevValueRef.current;
+        if (typeof val !== 'number' || isNaN(val) || val < 0) return prev;
+        const newPoint = { t: now, v: val };
+        const filtered = prev.filter(p => p.t > cutoff);
         const updated = [...filtered, newPoint];
-
-        // Downsample if too many points
         if (updated.length > maxPoints) {
           const step = Math.ceil(updated.length / maxPoints);
           return updated.filter((_, i) => i % step === 0);
@@ -309,90 +307,35 @@ function CpuSparkline({ currentUsage }: { currentUsage: number }) {
         return updated;
       });
     }, 5000);
-
     return () => clearInterval(interval);
   }, [timeRange]);
 
-  // Update ref when currentUsage changes — guard against null/undefined
   useEffect(() => {
     const val = currentUsage;
-    if (typeof val === 'number' && !isNaN(val) && val >= 0) {
-      prevValueRef.current = val;
-    }
+    if (typeof val === 'number' && !isNaN(val) && val >= 0) prevValueRef.current = val;
   }, [currentUsage]);
 
-  // Filter data for selected time range, skip null/undefined/NaN points
-  const filteredData = dataPoints.filter(
-    p => p.timestamp > Date.now() - TIME_RANGE_MS[timeRange]
-      && typeof p.value === 'number'
-      && !isNaN(p.value)
-      && p.value >= 0
-  );
-
-  // SVG sparkline
-  const width = 200;
-  const height = 50;
-  const padding = 2;
-
-  const points = filteredData.length > 1
-    ? filteredData.map((p, i) => {
-        const x = padding + (i / (filteredData.length - 1)) * (width - 2 * padding);
-        const y = height - padding - (p.value / 100) * (height - 2 * padding);
-        return `${x},${y}`;
-      }).join(' ')
-    : '';
-
-  const areaPoints = points
-    ? `${padding},${height - padding} ${points} ${width - padding},${height - padding}`
-    : '';
+  const filteredData = dataPoints.filter(p => p.t > Date.now() - TIME_RANGE_MS[timeRange]);
 
   return (
     <div>
-      <div className="flex items-center justify-between mt-2">
-        <div className="flex gap-1">
-          {(['1h', '6h', '24h'] as TimeRange[]).map(range => (
-            <button
-              key={range}
-              onClick={() => setTimeRange(range)}
-              className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                timeRange === range
-                  ? 'bg-blue-500/20 text-blue-400'
-                  : 'text-gray-500 hover:text-gray-400 hover:bg-muted'
-              }`}
-            >
-              {range}
-            </button>
-          ))}
-        </div>
-        <span className="text-[10px] text-muted-foreground">{filteredData.length} pts</span>
-      </div>
-      <div className="mt-1">
-        {filteredData.length > 1 ? (
-          <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="overflow-visible">
-            {/* Grid lines */}
-            {[25, 50, 75].map(yPct => {
-              const y = height - padding - (yPct / 100) * (height - 2 * padding);
-              return (
-                <line key={yPct} x1={padding} y1={y} x2={width - padding} y2={y} stroke="currentColor" strokeOpacity={0.06} strokeWidth={0.5} />
-              );
-            })}
-            {/* Area fill */}
-            <polygon points={areaPoints} fill="url(#cpuGradient)" opacity={0.3} />
-            {/* Line */}
-            <polyline points={points} fill="none" stroke="#3b82f6" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
-            {/* Gradient definition */}
+      <div className="mt-3 h-16">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={filteredData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.4} />
+                <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} />
                 <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
               </linearGradient>
             </defs>
-          </svg>
-        ) : (
-          <div className="flex items-center justify-center h-[50px] text-[10px] text-muted-foreground">
-            Collecting data...
-          </div>
-        )}
+            <Area type="monotone" dataKey="v" stroke="#3b82f6" fill="url(#cpuGradient)" strokeWidth={1.5} isAnimationActive={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-1 flex justify-center gap-1">
+        {(['1h', '6h', '24h'] as TimeRange[]).map(r => (
+          <button key={r} onClick={() => setTimeRange(r)} className={`rounded px-2 py-0.5 text-xs ${timeRange === r ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{r}</button>
+        ))}
       </div>
     </div>
   );

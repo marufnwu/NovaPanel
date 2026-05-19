@@ -40,7 +40,11 @@ export default async function domainRoutes(fastify: FastifyInstance) {
       }
     }
 
-    const domain = await service.create({ ...data, userId: req.user.id, ipAddress: req.ip });
+    const domain = await service.create({
+      ...data,
+      userId: req.user.id,
+      ipAddress: req.ip,
+    });
     return reply.status(201).send({ success: true, data: domain });
   });
 

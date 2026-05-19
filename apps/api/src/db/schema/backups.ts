@@ -1,11 +1,11 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { domains } from './domains.js';
-import { websites } from './websites.js';
+import { sites } from './sites.js';
 
 export const backups = sqliteTable('backups', {
   id: text('id').primaryKey(),
-  websiteId: text('website_id').references(() => websites.id, { onDelete: 'set null' }),
+  websiteId: text('website_id').references(() => sites.id, { onDelete: 'set null' }),
   filename: text('filename').notNull(),
   sizeBytes: integer('size_bytes').notNull().default(0),
   type: text('type', { enum: ['full', 'files', 'database', 'dns', 'mail', 'config'] }).notNull().default('full'),

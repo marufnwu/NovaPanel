@@ -1,13 +1,13 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { websites } from './websites.js';
+import { sites } from './sites.js';
 
 export const installedApps = sqliteTable('installed_apps', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   appId: text('app_id').notNull().unique(),
   appName: text('app_name').notNull(),
   domainId: text('domain_id'),
-  websiteId: text('website_id').references(() => websites.id, { onDelete: 'set null' }),
+  websiteId: text('website_id').references(() => sites.id, { onDelete: 'set null' }),
   installPath: text('install_path'),
   status: text('status').notNull().default('installing'),
   progress: integer('progress').default(0),

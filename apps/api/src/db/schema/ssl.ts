@@ -19,5 +19,4 @@ export const legacySslCertificates = sqliteTable('ssl_certificates', {
 });
 
 export const sslCertificates = legacySslCertificates;
-
 export type LegacySslCertificate = typeof legacySslCertificates.$inferSelect;

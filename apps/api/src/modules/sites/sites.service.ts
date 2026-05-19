@@ -114,7 +114,6 @@ export class SitesService {
           siteId,
           type: 'primary',
           isPrimary: true,
-          isSubdomain: primaryDomain.includes('.'),
           documentRoot: `${siteDir}/httpdocs`,
           sslEnabled: true,
           status: 'active',

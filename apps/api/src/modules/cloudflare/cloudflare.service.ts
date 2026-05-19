@@ -1,7 +1,7 @@
 import { db } from '../../db/index.js';
 import { cloudflareZones, cloudflareRedirectRules } from '../../db/schema/cloudflare.js';
 import { cloudflareTunnels, tunnelRoutes } from '../../db/schema/tunnels.js';
-import { domains, subdomains } from '../../db/schema/index.js';
+import { domains } from '../../db/schema/index.js';
 import { eq, and } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { CloudflareClient } from '../../services/cloudflare-client.js';
@@ -1179,7 +1179,8 @@ export class CloudflareService {
     const activeRoutes = routes.filter(r => r.isActive);
 
     // Check for subdomain routes
-    const subdomainList = await db.select().from(subdomains).where(eq(subdomains.domainId, domainId));
+    const subdomainList = await db.select().from(domains)
+      .where(and(eq(domains.parentDomainId, domainId), eq(domains.type, 'subdomain')));
     const subdomainRoutes = subdomainList.length > 0
       ? await Promise.all(
           subdomainList.map(async (sub) => {

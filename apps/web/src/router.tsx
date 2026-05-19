@@ -30,8 +30,6 @@ import { ApiTokensPage } from './pages/settings/ApiTokensPage';
 import { MonitoringPage } from './pages/monitoring/MonitoringPage';
 import { NotificationsPage } from './pages/notifications/NotificationsPage';
 import { InstallerPage } from './pages/installer/InstallerPage';
-import { WebsitesPage } from './pages/websites/WebsitesPage';
-import { WebsiteDetailPage } from './pages/websites/WebsiteDetailPage';
 import { SitesPage } from './pages/sites/SitesPage';
 import { SiteDetailPage } from './pages/sites/SiteDetailPage';
 import { DatabaseDetailPage } from './pages/databases/DatabaseDetailPage';
@@ -67,12 +65,6 @@ const domainsRoute = createRoute({
   component: DomainsPage,
 });
 
-const websitesRoute = createRoute({
-  getParentRoute: () => protectedRoute,
-  path: '/websites',
-  component: WebsitesPage,
-});
-
 const sitesRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/sites',
@@ -87,19 +79,6 @@ const siteDetailRoute = createRoute({
     return (
       <PageErrorBoundary title="Site detail crashed">
         <SiteDetailPage />
-      </PageErrorBoundary>
-    );
-  },
-});
-
-const websiteDetailRoute = createRoute({
-  getParentRoute: () => protectedRoute,
-  path: '/websites/$id',
-  component: function WebsiteDetailWrapper() {
-    const { id } = useParams({ from: '/protected/websites/$id' });
-    return (
-      <PageErrorBoundary title="Website detail crashed">
-        <WebsiteDetailPage websiteId={id} />
       </PageErrorBoundary>
     );
   },
@@ -268,10 +247,8 @@ const routeTree = rootRoute.addChildren([
   protectedRoute.addChildren([
     indexRoute,
     domainsRoute,
-    websitesRoute,
     sitesRoute,
     siteDetailRoute,
-    websiteDetailRoute,
     webserverRoute,
     phpRoute,
     sslRoute,

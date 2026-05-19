@@ -11,13 +11,12 @@ export interface Domain {
   webServer: string;
   sslEnabled: boolean;
   sslCertId?: string | null;
-  systemUser: string;
   diskUsedMb: number | null;
   bandwidthUsedMb: number | null;
   redirectHttpToHttps: boolean;
   hsts: boolean;
   createdAt: string;
-  websiteId?: string | null;
+  siteId?: string | null;
   type: 'primary' | 'addon' | 'parked' | 'subdomain' | 'redirect' | 'mail-only';
   isPrimary: boolean;
   parentDomainId?: string | null;
@@ -34,17 +33,15 @@ export interface CreateDomainInput {
   createDns?: boolean;
   createMail?: boolean;
   websiteMode?: 'none' | 'create' | 'existing';
-  websiteId?: string;
+  siteId?: string;
   websiteName?: string;
   type?: 'primary' | 'addon' | 'parked' | 'subdomain' | 'redirect' | 'mail-only';
   parentDomainId?: string;
   redirectTarget?: string;
   createDnsZone?: boolean;
   enableMail?: boolean;
-  // Cloudflare auto-public settings
   makePublic?: boolean;
   tunnelId?: string;
-  // DNS verification - if true, skips DNS verification before domain creation
   skipDnsVerification?: boolean;
 }
 
@@ -54,7 +51,7 @@ export interface Subdomain {
   domainId: string;
   documentRoot: string;
   phpVersion: string;
-  websiteId?: string | null; // Optional: if set, subdomain is attached to a different website than parent domain
+  siteId?: string | null;
   createdAt: string;
 }
 

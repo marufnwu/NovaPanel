@@ -181,6 +181,11 @@ export function useDetachDomainFromSite() {
   });
 }
 
+export const useWebsites = useSites;
+export const useWebsite = useSite;
+export const useAttachDomain = useAttachDomainToSite;
+export const useDetachDomain = useDetachDomainFromSite;
+
 // --- Process Management ---
 
 export function useStartSiteProcess() {

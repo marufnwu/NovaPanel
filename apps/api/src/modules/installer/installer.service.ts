@@ -180,7 +180,7 @@ export class InstallerService {
       const [domain] = await db.select({
         documentRoot: domains.documentRoot,
         phpVersion: domains.phpVersion,
-        websiteId: domains.websiteId,
+        websiteId: domains.siteId,
       }).from(domains).where(eq(domains.name, domainName)).limit(1);
       return domain || null;
     } catch {

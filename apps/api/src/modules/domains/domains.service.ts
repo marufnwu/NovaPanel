@@ -1,6 +1,6 @@
 import { db } from '../../db/index.js';
-import { domains, sites, siteRuntimes } from '../../db/schema/index.js';
-import { eq, and, like, count, sql } from 'drizzle-orm';
+import { domains, siteRuntimes } from '../../db/schema/index.js';
+import { eq, and, like, count } from 'drizzle-orm';
 import { AppError } from '../../errors.js';
 import { run } from '../../services/executor.js';
 import { nginxService } from '../../services/nginx.service.js';
@@ -8,7 +8,6 @@ import { env } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
 import { nanoid } from 'nanoid';
 import { auditService } from '../audit/audit.service.js';
-import { TunnelService } from '../tunnel/tunnel.service.js';
 
 interface ListOptions {
   page?: number;
@@ -16,7 +15,6 @@ interface ListOptions {
   search?: string;
   siteId?: string;
   type?: string;
-  isSubdomain?: boolean;
 }
 
 interface ListResult {
@@ -36,7 +34,6 @@ export class DomainsService {
     if (options.search) conditions.push(like(domains.name, `%${options.search}%`));
     if (options.siteId) conditions.push(eq(domains.siteId, options.siteId));
     if (options.type) conditions.push(eq(domains.type, options.type as any));
-    if (options.isSubdomain !== undefined) conditions.push(eq(domains.isSubdomain, options.isSubdomain));
 
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -83,8 +80,6 @@ export class DomainsService {
       if (!parent) throw new AppError(404, 'PARENT_DOMAIN_NOT_FOUND', 'Parent domain not found');
     }
 
-    const isSubdomain = this.checkIsSubdomain(name);
-
     const domainId = nanoid();
     await db.insert(domains).values({
       id: domainId,
@@ -96,7 +91,7 @@ export class DomainsService {
       documentRoot,
       sslEnabled,
       status: status as any,
-      isSubdomain,
+      isPrimary: type === 'primary',
     });
 
     logger.info({ domainId, name, type }, 'Domain created successfully');
@@ -228,9 +223,11 @@ export class DomainsService {
     }).catch(err => logger.error({ err }, 'Audit log failed'));
   }
 
+  // ── Subdomains (now rows in domains table with type='subdomain') ──
+
   async listSubdomains(domainId: string) {
     return db.select().from(domains)
-      .where(and(eq(domains.parentDomainId, domainId), eq(domains.isSubdomain, true)));
+      .where(and(eq(domains.parentDomainId, domainId), eq(domains.type, 'subdomain')));
   }
 
   async createSubdomain(domainId: string, data: {
@@ -240,23 +237,22 @@ export class DomainsService {
     userId?: string;
     ipAddress?: string;
   }) {
-    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
-    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+    const [parent] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!parent) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Parent domain not found');
 
-    const subdomainName = `${data.name}.${domain.name}`;
+    const subdomainName = `${data.name}.${parent.name}`;
     const subdomainId = nanoid();
-    const isSubdomain = true;
 
     await db.insert(domains).values({
       id: subdomainId,
       name: subdomainName,
       type: 'subdomain',
-      siteId: domain.siteId,
+      siteId: parent.siteId,
       parentDomainId: domainId,
       documentRoot: data.documentRoot || null,
       sslEnabled: data.sslEnabled || false,
       status: 'active',
-      isSubdomain,
+      isPrimary: false,
     });
 
     logger.info({ subdomainId, name: subdomainName, parentDomainId: domainId }, 'Subdomain created');
@@ -278,7 +274,6 @@ export class DomainsService {
     if (!subdomain) throw new AppError(404, 'SUBDOMAIN_NOT_FOUND', 'Subdomain not found');
 
     await db.delete(domains).where(eq(domains.id, subdomainId));
-    logger.info({ subdomainId }, 'Subdomain deleted');
 
     auditService.log({
       userId,
@@ -288,9 +283,11 @@ export class DomainsService {
     }).catch(err => logger.error({ err }, 'Audit log failed'));
   }
 
+  // ── Aliases (parked domains — mirrors primary) ──
+
   async listAliases(domainId: string) {
     return db.select().from(domains)
-      .where(and(eq(domains.parentDomainId, domainId), eq(domains.type, 'addon')));
+      .where(and(eq(domains.parentDomainId, domainId), eq(domains.type, 'parked')));
   }
 
   async createAlias(domainId: string, data: {
@@ -308,13 +305,13 @@ export class DomainsService {
     await db.insert(domains).values({
       id: aliasId,
       name: data.alias,
-      type: 'addon',
+      type: 'parked',
       siteId: domain.siteId,
       parentDomainId: domainId,
-      documentRoot: data.documentRoot || domain.documentRoot,
+      documentRoot: data.documentRoot || null,
       sslEnabled: data.sslEnabled || false,
       status: 'active',
-      isSubdomain: this.checkIsSubdomain(data.alias),
+      isPrimary: false,
     });
 
     logger.info({ aliasId, alias: data.alias, parentDomainId: domainId }, 'Alias created');
@@ -336,7 +333,6 @@ export class DomainsService {
     if (!alias) throw new AppError(404, 'ALIAS_NOT_FOUND', 'Alias not found');
 
     await db.delete(domains).where(eq(domains.id, aliasId));
-    logger.info({ aliasId }, 'Alias deleted');
 
     auditService.log({
       userId,
@@ -345,6 +341,8 @@ export class DomainsService {
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
   }
+
+  // ── Redirects (domain-level, stored in domains table) ──
 
   async listRedirects(domainId: string) {
     return db.select().from(domains)
@@ -370,7 +368,7 @@ export class DomainsService {
       parentDomainId: domainId,
       redirectTarget: data.redirectTarget,
       status: 'active',
-      isSubdomain: this.checkIsSubdomain(data.name),
+      isPrimary: false,
     });
 
     logger.info({ redirectId, name: data.name, redirectTarget: data.redirectTarget }, 'Redirect created');
@@ -392,7 +390,6 @@ export class DomainsService {
     if (!redirect) throw new AppError(404, 'REDIRECT_NOT_FOUND', 'Redirect not found');
 
     await db.delete(domains).where(eq(domains.id, redirectId));
-    logger.info({ redirectId }, 'Redirect deleted');
 
     auditService.log({
       userId,
@@ -401,6 +398,8 @@ export class DomainsService {
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
   }
+
+  // ── Logs ──
 
   async getLogStats(domainId: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
@@ -465,10 +464,5 @@ export class DomainsService {
       hasSsl: !!domain.sslEnabled,
       overall: domain.status === 'suspended' ? 'suspended' : 'local',
     };
-  }
-
-  private checkIsSubdomain(name: string): boolean {
-    const parts = name.split('.');
-    return parts.length > 2 || (parts.length === 2 && parts[0] !== 'www');
   }
 }

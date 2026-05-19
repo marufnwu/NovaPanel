@@ -44,7 +44,7 @@ import {
   type DomainCloudflareRedirectRule,
 } from '../../api/hooks/domains';
 import type { CreateDomainInput } from '../../api/hooks/domains';
-import { useWebsites, useAttachDomain } from '../../api/hooks/websites';
+import { useSites, useAttachDomain } from '../../api/hooks/sites';
 import { usePhpVersions, DEFAULT_PHP_VERSIONS } from '../../api/hooks/php';
 import { useServerContext } from '../../api/hooks/settings';
 import { useTunnelRoutes, useCloudflareConfig, useTunnelStatus } from '../../api/hooks/tunnel';
@@ -80,14 +80,14 @@ const WEBSERVER_TYPES = [
 // --- Domain Status Badge ---
 // --- Link Website Modal ---
 function LinkWebsiteModal({ domainId, onClose }: { domainId: string; onClose: () => void }) {
-  const { data: websites, isLoading } = useWebsites();
+  const { data: websites, isLoading } = useSites();
   const attachDomain = useAttachDomain();
   const [selectedWebsiteId, setSelectedWebsiteId] = useState('');
 
   const handleSubmit = () => {
     if (!selectedWebsiteId) return;
     attachDomain.mutate(
-      { websiteId: selectedWebsiteId, domainId },
+      { siteId: selectedWebsiteId, domainId },
       {
         onSuccess: () => {
           toast.success('Domain linked to website successfully');
@@ -170,7 +170,7 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
     createDns: true,
     createMail: true,
     websiteMode: 'create' as 'none' | 'create' | 'existing',
-    websiteId: '',
+    siteId: '',
     // Cloudflare auto-public
     makePublic: showMakePublic,
     tunnelId: '',
@@ -180,7 +180,7 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
   const [dnsVerification, setDnsVerification] = useState<DomainDnsVerification | null>(null);
   const [showDnsGuidance, setShowDnsGuidance] = useState(false);
 
-  const { data: websites } = useWebsites();
+  const { data: websites } = useSites();
 
   // Set default tunnel when cloudflare config loads
   useEffect(() => {
@@ -218,7 +218,7 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
       createDns: form.createDns,
       createMail: form.createMail,
       websiteMode: form.websiteMode,
-      websiteId: form.websiteMode === 'existing' ? form.websiteId : undefined,
+      siteId: form.websiteMode === 'existing' ? form.siteId : undefined,
       // Cloudflare auto-public
       makePublic: showMakePublic ? form.makePublic : undefined,
       tunnelId: showMakePublic && form.makePublic && form.tunnelId ? form.tunnelId : undefined,
@@ -413,8 +413,8 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
           <div>
             <label className="mb-1 block text-sm font-medium">Select Website</label>
             <select
-              value={form.websiteId}
-              onChange={(e) => setForm({ ...form, websiteId: e.target.value })}
+              value={form.siteId}
+              onChange={(e) => setForm({ ...form, siteId: e.target.value })}
               className="w-full max-w-md rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               required
             >
@@ -562,7 +562,7 @@ function CreateDomainForm({ onSubmit, onCancel, isLoading, error }: {
         <div className="flex gap-3 pt-2">
           <button
             type="submit"
-            disabled={!form.name || isLoading || (form.websiteMode === 'existing' && !form.websiteId) || !isDnsReady}
+            disabled={!form.name || isLoading || (form.websiteMode === 'existing' && !form.siteId) || !isDnsReady}
             className="rounded-md bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             title={!isDnsReady && form.name ? 'DNS verification required - click verify or wait for DNS to propagate' : undefined}
           >
@@ -688,7 +688,7 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
   const { data: aliases } = useAliases(domain.id);
   const { data: redirects } = useRedirects(domain.id);
   const { data: logStats } = useDomainLogStats(domain.id);
-  const { data: websites } = useWebsites();
+  const { data: websites } = useSites();
   const { data: cloudflareConfig } = useCloudflareConfig();
   const { data: cfZone } = useDomainCloudflareZone(domain.id);
   const { data: cfStatus } = useDomainCloudflareStatus(domain.id);
@@ -733,8 +733,8 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
   const [showLinkModal, setShowLinkModal] = useState(false);
 
   // Find linked website name
-  const linkedWebsite = domain.websiteId
-    ? websites?.find((w) => w.id === domain.websiteId)
+  const linkedWebsite = domain.siteId
+    ? websites?.find((w) => w.id === domain.siteId)
     : null;
 
   // Determine Open button behavior based on server context
@@ -846,16 +846,16 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
             <h3 className="mb-3 flex items-center gap-2 font-semibold">
               <Server className="h-4 w-4 text-primary" /> Linked Website
             </h3>
-            {domain.websiteId && linkedWebsite ? (
+            {domain.siteId && linkedWebsite ? (
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm">
                     This domain is linked to website: <strong>{linkedWebsite.name}</strong>
                   </p>
-                  <p className="mt-1 text-xs text-muted-foreground font-mono">{linkedWebsite.documentRoot}</p>
+                  <p className="mt-1 text-xs text-muted-foreground font-mono">{linkedWebsite.homeDir}/httpdocs</p>
                 </div>
                 <a
-                  href={`/websites/${domain.websiteId}`}
+                  href={`/sites/${domain.siteId}`}
                   className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                 >
                   <ExternalLink className="h-3.5 w-3.5" /> View Website
@@ -932,7 +932,7 @@ function DomainDetail({ domain, onBack }: { domain: Domain; onBack: () => void }
             </div>
             <div className="rounded-lg border border-border bg-card p-4">
               <p className="text-xs font-medium text-muted-foreground">System User</p>
-              <p className="mt-1 text-sm font-mono font-semibold">{domain.systemUser}</p>
+              <p className="mt-1 text-sm font-mono font-semibold">{linkedWebsite?.systemUser || '—'}</p>
             </div>
             <div className="rounded-lg border border-border bg-card p-4">
               <p className="text-xs font-medium text-muted-foreground">Disk Usage</p>
@@ -2355,9 +2355,9 @@ export function DomainsPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {d.websiteId ? (
+                    {d.siteId ? (
                       <a
-                        href={`/websites/${d.websiteId}`}
+                        href={`/sites/${d.siteId}`}
                         onClick={(e) => e.stopPropagation()}
                         className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                       >

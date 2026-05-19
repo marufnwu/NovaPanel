@@ -5,7 +5,7 @@ export interface SiteModel {
   site: typeof sites.$inferSelect;
   runtime?: typeof siteRuntimes.$inferSelect;
   process?: typeof siteProcesses.$inferSelect;
-  domains: Array<typeof domains.$inferSelect & { subdomains?: Array<typeof domains.$inferSelect> }>;
+  domains: Array<typeof domains.$inferSelect>;
 }
 
 export interface DomainConfig {
@@ -14,7 +14,6 @@ export interface DomainConfig {
   documentRoot?: string | null;
   redirectTarget?: string | null;
   isPrimary: boolean;
-  isSubdomain: boolean;
   parentDomainId?: string | null;
   sslEnabled: boolean;
   status: 'active' | 'suspended' | 'pending';

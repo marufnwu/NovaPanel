@@ -60,7 +60,7 @@ const navGroups: NavGroupDef[] = [
     title: 'Web',
     items: [
       { label: 'Domains', path: '/domains', icon: Globe },
-      { label: 'Websites', path: '/websites', icon: Layers },
+      { label: 'Sites', path: '/sites', icon: Layers },
       { label: 'Web Server', path: '/webserver', icon: Server, feature: 'nginx' },
       { label: 'PHP', path: '/php', icon: Code2 },
       { label: 'SSL', path: '/ssl', icon: ShieldCheck },
@@ -112,7 +112,7 @@ const navGroups: NavGroupDef[] = [
 
 // Back links shown when on a detail page within that section
 const BACK_LINKS: BackLink[] = [
-  { label: 'All Websites', path: '/websites' },
+  { label: 'All Sites', path: '/sites' },
   { label: 'All Domains', path: '/domains' },
   { label: 'All Databases', path: '/databases' },
   { label: 'All Cron Jobs', path: '/cron' },

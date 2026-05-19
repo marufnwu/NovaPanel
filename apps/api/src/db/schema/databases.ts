@@ -1,12 +1,12 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { domains } from './domains.js';
-import { websites } from './websites.js';
+import { sites } from './sites.js';
 
 export const databases = sqliteTable('databases', {
   id: text('id').primaryKey(),
   domainId: text('domain_id').references(() => domains.id),
-  websiteId: text('website_id').references(() => websites.id, { onDelete: 'set null' }),
+  websiteId: text('website_id').references(() => sites.id, { onDelete: 'set null' }),
   name: text('name').notNull(),
   engine: text('engine', { enum: ['mariadb', 'postgresql'] }).notNull().default('mariadb'),
   charset: text('charset').default('utf8mb4'),

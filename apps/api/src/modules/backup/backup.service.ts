@@ -2,6 +2,7 @@ import { db } from '../../db/index.js';
 import { backups, backupSchedules } from '../../db/schema/backups.js';
 import { databases } from '../../db/schema/databases.js';
 import { domains } from '../../db/schema/domains.js';
+import { sites } from '../../db/schema/sites.js';
 import { eq, lte, and, desc } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { run } from '../../services/executor.js';
@@ -217,10 +218,17 @@ export class BackupService {
 
         // Fix ownership after restore
         for (const domain of domainList) {
-          if (domain.systemUser) {
+          // Get system user from the site this domain belongs to
+          let systemUser = '';
+          if (domain.siteId) {
+            const [domainSite] = await db.select({ systemUser: sites.systemUser })
+              .from(sites).where(eq(sites.id, domain.siteId)).limit(1);
+            systemUser = domainSite?.systemUser || '';
+          }
+          if (systemUser) {
             const domainDir = `${env.VHOSTS_ROOT}/${domain.name}`;
             try {
-              await run('chown', ['-R', `${domain.systemUser}:www-data`, domainDir], { sudo: true });
+              await run('chown', ['-R', `${systemUser}:www-data`, domainDir], { sudo: true });
             } catch (e) {
               logger.warn({ err: e, domain: domain.name }, 'Failed to fix ownership after restore');
             }

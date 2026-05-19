@@ -4,10 +4,9 @@ import type { SystemService, ServiceInfo, ServiceStatus } from './types.js';
 import { logger } from '../config/logger.js';
 import * as sudoFs from './sudo-fs.js';
 import { db } from '../db/index.js';
-import { websites } from '../db/schema/websites.js';  // Keep for backward compat
 import { sites, siteRuntimes } from '../db/schema/index.js';
 import { domains } from '../db/schema/domains.js';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 export interface VhostContext {
   domain: string;
@@ -132,38 +131,20 @@ export class NginxService implements SystemService {
    * - Suspended domains get a 503 block instead of their normal block
    */
 async generateWebsiteConfig(websiteId: string): Promise<void> {
-  // 1. Look up site (try new sites table first, fall back to websites for migration)
+  // 1. Look up site (v4 unified — sites table only)
   const [site] = await db.select().from(sites).where(eq(sites.id, websiteId)).limit(1);
-  
-  let siteData = site;
-  let phpVersion = '8.2'; // default
-  
-  if (!siteData) {
-    // Fall back to old websites table for migration period
-    const [website] = await db.select().from(websites).where(eq(websites.id, websiteId)).limit(1);
-    if (!website) throw new Error(`Website/Site not found: ${websiteId}`);
-    siteData = {
-      id: website.id,
-      name: website.name,
-      systemUser: website.systemUser,
-      homeDir: website.homeDir,
-      status: website.status,
-      diskUsedMb: website.diskUsedMb,
-      bandwidthUsedMb: website.bandwidthUsedMb,
-      createdAt: website.createdAt,
-    };
-    phpVersion = website.phpVersion || '8.2';
-  } else {
-    // Get runtime config from site_runtimes
-    const [runtime] = await db.select().from(siteRuntimes).where(eq(siteRuntimes.siteId, websiteId)).limit(1);
-    if (runtime?.runtimeConfig) {
-      const config = runtime.runtimeConfig as any;
-      phpVersion = config.phpVersion || config.version || '8.2';
-    }
+  if (!site) throw new Error(`Site not found: ${websiteId}`);
+
+  // Get runtime config from site_runtimes
+  let phpVersion = '8.2';
+  const [runtime] = await db.select().from(siteRuntimes).where(eq(siteRuntimes.siteId, websiteId)).limit(1);
+  if (runtime?.runtimeConfig) {
+    const config = runtime.runtimeConfig as any;
+    phpVersion = config.phpVersion || config.version || '8.2';
   }
 
   // 2. Find all domains attached to this site
-  const attachedDomains = await db.select().from(domains).where(eq(domains.websiteId, websiteId));
+  const attachedDomains = await db.select().from(domains).where(eq(domains.siteId, websiteId));
 
   // 3. Group domains by type
   const primaryDomain = attachedDomains.find(d => d.type === 'primary' && d.isPrimary);
@@ -172,11 +153,11 @@ async generateWebsiteConfig(websiteId: string): Promise<void> {
   const subdomainDomains = attachedDomains.filter(d => d.type === 'subdomain');
 
   // 4. Build config
-  let config = this.generateConfigHeader(siteData.name, websiteId);
+  let config = this.generateConfigHeader(site.name, websiteId);
 
   // Primary + parked domains (port 80)
   if (primaryDomain) {
-    config += this.buildPrimaryServerBlock(primaryDomain, parkedDomains, siteData, phpVersion);
+    config += this.buildPrimaryServerBlock(primaryDomain, parkedDomains, site, phpVersion);
   } else if (parkedDomains.length > 0) {
     logger.warn({ websiteId }, 'Parked domains exist but no primary domain found');
   }
@@ -186,7 +167,7 @@ async generateWebsiteConfig(websiteId: string): Promise<void> {
     if (addon.status === 'suspended') {
       config += this.buildSuspendedBlock(addon);
     } else {
-      config += this.buildAddonServerBlock(addon, siteData, phpVersion);
+      config += this.buildAddonServerBlock(addon, site, phpVersion);
     }
   }
 
@@ -195,7 +176,7 @@ async generateWebsiteConfig(websiteId: string): Promise<void> {
     if (subdomain.status === 'suspended') {
       config += this.buildSuspendedBlock(subdomain);
     } else {
-      config += this.buildSubdomainServerBlock(subdomain, siteData, phpVersion);
+      config += this.buildSubdomainServerBlock(subdomain, site, phpVersion);
     }
 }
 
@@ -426,13 +407,13 @@ async generateWebsiteConfig(websiteId: string): Promise<void> {
     const [subdomain] = await db.select().from(domains).where(eq(domains.id, subdomainDomainId)).limit(1);
     if (!subdomain) throw new Error(`Subdomain not found: ${subdomainDomainId}`);
 
-    const targetWebsiteId = subdomain.websiteId;
-    if (!targetWebsiteId) {
+    const targetSiteId = subdomain.siteId;
+    if (!targetSiteId) {
       return;
     }
 
-    await this.generateWebsiteConfig(targetWebsiteId);
-    logger.info({ subdomainDomainId, targetWebsiteId }, 'Subdomain nginx config generated (v3)');
+    await this.generateWebsiteConfig(targetSiteId);
+    logger.info({ subdomainDomainId, targetSiteId }, 'Subdomain nginx config generated (v3)');
   }
 
   /**
@@ -453,10 +434,10 @@ async generateWebsiteConfig(websiteId: string): Promise<void> {
    * The original config is backed up with a `.active` suffix before overwriting.
    */
   async generateSuspendedConfig(websiteId: string): Promise<void> {
-    const [website] = await db.select().from(websites).where(eq(websites.id, websiteId)).limit(1);
-    if (!website) throw new Error(`Website not found: ${websiteId}`);
+    const [site] = await db.select().from(sites).where(eq(sites.id, websiteId)).limit(1);
+    if (!site) throw new Error(`Site not found: ${websiteId}`);
 
-    const attachedDomains = await db.select().from(domains).where(eq(domains.websiteId, websiteId));
+    const attachedDomains = await db.select().from(domains).where(eq(domains.siteId, websiteId));
 
     const configPath = `${env.NGINX_SITES_AVAILABLE}/website-${websiteId}.conf`;
     const enabledPath = `${env.NGINX_SITES_ENABLED}/website-${websiteId}.conf`;
@@ -471,7 +452,7 @@ async generateWebsiteConfig(websiteId: string): Promise<void> {
     }
 
     // Build suspended config
-    let config = `# NovaPanel website SUSPENDED — ${website.name} (${websiteId})\n`;
+    let config = `# NovaPanel site SUSPENDED — ${site.name} (${websiteId})\n`;
 
     for (const domain of attachedDomains) {
       config += `\nserver {\n`;
@@ -539,13 +520,13 @@ async generateWebsiteConfig(websiteId: string): Promise<void> {
   async generateSingleDomainSuspendedConfig(domainId: string): Promise<void> {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new Error(`Domain not found: ${domainId}`);
-    if (!domain.websiteId) throw new Error(`Domain has no website attached: ${domainId}`);
+    if (!domain.siteId) throw new Error(`Domain has no site attached: ${domainId}`);
 
     // Store the current config for this domain in the database
     // The suspendedConfig will be used to restore the domain later
 
     // Regenerate the website config with this domain suspended
-    await this.generateWebsiteConfig(domain.websiteId);
+    await this.generateWebsiteConfig(domain.siteId);
     logger.info({ domainId, domain: domain.name }, 'Single domain suspended (v3)');
   }
 

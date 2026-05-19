@@ -1,12 +1,12 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { domains } from './domains.js';
-import { websites } from './websites.js';
+import { sites } from './sites.js';
 
 export const ftpAccounts = sqliteTable('ftp_accounts', {
   id: text('id').primaryKey(),
   domainId: text('domain_id').notNull().references(() => domains.id, { onDelete: 'cascade' }),
-  websiteId: text('website_id').references(() => websites.id, { onDelete: 'set null' }),
+  websiteId: text('website_id').references(() => sites.id, { onDelete: 'set null' }),
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   homeDir: text('home_dir').notNull(),
