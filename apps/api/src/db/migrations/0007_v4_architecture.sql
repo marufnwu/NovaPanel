@@ -275,8 +275,6 @@ CREATE INDEX IF NOT EXISTS idx_site_states_site_id ON site_states(site_id);
 CREATE INDEX IF NOT EXISTS idx_background_jobs_status ON background_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_background_jobs_dedupe_key ON background_jobs(dedupe_key);
 CREATE INDEX IF NOT EXISTS idx_background_jobs_type ON background_jobs(type);
-CREATE INDEX IF NOT EXISTS idx_ssl_certificates_site_id ON ssl_certificates(site_id);
-CREATE INDEX IF NOT EXISTS idx_ssl_certificates_primary_domain ON ssl_certificates(primary_domain);
 CREATE INDEX IF NOT EXISTS idx_deployments_site_id ON deployments(site_id);
 CREATE INDEX IF NOT EXISTS idx_deployments_sequence ON deployments(site_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_site_env_vars_site_id ON site_env_vars(site_id);
