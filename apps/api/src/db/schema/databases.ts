@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { domains } from './domains';
-import { sites } from './sites';
+import { domains } from './domains.js';
+import { sites } from './sites.js';
 
 export const databases = sqliteTable('databases', {
   id: text('id').primaryKey(),

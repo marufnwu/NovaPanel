@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { sslCertificates } from './ssl';
+import { sslCertificates } from './ssl.js';
 
 export const domainSslBindings = sqliteTable('domain_ssl_bindings', {
   id: text('id').primaryKey(),                    // nanoid

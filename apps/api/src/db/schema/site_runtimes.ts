@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { sites } from './sites';
+import { sites } from './sites.js';
 
 // Runtime configuration stored as JSONB for flexibility
 // Supports PHP, Node, Python, Static, Docker, etc.

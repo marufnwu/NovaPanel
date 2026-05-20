@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { domains } from './domains';
+import { domains } from './domains.js';
 
 export const legacySslCertificates = sqliteTable('ssl_certificates', {
   id: text('id').primaryKey(),

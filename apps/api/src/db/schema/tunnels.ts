@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { domains } from './domains';
+import { domains } from './domains.js';
 
 export const cloudflareTunnels = sqliteTable('cloudflare_tunnels', {
   id: text('id').primaryKey(),

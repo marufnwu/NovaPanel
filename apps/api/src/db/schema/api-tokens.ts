@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { users } from './users';
+import { users } from './users.js';
 
 /**
  * API tokens for programmatic access to the NovaPanel API.
