@@ -5,69 +5,6 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1776970879987,
-      "tag": "0000_famous_mantis",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1746446000000,
-      "tag": "0001_api_tokens",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1746518400000,
-      "tag": "0002_cloudflare_integration",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1749000000000,
-      "tag": "0003_subdomain_website_id",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1750000000000,
-      "tag": "0004_v3_domain_website_separation",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1750100000000,
-      "tag": "0005_migrate_subdomains_to_domains",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1750200000000,
-      "tag": "0006_migrate_aliases_to_parked",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1750300000000,
-      "tag": "0007_v4_architecture",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1750400000000,
-      "tag": "0008_unified_v4_schema",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
       "when": 1779277668422,
       "tag": "0009_hesitant_queen_noir",
       "breakpoints": true
