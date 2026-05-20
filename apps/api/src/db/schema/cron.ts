@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { domains } from './domains.js';
-import { sites } from './sites.js';
+import { domains } from './domains';
+import { sites } from './sites';
 
 export const cronJobs = sqliteTable('cron_jobs', {
   id: text('id').primaryKey(),

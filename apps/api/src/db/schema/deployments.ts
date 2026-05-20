@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { sites } from './sites.js';
+import { sites } from './sites';
 
 export const deployments = sqliteTable('deployments', {
   id: text('id').primaryKey(),                    // nanoid, e.g., 'deploy_abc123'

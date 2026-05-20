@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { sites } from './sites.js';
+import { sites } from './sites';
 
 /**
  * Unified domains table — all domain types live here.

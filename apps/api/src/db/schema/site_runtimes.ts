@@ -1,9 +1,9 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { sites } from './sites.js';
+import { sites } from './sites';
 
 // Runtime configuration stored as JSONB for flexibility
-// Supports PHP, Node.js, Python, Static, Docker, etc.
+// Supports PHP, Node, Python, Static, Docker, etc.
 export const siteRuntimes = sqliteTable('site_runtimes', {
   id: text('id').primaryKey(),                    // nanoid
   siteId: text('site_id').notNull().references(() => sites.id, { onDelete: 'cascade' }),

@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { domains } from './domains.js';
+import { domains } from './domains';
 
 export const mailDomains = sqliteTable('mail_domains', {
   id: text('id').primaryKey(),
