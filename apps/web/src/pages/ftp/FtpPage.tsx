@@ -6,6 +6,10 @@ import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { FolderUp, Plus, Trash2, Key, Edit2, Copy, Check, X, Server, Settings, Clock, MapPin, Save, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 function CreateAccountModal({ domainId, onClose }: { domainId: string; onClose: () => void }) {
   const create = useCreateFtpAccount();
@@ -29,51 +33,50 @@ function CreateAccountModal({ domainId, onClose }: { domainId: string; onClose: 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Create FTP Account</h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-5 w-5" /></button>
-        </div>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create FTP Account</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">Username</label>
-            <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="webmaster" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+            <Label htmlFor="ftp-username" className="mb-1">Username</Label>
+            <Input id="ftp-username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="webmaster" />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Password</label>
+            <Label htmlFor="ftp-password" className="mb-1">Password</Label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <input type={showPassword ? 'text' : 'password'} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm pr-10" />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <Input id="ftp-password" type={showPassword ? 'text' : 'password'} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" className="pr-10" />
+                <Button variant="ghost" size="icon-sm" type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-1 top-1/2 -translate-y-1/2">
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+                </Button>
               </div>
-              <button onClick={handleGenerate} className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent">Generate</button>
+              <Button variant="outline" onClick={handleGenerate}>Generate</Button>
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Home Directory</label>
-            <select value={form.homeDir} onChange={(e) => setForm({ ...form, homeDir: e.target.value })} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+            <Label htmlFor="ftp-homedir" className="mb-1">Home Directory</Label>
+            <select id="ftp-homedir" value={form.homeDir} onChange={(e) => setForm({ ...form, homeDir: e.target.value })} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
               <option value={`/var/www/vhosts/${domainId}/httpdocs`}>httpdocs (Web root)</option>
               <option value={`/var/www/vhosts/${domainId}/private`}>private</option>
               <option value={`/var/www/vhosts/${domainId}`}>{domainId} (Base)</option>
             </select>
           </div>
-          <label className="flex items-center gap-2">
+          <Label className="flex items-center gap-2">
             <input type="checkbox" checked={form.readonly} onChange={(e) => setForm({ ...form, readonly: e.target.checked })} className="h-4 w-4 rounded border-input" />
             <span className="text-sm">Read-only mode</span>
-          </label>
+          </Label>
           {create.error && <p className="text-sm text-destructive">{String(create.error)}</p>}
         </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-          <button onClick={handleSubmit} disabled={create.isPending || !form.username.trim() || !form.password} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+        <DialogFooter className="mt-6">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={create.isPending || !form.username.trim() || !form.password}>
             {create.isPending ? 'Creating...' : 'Create Account'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -86,39 +89,38 @@ function EditAccountModal({ account, onClose }: { account: FtpAccount; onClose: 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Edit FTP Account</h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-5 w-5" /></button>
-        </div>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit FTP Account</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">Username</label>
+            <Label className="mb-1">Username</Label>
             <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">{account.username}</div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Home Directory</label>
-            <input value={form.homeDir} onChange={(e) => setForm({ ...form, homeDir: e.target.value })} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+            <Label htmlFor="edit-homedir" className="mb-1">Home Directory</Label>
+            <Input id="edit-homedir" value={form.homeDir} onChange={(e) => setForm({ ...form, homeDir: e.target.value })} />
           </div>
-          <label className="flex items-center gap-2">
+          <Label className="flex items-center gap-2">
             <input type="checkbox" checked={form.readonly} onChange={(e) => setForm({ ...form, readonly: e.target.checked })} className="h-4 w-4 rounded border-input" />
             <span className="text-sm">Read-only mode</span>
-          </label>
-          <label className="flex items-center gap-2">
+          </Label>
+          <Label className="flex items-center gap-2">
             <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} className="h-4 w-4 rounded border-input" />
             <span className="text-sm">Active</span>
-          </label>
+          </Label>
           {update.error && <p className="text-sm text-destructive">{String(update.error)}</p>}
         </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-          <button onClick={handleSubmit} disabled={update.isPending} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+        <DialogFooter className="mt-6">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={update.isPending}>
             {update.isPending ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -145,45 +147,44 @@ function ChangePasswordModal({ account, onClose }: { account: FtpAccount; onClos
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Change Password — {account.username}</h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-5 w-5" /></button>
-        </div>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Change Password — {account.username}</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">New Password</label>
+            <Label htmlFor="chpw-new" className="mb-1">New Password</Label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => { setPassword(e.target.value); setValidationError(''); }} placeholder="••••••••" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm pr-10" />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <Input id="chpw-new" type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => { setPassword(e.target.value); setValidationError(''); }} placeholder="••••••••" className="pr-10" />
+                <Button variant="ghost" size="icon-sm" type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-1 top-1/2 -translate-y-1/2">
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+                </Button>
               </div>
-              <button onClick={handleGenerate} className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent">Generate</button>
+              <Button variant="outline" onClick={handleGenerate}>Generate</Button>
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Confirm Password</label>
+            <Label htmlFor="chpw-confirm" className="mb-1">Confirm Password</Label>
             <div className="relative">
-              <input type={showConfirm ? 'text' : 'password'} value={confirm} onChange={(e) => { setConfirm(e.target.value); setValidationError(''); }} placeholder="••••••••" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm pr-10" />
-              <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <Input id="chpw-confirm" type={showConfirm ? 'text' : 'password'} value={confirm} onChange={(e) => { setConfirm(e.target.value); setValidationError(''); }} placeholder="••••••••" className="pr-10" />
+              <Button variant="ghost" size="icon-sm" type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-1 top-1/2 -translate-y-1/2">
                 {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
+              </Button>
             </div>
           </div>
           {validationError && <p className="text-sm text-destructive">{validationError}</p>}
           {changePw.error && <p className="text-sm text-destructive">{String(changePw.error)}</p>}
         </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-          <button onClick={handleSubmit} disabled={changePw.isPending || !password || password !== confirm} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+        <DialogFooter className="mt-6">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={changePw.isPending || !password || password !== confirm}>
             {changePw.isPending ? 'Updating...' : 'Update Password'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -211,10 +212,10 @@ function ConnectionInfo({ account }: { account: FtpAccount }) {
     <div className="rounded-lg border border-border bg-card p-5">
       <div className="mb-3 flex items-center justify-between">
         <h4 className="font-medium">Connection Information</h4>
-        <button onClick={copyAll} className="flex items-center gap-1 rounded-md border border-border px-3 py-1 text-xs hover:bg-accent">
+        <Button variant="outline" size="xs" onClick={copyAll} className="gap-1">
           {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           {copied ? 'Copied' : 'Copy All'}
-        </button>
+        </Button>
       </div>
       <div className="grid gap-2 text-sm">
         {info.map(item => (
@@ -265,45 +266,41 @@ function FtpGlobalSettings() {
       </h3>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">FTP Port</label>
-          <input
+          <Label className="mb-1 text-xs font-medium text-muted-foreground">FTP Port</Label>
+          <Input
             type="number"
             value={form.port}
             onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) || 21 })}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">Passive Port Range (Min)</label>
-          <input
+          <Label className="mb-1 text-xs font-medium text-muted-foreground">Passive Port Range (Min)</Label>
+          <Input
             type="number"
             value={form.passivePortMin}
             onChange={(e) => setForm({ ...form, passivePortMin: parseInt(e.target.value) || 50000 })}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">Passive Port Range (Max)</label>
-          <input
+          <Label className="mb-1 text-xs font-medium text-muted-foreground">Passive Port Range (Max)</Label>
+          <Input
             type="number"
             value={form.passivePortMax}
             onChange={(e) => setForm({ ...form, passivePortMax: parseInt(e.target.value) || 51000 })}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">Max Connections per IP</label>
-          <input
+          <Label className="mb-1 text-xs font-medium text-muted-foreground">Max Connections per IP</Label>
+          <Input
             type="number"
             value={form.maxConnectionsPerIp}
             onChange={(e) => setForm({ ...form, maxConnectionsPerIp: parseInt(e.target.value) || 5 })}
             min={1}
             max={50}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
         </div>
         <div className="flex items-center gap-3 sm:col-span-2">
-          <label className="flex items-center gap-2">
+          <Label className="flex items-center gap-2">
             <input
               type="checkbox"
               checked={form.anonymousEnabled}
@@ -314,17 +311,16 @@ function FtpGlobalSettings() {
               <span className="text-sm font-medium">Anonymous FTP Access</span>
               <p className="text-xs text-muted-foreground">Allow anonymous users to connect without authentication</p>
             </div>
-          </label>
+          </Label>
         </div>
       </div>
       <div className="mt-4 flex items-center gap-3">
-        <button
+        <Button
           onClick={handleSave}
           disabled={updateSettings.isPending}
-          className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           <Save className="h-4 w-4" /> {updateSettings.isPending ? 'Saving...' : 'Save Settings'}
-        </button>
+        </Button>
         {updateSettings.isSuccess && (
           <span className="flex items-center gap-1 text-sm text-green-600">
             <Check className="h-4 w-4" /> Saved
@@ -354,12 +350,11 @@ export function FtpPage() {
           <AlertTriangle className="h-10 w-10 text-red-500" />
           <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load FTP accounts</h3>
           <p className="mt-1 text-sm text-muted-foreground">An error occurred while fetching FTP accounts.</p>
-          <button
+          <Button
             onClick={() => refetch()}
-            className="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
             Retry
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -376,18 +371,16 @@ export function FtpPage() {
             {domains?.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
           {domainId && (
-            <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90">
+            <Button onClick={() => setShowCreate(true)}>
               <Plus className="h-4 w-4" /> Add Account
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             onClick={() => setShowSettings(!showSettings)}
-            className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium ${
-              showSettings ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:bg-accent'
-            }`}
+            variant={showSettings ? "default" : "outline"}
           >
             <Settings className="h-4 w-4" /> Settings
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -453,15 +446,15 @@ export function FtpPage() {
               <ConnectionInfo account={a} />
 
               <div className="mt-4 flex gap-2">
-                <button onClick={() => setEditAccount(a)} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent">
+                <Button variant="outline" size="sm" onClick={() => setEditAccount(a)}>
                   <Edit2 className="h-3.5 w-3.5" /> Edit
-                </button>
-                <button onClick={() => setPasswordAccount(a)} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent">
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setPasswordAccount(a)}>
                   <Key className="h-3.5 w-3.5" /> Change Password
-                </button>
-                <button onClick={() => setDeleteTarget(a)} className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-destructive/10 hover:text-destructive">
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setDeleteTarget(a)} className="hover:bg-destructive/10 hover:text-destructive">
                   <Trash2 className="h-3.5 w-3.5" /> Delete
-                </button>
+                </Button>
               </div>
             </div>
           ))}

@@ -26,6 +26,10 @@ import {
   X, Download, Shield, CheckCircle2, XCircle, RefreshCw, HardDrive,
   Cloud, Server, AlertTriangle, Eye, EyeOff,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 function formatBytes(bytes?: number | null): string {
   if (!bytes) return '—';
@@ -64,16 +68,11 @@ function BackupProgressModal({ onClose }: { onClose: () => void }) {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Creating Backup</h3>
-          {complete && (
-            <button onClick={onClose} className="rounded p-1 hover:bg-accent">
-              <X className="h-5 w-5" />
-            </button>
-          )}
-        </div>
+    <Dialog open={true} onOpenChange={(open) => { if (!open && complete) onClose(); }}>
+      <DialogContent className="sm:max-w-md" showCloseButton={complete}>
+        <DialogHeader>
+          <DialogTitle>Creating Backup</DialogTitle>
+        </DialogHeader>
 
         {/* Progress bar */}
         <div className="mb-4 h-2 w-full rounded-full bg-muted">
@@ -96,7 +95,7 @@ function BackupProgressModal({ onClose }: { onClose: () => void }) {
                   isActive ? 'bg-primary text-primary-foreground animate-pulse' :
                   'bg-muted text-muted-foreground'
                 }`}>
-                  {isDone ? '✓' : idx + 1}
+                  {isDone ? '\u2713' : idx + 1}
                 </div>
                 <span className={`text-sm ${isDone ? 'text-green-600' : isActive ? 'font-medium' : 'text-muted-foreground'}`}>
                   {step}
@@ -114,14 +113,12 @@ function BackupProgressModal({ onClose }: { onClose: () => void }) {
         )}
 
         {complete && (
-          <div className="mt-4 flex justify-end">
-            <button onClick={onClose} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90">
-              Done
-            </button>
-          </div>
+          <DialogFooter className="mt-4">
+            <Button onClick={onClose}>Done</Button>
+          </DialogFooter>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -161,12 +158,11 @@ function CreateBackupModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Create Backup</h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-5 w-5" /></button>
-        </div>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Create Backup</DialogTitle>
+        </DialogHeader>
         <div className="space-y-3">
           {types.map(t => (
             <button key={t.value} onClick={() => setType(t.value as Backup['type'])} className={`w-full rounded-lg border p-4 text-left transition-colors ${type === t.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent'}`}>
@@ -177,7 +173,7 @@ function CreateBackupModal({ onClose }: { onClose: () => void }) {
 
           {/* Encryption Toggle */}
           <div className="rounded-lg border border-border p-4">
-            <label className="flex items-center gap-3 cursor-pointer">
+            <Label className="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={encrypted}
@@ -192,24 +188,25 @@ function CreateBackupModal({ onClose }: { onClose: () => void }) {
                   Protect backup with a password (AES-256)
                 </div>
               </div>
-            </label>
+            </Label>
             {encrypted && (
               <div className="mt-3 border-t border-border pt-3">
-                <label className="mb-1 block text-sm font-medium">Encryption Password</label>
+                <Label htmlFor="bk-enc-pw" className="mb-1">Encryption Password</Label>
                 <div className="relative">
-                  <input
+                  <Input
+                    id="bk-enc-pw"
                     type={showEncryptionPassword ? 'text' : 'password'}
                     value={encryptionPassword}
                     onChange={e => setEncryptionPassword(e.target.value)}
                     placeholder="Enter encryption password"
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm pr-10"
+                    className="pr-10"
                   />
-                  <button type="button" onClick={() => setShowEncryptionPassword(!showEncryptionPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <Button variant="ghost" size="icon-sm" type="button" onClick={() => setShowEncryptionPassword(!showEncryptionPassword)} className="absolute right-1 top-1/2 -translate-y-1/2">
                     {showEncryptionPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
+                  </Button>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  ⚠️ You will need this password to restore the backup. Store it safely.
+                  You will need this password to restore the backup. Store it safely.
                 </p>
               </div>
             )}
@@ -217,18 +214,17 @@ function CreateBackupModal({ onClose }: { onClose: () => void }) {
 
           {create.error && <p className="text-sm text-destructive">{String(create.error)}</p>}
         </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-          <button
+        <DialogFooter className="mt-6">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
             onClick={handleSubmit}
             disabled={create.isPending || (encrypted && !encryptionPassword)}
-            className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             {create.isPending ? 'Creating...' : 'Start Backup'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -246,12 +242,11 @@ function RestoreModal({ backup, onClose }: { backup: Backup; onClose: () => void
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-        <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Restore Backup</h3>
-            <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-5 w-5" /></button>
-          </div>
+      <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Restore Backup</DialogTitle>
+          </DialogHeader>
           <p className="mb-4 text-sm text-muted-foreground">Select what to restore from <strong>{backup.filename}</strong></p>
           <div className="space-y-3">
             {[
@@ -259,13 +254,13 @@ function RestoreModal({ backup, onClose }: { backup: Backup; onClose: () => void
               { key: 'databases', label: 'Databases', desc: 'MySQL and PostgreSQL data' },
               { key: 'dns', label: 'DNS', desc: 'DNS zone configurations' },
             ].map(opt => (
-              <label key={opt.key} className="flex items-center gap-3 rounded-lg border border-border p-3 hover:bg-accent cursor-pointer">
+              <Label key={opt.key} className="flex items-center gap-3 rounded-lg border border-border p-3 hover:bg-accent cursor-pointer">
                 <input type="checkbox" checked={(options as any)[opt.key]} onChange={(e) => setOptions({ ...options, [opt.key]: e.target.checked })} className="h-4 w-4 rounded border-input" />
                 <div>
                   <div className="font-medium text-sm">{opt.label}</div>
                   <div className="text-xs text-muted-foreground">{opt.desc}</div>
                 </div>
-              </label>
+              </Label>
             ))}
             <div className="flex items-start gap-2 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" />
@@ -275,14 +270,14 @@ function RestoreModal({ backup, onClose }: { backup: Backup; onClose: () => void
             </div>
             {restore.error && <p className="text-sm text-destructive">{String(restore.error)}</p>}
           </div>
-          <div className="mt-6 flex justify-end gap-2">
-            <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-            <button onClick={() => setShowConfirm(true)} disabled={restore.isPending} className="rounded-md bg-destructive px-4 py-2 text-sm text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50">
+          <DialogFooter className="mt-6">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button variant="destructive" onClick={() => setShowConfirm(true)} disabled={restore.isPending}>
               Restore
-            </button>
-          </div>
-        </div>
-      </div>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <ConfirmDialog
         open={showConfirm}
         title="Confirm Restore"
@@ -321,53 +316,52 @@ function CreateScheduleModal({ onClose }: { onClose: () => void }) {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Create Backup Schedule</h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-5 w-5" /></button>
-        </div>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create Backup Schedule</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">Cron Expression</label>
-            <input value={cronExpression} onChange={(e) => setCronExpression(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm" />
+            <Label htmlFor="sched-cron" className="mb-1">Cron Expression</Label>
+            <Input id="sched-cron" value={cronExpression} onChange={(e) => setCronExpression(e.target.value)} className="font-mono" />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Presets</label>
+            <Label className="mb-1">Presets</Label>
             <div className="flex flex-wrap gap-2">
               {presets.map(p => (
-                <button key={p.value} onClick={() => setCronExpression(p.value)} className={`rounded-full px-3 py-1 text-xs ${cronExpression === p.value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'}`}>
+                <Button key={p.value} variant={cronExpression === p.value ? "default" : "outline"} size="xs" onClick={() => setCronExpression(p.value)} className="rounded-full">
                   {p.label}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Scope</label>
-            <select value={scope} onChange={(e) => setScope(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+            <Label htmlFor="sched-scope" className="mb-1">Scope</Label>
+            <select id="sched-scope" value={scope} onChange={(e) => setScope(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
               <option value="all">All domains</option>
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Retention (number of backups to keep)</label>
-            <input type="number" value={retentionCount} onChange={(e) => setRetentionCount(parseInt(e.target.value) || 7)} min={1} max={100} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+            <Label htmlFor="sched-retention" className="mb-1">Retention (number of backups to keep)</Label>
+            <Input id="sched-retention" type="number" value={retentionCount} onChange={(e) => setRetentionCount(parseInt(e.target.value) || 7)} min={1} max={100} />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Storage</label>
-            <select value={storageType} onChange={(e) => setStorageType(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+            <Label htmlFor="sched-storage" className="mb-1">Storage</Label>
+            <select id="sched-storage" value={storageType} onChange={(e) => setStorageType(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
               <option value="local">Local</option>
             </select>
           </div>
           {create.error && <p className="text-sm text-destructive">{String(create.error)}</p>}
         </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-          <button onClick={handleSubmit} disabled={create.isPending} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+        <DialogFooter className="mt-6">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={create.isPending}>
             {create.isPending ? 'Creating...' : 'Create Schedule'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -442,24 +436,24 @@ function StorageSettings() {
           <h3 className="font-semibold">S3 Configuration</h3>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm font-medium">Endpoint</label>
-              <input value={s3Endpoint} onChange={e => setS3Endpoint(e.target.value)} placeholder="https://s3.amazonaws.com" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              <Label className="mb-1">Endpoint</Label>
+              <Input value={s3Endpoint} onChange={e => setS3Endpoint(e.target.value)} placeholder="https://s3.amazonaws.com" />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">Bucket</label>
-              <input value={s3Bucket} onChange={e => setS3Bucket(e.target.value)} placeholder="my-backups" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              <Label className="mb-1">Bucket</Label>
+              <Input value={s3Bucket} onChange={e => setS3Bucket(e.target.value)} placeholder="my-backups" />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">Access Key</label>
-              <input value={s3AccessKey} onChange={e => setS3AccessKey(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              <Label className="mb-1">Access Key</Label>
+              <Input value={s3AccessKey} onChange={e => setS3AccessKey(e.target.value)} />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">Secret Key</label>
-              <input type="password" value={s3SecretKey} onChange={e => setS3SecretKey(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              <Label className="mb-1">Secret Key</Label>
+              <Input type="password" value={s3SecretKey} onChange={e => setS3SecretKey(e.target.value)} />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">Region</label>
-              <input value={s3Region} onChange={e => setS3Region(e.target.value)} placeholder="us-east-1" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              <Label className="mb-1">Region</Label>
+              <Input value={s3Region} onChange={e => setS3Region(e.target.value)} placeholder="us-east-1" />
             </div>
           </div>
         </div>
@@ -471,47 +465,49 @@ function StorageSettings() {
           <h3 className="font-semibold">SFTP Configuration</h3>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm font-medium">Host</label>
-              <input value={sftpHost} onChange={e => setSftpHost(e.target.value)} placeholder="backup.example.com" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              <Label className="mb-1">Host</Label>
+              <Input value={sftpHost} onChange={e => setSftpHost(e.target.value)} placeholder="backup.example.com" />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">Port</label>
-              <input type="number" value={sftpPort} onChange={e => setSftpPort(Number(e.target.value))} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              <Label className="mb-1">Port</Label>
+              <Input type="number" value={sftpPort} onChange={e => setSftpPort(Number(e.target.value))} />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">User</label>
-              <input value={sftpUser} onChange={e => setSftpUser(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              <Label className="mb-1">User</Label>
+              <Input value={sftpUser} onChange={e => setSftpUser(e.target.value)} />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">Remote Path</label>
-              <input value={sftpPath} onChange={e => setSftpPath(e.target.value)} placeholder="/backups" className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              <Label className="mb-1">Remote Path</Label>
+              <Input value={sftpPath} onChange={e => setSftpPath(e.target.value)} placeholder="/backups" />
             </div>
           </div>
           <div>
             <label className="mb-2 block text-sm font-medium">Authentication</label>
             <div className="flex gap-3">
-              <button
+              <Button
+                variant={sftpAuthType === 'password' ? "default" : "secondary"}
+                size="sm"
                 onClick={() => setSftpAuthType('password')}
-                className={`rounded-md px-3 py-1.5 text-sm ${sftpAuthType === 'password' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
               >
                 Password
-              </button>
-              <button
+              </Button>
+              <Button
+                variant={sftpAuthType === 'key' ? "default" : "secondary"}
+                size="sm"
                 onClick={() => setSftpAuthType('key')}
-                className={`rounded-md px-3 py-1.5 text-sm ${sftpAuthType === 'key' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
               >
                 SSH Key
-              </button>
+              </Button>
             </div>
           </div>
           {sftpAuthType === 'password' ? (
             <div>
-              <label className="mb-1 block text-sm font-medium">Password</label>
-              <input type="password" value={sftpPassword} onChange={e => setSftpPassword(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+              <Label htmlFor="sftp-pw" className="mb-1">Password</Label>
+              <Input id="sftp-pw" type="password" value={sftpPassword} onChange={e => setSftpPassword(e.target.value)} />
             </div>
           ) : (
             <div>
-              <label className="mb-1 block text-sm font-medium">SSH Private Key</label>
+              <Label htmlFor="sftp-key" className="mb-1">SSH Private Key</Label>
               <textarea value={sftpKey} onChange={e => setSftpKey(e.target.value)} rows={4} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs" />
             </div>
           )}
@@ -538,13 +534,12 @@ function StorageSettings() {
       )}
 
       <div className="flex justify-end">
-        <button
+        <Button
           onClick={handleSave}
           disabled={updateStorage.isPending}
-          className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           {updateStorage.isPending ? 'Saving...' : 'Save Storage Settings'}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -585,12 +580,12 @@ export function BackupsPage() {
           <AlertTriangle className="h-10 w-10 text-red-500" />
           <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load backups</h3>
           <p className="mt-1 text-sm text-muted-foreground">An error occurred while fetching backups.</p>
-          <button
+          <Button
+            variant="destructive"
             onClick={() => refetch()}
-            className="mt-4 inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
           >
             <RefreshCw className="h-4 w-4" /> Retry
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -611,20 +606,20 @@ export function BackupsPage() {
   return (
     <div>
       <PageHeader title="Backups" description="Manage server backups and schedules" actions={
-        <button onClick={() => {
+        <Button onClick={() => {
           if (tab === 'backups') setShowCreateBackup(true);
           else if (tab === 'schedules') setShowCreateSchedule(true);
-        }} className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+        }}>
           <Plus className="h-4 w-4" />
           {tab === 'schedules' ? 'Create Schedule' : 'Create Backup'}
-        </button>
+        </Button>
       } />
 
       <div className="mb-6 flex gap-1 rounded-lg border border-border p-1 w-fit">
         {(['backups', 'schedules', 'storage'] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`rounded-md px-3 py-1.5 text-sm font-medium capitalize ${tab === t ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}`}>
+          <Button key={t} variant={tab === t ? "default" : "ghost"} size="sm" onClick={() => setTab(t)} className="capitalize">
             {t}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -671,27 +666,29 @@ export function BackupsPage() {
                     }`}>{b.status}</span>
                     <div className="flex gap-1">
                       {/* Download button */}
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
                         onClick={() => handleDownload(b)}
                         disabled={b.status !== 'completed'}
-                        className="rounded p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-30"
                         title="Download"
                       >
                         <Download className="h-4 w-4" />
-                      </button>
+                      </Button>
                       {/* Verify button */}
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
                         onClick={() => handleVerify(b)}
                         disabled={verifyBackup.isPending}
-                        className="rounded p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-30"
                         title="Verify integrity"
                       >
                         <Eye className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => setRestoreTarget(b)} disabled={b.status !== 'completed'} className="rounded p-1.5 text-muted-foreground hover:bg-accent disabled:opacity-30" title="Restore">
+                      </Button>
+                      <Button variant="ghost" size="icon-sm" onClick={() => setRestoreTarget(b)} disabled={b.status !== 'completed'} title="Restore">
                         <RotateCcw className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => {
+                      </Button>
+                      <Button variant="ghost" size="icon-sm" onClick={() => {
                         setConfirmDialog({
                           open: true,
                           title: 'Delete Backup',
@@ -699,9 +696,9 @@ export function BackupsPage() {
                           variant: 'danger',
                           onConfirm: () => deleteBackup.mutate(b.id),
                         });
-                      }} className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Delete">
+                      }} className="hover:bg-destructive/10 hover:text-destructive" title="Delete">
                         <Trash2 className="h-4 w-4" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -746,10 +743,10 @@ export function BackupsPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <button onClick={() => toggleSchedule.mutate(s.id)} className="text-muted-foreground hover:text-foreground">
+                    <Button variant="ghost" size="icon-sm" onClick={() => toggleSchedule.mutate(s.id)}>
                       {s.isActive ? <ToggleRight className="h-5 w-5 text-green-500" /> : <ToggleLeft className="h-5 w-5" />}
-                    </button>
-                    <button onClick={() => {
+                    </Button>
+                    <Button variant="ghost" size="icon-sm" onClick={() => {
                       setConfirmDialog({
                         open: true,
                         title: 'Delete Schedule',
@@ -757,9 +754,9 @@ export function BackupsPage() {
                         variant: 'danger',
                         onConfirm: () => deleteSchedule.mutate(s.id),
                       });
-                    }} className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+                    }} className="hover:bg-destructive/10 hover:text-destructive">
                       <Trash2 className="h-4 w-4" />
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>

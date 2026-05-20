@@ -8,6 +8,10 @@ import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
 import { ActionDropdown } from '../../components/ui/ActionDropdown';
 import { toast } from '../../lib/toast';
 import { Clock, Plus, Trash2, Play, ToggleLeft, ToggleRight, Edit2, X, Terminal, History, Mail, ChevronDown, ChevronUp, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 const PRESETS = [
   { label: 'Every minute', value: '* * * * *' },
@@ -181,80 +185,80 @@ function CreateJobModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Create Cron Job</h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-5 w-5" /></button>
-        </div>
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium">Schedule (cron expression)</label>
-            <input value={schedule} onChange={(e) => setSchedule(e.target.value)} placeholder="* * * * *" className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">Presets</label>
-            <div className="flex flex-wrap gap-2">
-              {PRESETS.map(p => (
-                <button key={p.value} onClick={() => setSchedule(p.value)} className={`rounded-full px-3 py-1 text-xs ${schedule === p.value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'}`}>
-                  {p.label}
-                </button>
-              ))}
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
+          <DialogHeader>
+            <DialogTitle>Create Cron Job</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="schedule" className="mb-1">Schedule (cron expression)</Label>
+              <Input id="schedule" value={schedule} onChange={(e) => setSchedule(e.target.value)} placeholder="* * * * *" className="font-mono" />
             </div>
-            {schedule && (
-              <div className="mt-2 space-y-1">
-                <div className="text-sm text-muted-foreground">{humanReadable(schedule)}</div>
-                <div className="text-xs text-primary">Next: {formatNextRun(schedule)}</div>
+            <div>
+              <Label className="mb-1 block">Presets</Label>
+              <div className="flex flex-wrap gap-2">
+                {PRESETS.map(p => (
+                  <Button key={p.value} variant={schedule === p.value ? "default" : "outline"} size="xs" onClick={() => setSchedule(p.value)} className="rounded-full">
+                    {p.label}
+                  </Button>
+                ))}
               </div>
-            )}
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">Command</label>
-            <input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="/usr/bin/php /var/www/vhosts/example.com/httpdocs/cron.php" className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm" />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">Run as</label>
-            <select value={systemUser} onChange={(e) => setSystemUser(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-              <option value="root">root</option>
-              <option value="www-data">www-data</option>
-            </select>
-          </div>
+              {schedule && (
+                <div className="mt-2 space-y-1">
+                  <div className="text-sm text-muted-foreground">{humanReadable(schedule)}</div>
+                  <div className="text-xs text-primary">Next: {formatNextRun(schedule)}</div>
+                </div>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="command" className="mb-1">Command</Label>
+              <Input id="command" value={command} onChange={(e) => setCommand(e.target.value)} placeholder="/usr/bin/php /var/www/vhosts/example.com/httpdocs/cron.php" className="font-mono" />
+            </div>
+            <div>
+              <Label htmlFor="systemUser" className="mb-1">Run as</Label>
+              <select id="systemUser" value={systemUser} onChange={(e) => setSystemUser(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
+                <option value="root">root</option>
+                <option value="www-data">www-data</option>
+              </select>
+            </div>
 
-          {/* Email on Failure */}
-          <div className="rounded-lg border border-border p-3 space-y-3">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={emailOnFailure}
-                onChange={(e) => setEmailOnFailure(e.target.checked)}
-                className="h-4 w-4 rounded border-input"
-              />
-              <div className="flex items-center gap-2">
-                <Mail className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">Send email on failure</span>
-              </div>
-            </label>
-            {emailOnFailure && (
-              <input
-                value={failureEmail}
-                onChange={(e) => setFailureEmail(e.target.value)}
-                placeholder="admin@example.com"
-                type="email"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            )}
-          </div>
+            {/* Email on Failure */}
+            <div className="rounded-lg border border-border p-3 space-y-3">
+              <Label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={emailOnFailure}
+                  onChange={(e) => setEmailOnFailure(e.target.checked)}
+                  className="h-4 w-4 rounded border-input"
+                />
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Send email on failure</span>
+                </div>
+              </Label>
+              {emailOnFailure && (
+                <Input
+                  value={failureEmail}
+                  onChange={(e) => setFailureEmail(e.target.value)}
+                  placeholder="admin@example.com"
+                  type="email"
+                />
+              )}
+            </div>
 
-          {create.error && <p className="text-sm text-destructive">{String(create.error)}</p>}
-        </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-          <button type="submit" disabled={create.isPending || !command.trim()} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-            {create.isPending ? 'Creating...' : 'Create Job'}
-          </button>
-        </div>
-      </form>
-    </div>
+            {create.error && <p className="text-sm text-destructive">{String(create.error)}</p>}
+          </div>
+          <DialogFooter className="mt-6">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={create.isPending || !command.trim()}>
+              {create.isPending ? 'Creating...' : 'Create Job'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -277,34 +281,33 @@ function EditJobModal({ job, onClose }: { job: CronJob; onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Edit Cron Job</h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-5 w-5" /></button>
-        </div>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Edit Cron Job</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">Schedule</label>
-            <input value={schedule} onChange={(e) => setSchedule(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm" />
+            <Label htmlFor="edit-schedule" className="mb-1">Schedule</Label>
+            <Input id="edit-schedule" value={schedule} onChange={(e) => setSchedule(e.target.value)} className="font-mono" />
           </div>
           <div className="flex flex-wrap gap-2">
             {PRESETS.map(p => (
-              <button key={p.value} onClick={() => setSchedule(p.value)} className={`rounded-full px-3 py-1 text-xs ${schedule === p.value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'}`}>
+              <Button key={p.value} variant={schedule === p.value ? "default" : "outline"} size="xs" onClick={() => setSchedule(p.value)} className="rounded-full">
                 {p.label}
-              </button>
+              </Button>
             ))}
           </div>
           {schedule && (
             <div className="text-xs text-primary">Next: {formatNextRun(schedule)}</div>
           )}
           <div>
-            <label className="mb-1 block text-sm font-medium">Command</label>
-            <input value={command} onChange={(e) => setCommand(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm" />
+            <Label htmlFor="edit-command" className="mb-1">Command</Label>
+            <Input id="edit-command" value={command} onChange={(e) => setCommand(e.target.value)} className="font-mono" />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Run as</label>
-            <select value={systemUser} onChange={(e) => setSystemUser(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+            <Label htmlFor="edit-systemUser" className="mb-1">Run as</Label>
+            <select id="edit-systemUser" value={systemUser} onChange={(e) => setSystemUser(e.target.value)} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
               <option value="root">root</option>
               <option value="www-data">www-data</option>
             </select>
@@ -312,7 +315,7 @@ function EditJobModal({ job, onClose }: { job: CronJob; onClose: () => void }) {
 
           {/* Email on Failure */}
           <div className="rounded-lg border border-border p-3 space-y-3">
-            <label className="flex items-center gap-2">
+            <Label className="flex items-center gap-2">
               <input
                 type="checkbox"
                 checked={emailOnFailure}
@@ -323,48 +326,46 @@ function EditJobModal({ job, onClose }: { job: CronJob; onClose: () => void }) {
                 <Mail className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-medium">Send email on failure</span>
               </div>
-            </label>
+            </Label>
             {emailOnFailure && (
-              <input
+              <Input
                 value={failureEmail}
                 onChange={(e) => setFailureEmail(e.target.value)}
                 placeholder="admin@example.com"
                 type="email"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             )}
           </div>
 
           {update.error && <p className="text-sm text-destructive">{String(update.error)}</p>}
         </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-          <button onClick={handleSubmit} disabled={update.isPending} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+        <DialogFooter className="mt-6">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={update.isPending}>
             {update.isPending ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 function RunResultModal({ result, exitCode, onClose }: { result: string; exitCode: number; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-2xl rounded-lg border border-border bg-card p-6 shadow-lg max-h-[80vh] flex flex-col">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-2xl max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-3">
             <Terminal className="h-5 w-5 text-primary" />
-            <h3 className="text-lg font-semibold">Run Output — Exit Code: {exitCode}</h3>
-          </div>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-5 w-5" /></button>
-        </div>
+            Run Output — Exit Code: {exitCode}
+          </DialogTitle>
+        </DialogHeader>
         <pre className="flex-1 overflow-auto rounded-md border border-border bg-muted/30 p-4 text-sm font-mono whitespace-pre-wrap">{result || '(no output)'}</pre>
-        <div className="mt-4 flex justify-end">
-          <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Close</button>
-        </div>
-      </div>
-    </div>
+        <DialogFooter className="mt-4">
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -404,12 +405,12 @@ export function CronPage() {
           <AlertTriangle className="h-10 w-10 text-red-500" />
           <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load cron jobs</h3>
           <p className="mt-1 text-sm text-muted-foreground">An error occurred while fetching cron jobs.</p>
-          <button
+          <Button
             onClick={() => refetch()}
-            className="mt-4 inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+            variant="destructive"
           >
             <RefreshCw className="h-4 w-4" /> Retry
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -418,9 +419,9 @@ export function CronPage() {
   return (
     <div>
       <PageHeader title="Cron Jobs" description="Manage scheduled tasks" actions={
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+        <Button onClick={() => setShowCreate(true)}>
           <Plus className="h-4 w-4" /> Add Job
-        </button>
+        </Button>
       } />
 
       {showCreate && <CreateJobModal onClose={() => setShowCreate(false)} />}
@@ -468,9 +469,9 @@ export function CronPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <button onClick={() => toggle.mutate(j.id)} className="text-muted-foreground hover:text-foreground">
+                    <Button variant="ghost" size="icon-sm" onClick={() => toggle.mutate(j.id)}>
                       {j.isActive ? <ToggleRight className="h-5 w-5 text-green-500" /> : <ToggleLeft className="h-5 w-5 text-muted-foreground" />}
-                    </button>
+                    </Button>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
@@ -497,16 +498,17 @@ export function CronPage() {
         <div className="mt-4 space-y-3">
           {jobs.filter((j) => expandedHistory.has(j.id)).map((j) => (
             <div key={`history-${j.id}`} className="rounded-lg border border-border overflow-hidden">
-              <button
+              <Button
+                variant="ghost"
                 onClick={() => toggleHistory(j.id)}
-                className="flex w-full items-center justify-between bg-muted/50 px-4 py-2.5 text-left"
+                className="flex w-full items-center justify-between bg-muted/50 px-4 py-2.5 h-auto rounded-none"
               >
                 <div className="flex items-center gap-3">
                   <History className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">Run History: <code className="text-xs text-muted-foreground">{j.command}</code></span>
                 </div>
                 <ChevronUp className="h-4 w-4 text-muted-foreground" />
-              </button>
+              </Button>
               <CronJobHistory jobId={j.id} />
             </div>
           ))}

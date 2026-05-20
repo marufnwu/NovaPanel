@@ -28,6 +28,10 @@ import {
   Settings, AlertTriangle, CheckCircle2, Eye, EyeOff, X, Copy,
   Ban, Reply, Globe, Inbox, Send, Clock, ShieldCheck, Check, Info,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import type { Mailbox, MailAlias, MailDomainInfo } from '../../api/hooks/mail';
 import { toast } from '../../lib/toast';
 
@@ -107,55 +111,55 @@ function MailboxFormModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg border border-border bg-card p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">{initial ? 'Edit Mailbox' : 'Create Mailbox'}</h3>
-          <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-accent">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{initial ? 'Edit Mailbox' : 'Create Mailbox'}</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           {!initial && (
             <div>
-              <label className="mb-1 block text-sm font-medium">Username (before @{domainName})</label>
-              <input
+              <Label htmlFor="mbx-username" className="mb-1">Username (before @{domainName})</Label>
+              <Input
+                id="mbx-username"
                 value={username}
                 onChange={e => setUsername(e.target.value)}
                 placeholder="johndoe"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
           )}
           <div>
-            <label className="mb-1 block text-sm font-medium">
+            <Label htmlFor="mbx-password" className="mb-1">
               Password <span className="text-muted-foreground">{initial ? '(leave blank to keep)' : ''}</span>
-            </label>
+            </Label>
             <div className="relative">
-              <input
+              <Input
+                id="mbx-password"
                 type={showPw ? 'text' : 'password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder={initial ? '(unchanged)' : 'Min. 8 characters'}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm"
+                className="pr-10"
               />
-              <button
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setShowPw(!showPw)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-1 top-1/2 -translate-y-1/2"
               >
                 {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
+              </Button>
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Quota (MB)</label>
-            <input
+            <Label htmlFor="mbx-quota" className="mb-1">Quota (MB)</Label>
+            <Input
+              id="mbx-quota"
               type="number"
               min={0}
               value={quotaMb}
               onChange={e => setQuotaMb(Number(e.target.value))}
               placeholder="1024 = 1 GB"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
           </div>
 
@@ -183,16 +187,15 @@ function MailboxFormModal({
               {arEnabled && (
                 <div className="space-y-3">
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground">Subject</label>
-                    <input
+                    <Label className="mb-1 text-xs font-medium text-muted-foreground">Subject</Label>
+                    <Input
                       value={arSubject}
                       onChange={e => setArSubject(e.target.value)}
                       placeholder="Out of Office: Auto-reply"
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-muted-foreground">Message Body</label>
+                    <Label className="mb-1 text-xs font-medium text-muted-foreground">Message Body</Label>
                     <textarea
                       value={arMessage}
                       onChange={e => setArMessage(e.target.value)}
@@ -208,23 +211,14 @@ function MailboxFormModal({
 
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={create.isPending || update.isPending}
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
+        <DialogFooter className="mt-5">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={create.isPending || update.isPending}>
             {create.isPending || update.isPending ? 'Saving...' : initial ? 'Update' : 'Create'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -255,31 +249,28 @@ function AliasFormModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Create Alias</h3>
-          <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-accent">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create Alias</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">Alias Address</label>
-            <input
+            <Label htmlFor="alias-addr" className="mb-1">Alias Address</Label>
+            <Input
+              id="alias-addr"
               value={alias}
               onChange={e => setAlias(e.target.value)}
               placeholder="alias@domain.com"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Destination</label>
-            <input
+            <Label htmlFor="alias-dest" className="mb-1">Destination</Label>
+            <Input
+              id="alias-dest"
               value={destination}
               onChange={e => setDestination(e.target.value)}
               placeholder="user@domain.com"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
           </div>
           <div>
@@ -318,23 +309,14 @@ function AliasFormModal({
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={create.isPending}
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
+        <DialogFooter className="mt-5">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={create.isPending}>
             {create.isPending ? 'Creating...' : 'Create Alias'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -489,12 +471,12 @@ export function MailPage() {
         <AlertTriangle className="h-10 w-10 text-red-500" />
         <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load domains</h3>
         <p className="mt-1 text-sm text-muted-foreground">An error occurred while fetching domains.</p>
-        <button
+        <Button
+          variant="destructive"
           onClick={() => refetchDomains()}
-          className="mt-4 inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
         >
           <RefreshCw className="h-4 w-4" /> Retry
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -504,11 +486,12 @@ export function MailPage() {
       <div>
         <PageHeader title="Mail Management" description="Manage email mailboxes, aliases, and security settings" />
         <div className="rounded-lg border border-border bg-card p-6">
-          <label className="mb-2 block text-sm font-medium">Select Domain</label>
+          <Label htmlFor="mail-domain" className="mb-2">Select Domain</Label>
           <select
+            id="mail-domain"
             value=""
             onChange={e => handleDomainChange(e.target.value)}
-            className="w-full max-w-sm rounded-md border border-input bg-background px-3 py-2 text-sm"
+            className="flex h-9 w-full max-w-sm rounded-md border border-input bg-transparent px-3 py-1 text-sm"
           >
             <option value="">Choose a domain...</option>
             {domains?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -526,12 +509,12 @@ export function MailPage() {
       <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-500/30 dark:bg-red-500/10">
         <AlertTriangle className="mx-auto h-10 w-10 text-red-500" />
         <p className="mt-3 text-red-600 dark:text-red-400">Failed to load mail settings. Please try again.</p>
-        <button
+        <Button
+          variant="destructive"
           onClick={() => refetch()}
-          className="mt-4 inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
         >
           <RefreshCw className="h-4 w-4" /> Retry
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -548,7 +531,7 @@ export function MailPage() {
             <select
               value={domainId}
               onChange={e => handleDomainChange(e.target.value)}
-              className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
             >
               {domains?.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
@@ -563,17 +546,16 @@ export function MailPage() {
           title="Mail is not enabled for this domain"
           description="Enable mail for this domain to create mailboxes, aliases, and configure DKIM/SPF."
           action={
-            <button
+            <Button
               onClick={() => enableMail.mutate(domainId, {
                 onSuccess: () => toast.success('Mail enabled for domain'),
                 onError: (e: Error) => toast.error(e.message || 'Failed to enable mail'),
               })}
               disabled={enableMail.isPending}
-              className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               <Mail className="h-4 w-4" />
               {enableMail.isPending ? 'Enabling...' : 'Enable Mail'}
-            </button>
+            </Button>
           }
         />
       ) : (
@@ -581,15 +563,15 @@ export function MailPage() {
           {/* Tabs */}
           <div className="mb-5 flex flex-wrap gap-1 rounded-lg border border-border p-1 w-fit">
             {(['mailboxes', 'aliases', 'settings', 'security', 'queue'] as const).map(t => (
-              <button
+              <Button
                 key={t}
+                variant={tab === t ? "default" : "ghost"}
+                size="sm"
                 onClick={() => setTab(t)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium capitalize ${
-                  tab === t ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
-                }`}
+                className="capitalize"
               >
                 {t === 'queue' ? 'Mail Queue' : t}
-              </button>
+              </Button>
             ))}
           </div>
 
@@ -597,12 +579,9 @@ export function MailPage() {
           {tab === 'mailboxes' && (
             <div>
               <div className="mb-4 flex justify-end">
-                <button
-                  onClick={() => setShowMailboxForm(true)}
-                  className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                >
+                <Button onClick={() => setShowMailboxForm(true)} size="sm">
                   <Plus className="h-3.5 w-3.5" /> Add Mailbox
-                </button>
+                </Button>
               </div>
 
               {!info?.mailboxes?.length ? (
@@ -665,29 +644,30 @@ export function MailPage() {
                             <td className="px-4 py-3">
                               <div className="flex justify-end gap-1">
                                 {/* Suspend / Unsuspend */}
-                                <button
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
                                   onClick={() => updateMailbox.mutate({
                                     domainId,
                                     id: m.id,
                                     isActive: !m.isActive,
                                   })}
-                                  className={`rounded p-1.5 hover:bg-accent ${
-                                    m.isActive
-                                      ? 'text-yellow-600 hover:bg-yellow-500/10'
-                                      : 'text-green-600 hover:bg-green-500/10'
-                                  }`}
+                                  className={m.isActive ? 'text-yellow-600 hover:bg-yellow-500/10' : 'text-green-600 hover:bg-green-500/10'}
                                   title={m.isActive ? 'Suspend Mailbox' : 'Unsuspend Mailbox'}
                                 >
                                   {m.isActive ? <Ban className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-                                </button>
-                                <button
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
                                   onClick={() => setEditingMailbox(m)}
-                                  className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                                   title="Edit"
                                 >
                                   <Settings className="h-4 w-4" />
-                                </button>
-                                <button
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
                                   onClick={() => {
                                     setConfirmDialog({
                                       open: true,
@@ -700,11 +680,11 @@ export function MailPage() {
                                       }),
                                     });
                                   }}
-                                  className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                  className="hover:bg-destructive/10 hover:text-destructive"
                                   title="Delete"
                                 >
                                   <Trash2 className="h-4 w-4" />
-                                </button>
+                                </Button>
                               </div>
                             </td>
                           </tr>
@@ -721,12 +701,9 @@ export function MailPage() {
           {tab === 'aliases' && (
             <div>
               <div className="mb-4 flex justify-end">
-                <button
-                  onClick={() => setShowAliasForm(true)}
-                  className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                >
+                <Button onClick={() => setShowAliasForm(true)} size="sm">
                   <Plus className="h-3.5 w-3.5" /> Add Alias
-                </button>
+                </Button>
               </div>
 
               {!info?.aliases?.length ? (
@@ -757,7 +734,9 @@ export function MailPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
                               onClick={() => {
                                 setConfirmDialog({
                                   open: true,
@@ -770,10 +749,10 @@ export function MailPage() {
                                   }),
                                 });
                               }}
-                              className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              className="hover:bg-destructive/10 hover:text-destructive"
                             >
                               <Trash2 className="h-4 w-4" />
-                            </button>
+                            </Button>
                           </td>
                         </tr>
                       ))}
@@ -852,35 +831,34 @@ export function MailPage() {
                 </div>
                 <div className="flex gap-3 items-end">
                   <div className="flex-1 max-w-sm">
-                    <label className="mb-1 block text-sm font-medium">Destination Email</label>
-                    <input
+                    <Label htmlFor="catchall-dest" className="mb-1">Destination Email</Label>
+                    <Input
+                      id="catchall-dest"
                       type="email"
                       value={catchAllDest}
                       onChange={e => setCatchAllDest(e.target.value)}
                       placeholder="admin@domain.com"
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                   </div>
-                  <button
+                  <Button
                     onClick={() => setCatchAll.mutate(
                       { domainId, destination: catchAllDest },
                       { onSuccess: () => toast.success('Catch-all address updated.') },
                     )}
                     disabled={setCatchAll.isPending || !catchAllDest}
-                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                   >
                     {setCatchAll.isPending ? 'Saving...' : 'Save'}
-                  </button>
+                  </Button>
                   {catchAllDest && (
-                    <button
+                    <Button
+                      variant="outline"
                       onClick={() => {
                         setCatchAllDest('');
                         setCatchAll.mutate({ domainId, destination: '' });
                       }}
-                      className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent"
                     >
                       Clear
-                    </button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -937,17 +915,16 @@ export function MailPage() {
                         <span>Lenient (10)</span>
                       </div>
                     </div>
-                    <button
+                    <Button
                       onClick={() => setSpamAssassin.mutate({
                         domainId,
                         enabled: spamEnabled,
                         spamScoreThreshold: spamThreshold,
                       })}
                       disabled={setSpamAssassin.isPending}
-                      className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                     >
                       {setSpamAssassin.isPending ? 'Saving...' : 'Apply Threshold'}
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>
@@ -962,7 +939,8 @@ export function MailPage() {
                       Disabling mail will remove all mailboxes, aliases, and forwards.
                     </p>
                   </div>
-                  <button
+                  <Button
+                    variant="destructive"
                     onClick={() => {
                       setConfirmDialog({
                         open: true,
@@ -976,10 +954,9 @@ export function MailPage() {
                       });
                     }}
                     disabled={disableMail.isPending}
-                    className="rounded-md border border-destructive/30 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
                   >
                     {disableMail.isPending ? 'Disabling...' : 'Disable Mail'}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1007,17 +984,17 @@ export function MailPage() {
                     </span>
                   )}
                 </div>
-                <button
+                <Button
+                  variant="outline"
                   onClick={() => generateDKIM.mutate(domainId, {
                     onSuccess: () => toast.success('DKIM key generated'),
                     onError: (e: Error) => toast.error(e.message || 'Failed to generate DKIM'),
                   })}
                   disabled={generateDKIM.isPending}
-                  className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
                 >
                   <Key className="h-4 w-4" />
                   {generateDKIM.isPending ? 'Generating...' : info?.mailDomain?.hasDkimKey ? 'Rotate DKIM Key' : 'Generate DKIM Key'}
-                </button>
+                </Button>
 
                 {/* DKIM DNS Record Preview */}
                 {(dkimStatus?.dnsRecord || dkimStatus?.hasPublicKey) && (
@@ -1055,16 +1032,16 @@ export function MailPage() {
                     <CopyButton text={info.mailDomain.spfRecord} />
                   </div>
                 )}
-                <button
+                <Button
+                  variant="outline"
                   onClick={() => setSPF.mutate({ domainId, serverIp: '0.0.0.0/0' }, {
                     onSuccess: () => toast.success('SPF record set. Update the IP to your server\'s public IP.'),
                   })}
                   disabled={setSPF.isPending}
-                  className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
                 >
                   <Shield className="h-4 w-4" />
                   {setSPF.isPending ? 'Setting...' : 'Apply Recommended SPF'}
-                </button>
+                </Button>
               </div>
 
               {/* DMARC */}
@@ -1092,26 +1069,26 @@ export function MailPage() {
                   </div>
                 </div>
                 <div className="mb-4">
-                  <label className="mb-1 block text-sm font-medium">Report Email <span className="text-muted-foreground">(optional)</span></label>
-                  <input
+                  <Label htmlFor="dmarc-email" className="mb-1">Report Email <span className="text-muted-foreground">(optional)</span></Label>
+                  <Input
+                    id="dmarc-email"
                     type="email"
                     value={dmarcReportEmail}
                     onChange={e => setDmarcReportEmail(e.target.value)}
                     placeholder="dmarc-reports@example.com"
-                    className="w-full max-w-sm rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    className="max-w-sm"
                   />
                 </div>
-                <button
+                <Button
                   onClick={() => setDMARC.mutate(
                     { domainId, policy: dmarcPolicy, reportEmail: dmarcReportEmail || undefined },
                     { onSuccess: () => toast.success('DMARC policy applied successfully'), onError: (e: Error) => toast.error(e.message || 'Failed to apply DMARC') },
                   )}
                   disabled={setDMARC.isPending}
-                  className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 >
                   <Shield className="h-4 w-4" />
                   {setDMARC.isPending ? 'Applying...' : 'Apply DMARC Policy'}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -1128,16 +1105,16 @@ export function MailPage() {
                     Messages currently in the delivery queue. Auto-refreshes every 30 seconds.
                   </p>
                 </div>
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => {
-                    // Force refetch by invalidating the query
                     const btn = document.activeElement as HTMLElement;
                     btn?.blur();
                   }}
-                  className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-accent"
                 >
                   <RefreshCw className="h-3.5 w-3.5" /> Refresh
-                </button>
+                </Button>
               </div>
 
               {!mailQueue?.length ? (

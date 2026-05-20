@@ -39,6 +39,10 @@ import {
   Terminal,
   RefreshCw,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 const PRESETS = [
   { key: 'ssh', label: 'SSH (22)', desc: 'Allow SSH access' },
@@ -92,21 +96,19 @@ function AddRuleModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Add Firewall Rule</h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add Firewall Rule</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">Action</label>
+            <Label htmlFor="fw-action" className="mb-1">Action</Label>
             <select
+              id="fw-action"
               value={form.action}
               onChange={(e) => setForm({ ...form, action: e.target.value as 'allow' | 'deny' })}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
             >
               <option value="allow">Allow</option>
               <option value="deny">Deny</option>
@@ -114,20 +116,21 @@ function AddRuleModal({ onClose }: { onClose: () => void }) {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1 block text-sm font-medium">Port</label>
-              <input
+              <Label htmlFor="fw-port" className="mb-1">Port</Label>
+              <Input
+                id="fw-port"
                 value={form.port}
                 onChange={(e) => setForm({ ...form, port: e.target.value })}
                 placeholder="80 or 8000:9000"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">Protocol</label>
+              <Label htmlFor="fw-protocol" className="mb-1">Protocol</Label>
               <select
+                id="fw-protocol"
                 value={form.protocol}
                 onChange={(e) => setForm({ ...form, protocol: e.target.value })}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
               >
                 <option value="tcp">TCP</option>
                 <option value="udp">UDP</option>
@@ -135,42 +138,33 @@ function AddRuleModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">From (IP or range)</label>
-            <input
+            <Label htmlFor="fw-from" className="mb-1">From (IP or range)</Label>
+            <Input
+              id="fw-from"
               value={form.from}
               onChange={(e) => setForm({ ...form, from: e.target.value })}
               placeholder="Any (leave empty)"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">To (IP or interface)</label>
-            <input
+            <Label htmlFor="fw-to" className="mb-1">To (IP or interface)</Label>
+            <Input
+              id="fw-to"
               value={form.to}
               onChange={(e) => setForm({ ...form, to: e.target.value })}
               placeholder="Any (leave empty)"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
           </div>
           {addRule.error && <p className="text-sm text-destructive">{String(addRule.error)}</p>}
         </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={addRule.isPending || !form.port}
-            className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
+        <DialogFooter className="mt-6">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={addRule.isPending || !form.port}>
             {addRule.isPending ? 'Adding...' : 'Add Rule'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -186,57 +180,47 @@ function UnbanIpModal({ jail, onClose }: { jail: F2BJail; onClose: () => void })
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Unban IP — {jail.name}</h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Unban IP — {jail.name}</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">Currently banned: {jail.bannedCount} IP(s)</p>
           {jail.bannedIps.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {jail.bannedIps.map((bannedIp) => (
-                <button
+                <Button
                   key={bannedIp}
+                  variant="destructive"
+                  size="xs"
                   onClick={() => setIp(bannedIp)}
-                  className="rounded-full bg-red-500/10 px-3 py-1 text-xs text-red-500 hover:bg-red-500/20"
+                  className="rounded-full"
                 >
                   {bannedIp}
-                </button>
+                </Button>
               ))}
             </div>
           )}
           <div>
-            <label className="mb-1 block text-sm font-medium">IP Address to Unban</label>
-            <input
+            <Label htmlFor="unban-ip" className="mb-1">IP Address to Unban</Label>
+            <Input
+              id="unban-ip"
               value={ip}
               onChange={(e) => setIp(e.target.value)}
               placeholder="e.g. 192.168.1.100"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
           </div>
           {unban.error && <p className="text-sm text-destructive">{String(unban.error)}</p>}
         </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleUnban}
-            disabled={unban.isPending || !ip.trim()}
-            className="rounded-md bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-600/90 disabled:opacity-50"
-          >
+        <DialogFooter className="mt-6">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleUnban} disabled={unban.isPending || !ip.trim()} className="bg-green-600 hover:bg-green-600/90 text-white">
             {unban.isPending ? 'Unbanning...' : 'Unban IP'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -253,32 +237,30 @@ function BanIpModal({ jails, onClose }: { jails: F2BJail[]; onClose: () => void 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
             <Ban className="h-5 w-5 text-red-500" /> Ban IP Address
-          </h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+          </DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">IP Address</label>
-            <input
+            <Label htmlFor="ban-ip" className="mb-1">IP Address</Label>
+            <Input
+              id="ban-ip"
               value={ip}
               onChange={(e) => setIp(e.target.value)}
               placeholder="e.g. 192.168.1.100"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Jail (optional)</label>
+            <Label htmlFor="ban-jail" className="mb-1">Jail (optional)</Label>
             <select
+              id="ban-jail"
               value={jail}
               onChange={(e) => setJail(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
             >
               <option value="">All jails</option>
               {jails.map((j) => (
@@ -290,23 +272,14 @@ function BanIpModal({ jails, onClose }: { jails: F2BJail[]; onClose: () => void 
           </div>
           {banIp.error && <p className="text-sm text-destructive">{String(banIp.error)}</p>}
         </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleBan}
-            disabled={banIp.isPending || !ip.trim()}
-            className="rounded-md bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-600/90 disabled:opacity-50"
-          >
+        <DialogFooter className="mt-6">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="destructive" onClick={handleBan} disabled={banIp.isPending || !ip.trim()}>
             {banIp.isPending ? 'Banning...' : 'Ban IP'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -320,14 +293,11 @@ function ResetConfirmModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Reset to Default Rules</h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Reset to Default Rules</DialogTitle>
+        </DialogHeader>
         <div className="space-y-4">
           <div className="flex items-start gap-3 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 text-yellow-500" />
@@ -341,23 +311,14 @@ function ResetConfirmModal({ onClose }: { onClose: () => void }) {
           </div>
           {reset.error && <p className="text-sm text-destructive">{String(reset.error)}</p>}
         </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleReset}
-            disabled={reset.isPending}
-            className="rounded-md bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-600/90 disabled:opacity-50"
-          >
+        <DialogFooter className="mt-6">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="destructive" onClick={handleReset} disabled={reset.isPending}>
             {reset.isPending ? 'Resetting...' : 'Reset to Defaults'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -379,35 +340,23 @@ function ConfirmModal({
   isPending?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">{title}</h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
         <div className="flex items-start gap-3 rounded-md border border-red-500/30 bg-red-500/5 p-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 text-red-500" />
           <p className="text-sm text-muted-foreground">{message}</p>
         </div>
-        <div className="mt-6 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={isPending}
-            className="rounded-md bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-600/90 disabled:opacity-50"
-          >
+        <DialogFooter className="mt-6">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="destructive" onClick={onConfirm} disabled={isPending}>
             {isPending ? 'Processing...' : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -440,12 +389,12 @@ export function FirewallPage() {
           <AlertTriangle className="h-10 w-10 text-red-500" />
           <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load firewall data</h3>
           <p className="mt-1 text-sm text-muted-foreground">An error occurred while fetching firewall rules and status.</p>
-          <button
+          <Button
+            variant="destructive"
             onClick={() => window.location.reload()}
-            className="mt-4 inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
           >
             <RefreshCw className="h-4 w-4" /> Retry
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -481,16 +430,13 @@ export function FirewallPage() {
               </div>
             </div>
           </div>
-          <button
+          <Button
+            variant={status.enabled ? "outline" : "default"}
             onClick={() => toggleFirewall.mutate(status.enabled ? 'disable' : 'enable')}
-            className={`rounded-md px-4 py-2 text-sm font-medium ${
-              status.enabled
-                ? 'border border-red-500 text-red-500 hover:bg-red-500/10'
-                : 'bg-green-600 text-white hover:bg-green-600/90'
-            }`}
+            className={status.enabled ? 'border-red-500 text-red-500 hover:bg-red-500/10' : 'bg-green-600 hover:bg-green-600/90 text-white'}
           >
             {status.enabled ? 'Disable Firewall' : 'Enable Firewall'}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -498,44 +444,32 @@ export function FirewallPage() {
       <div className="mb-6 flex items-center justify-between">
         <div className="flex gap-1 rounded-lg border border-border p-1">
           {TABS.map((t) => (
-            <button
+            <Button
               key={t.key}
+              variant={tab === t.key ? "default" : "ghost"}
+              size="sm"
               onClick={() => setTab(t.key)}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${
-                tab === t.key
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent'
-              }`}
             >
               <t.icon className="h-3.5 w-3.5" />
               {t.label}
-            </button>
+            </Button>
           ))}
         </div>
 
         {tab === 'rules' && (
           <div className="flex gap-2">
-            <button
-              onClick={() => setShowReset(true)}
-              className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-accent"
-            >
+            <Button variant="outline" onClick={() => setShowReset(true)}>
               <RotateCcw className="h-4 w-4" /> Reset to Defaults
-            </button>
-            <button
-              onClick={() => setShowAdd(true)}
-              className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
+            </Button>
+            <Button onClick={() => setShowAdd(true)}>
               <Plus className="h-4 w-4" /> Add Rule
-            </button>
+            </Button>
           </div>
         )}
         {tab === 'fail2ban' && (
-          <button
-            onClick={() => setShowBanIp(true)}
-            className="flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-600/90"
-          >
+          <Button variant="destructive" onClick={() => setShowBanIp(true)}>
             <Ban className="h-4 w-4" /> Ban IP
-          </button>
+          </Button>
         )}
       </div>
 
@@ -564,14 +498,15 @@ export function FirewallPage() {
             <h3 className="mb-3 text-sm font-medium">Quick Presets</h3>
             <div className="flex flex-wrap gap-2">
               {PRESETS.map((p) => (
-                <button
+                <Button
                   key={p.key}
+                  variant="outline"
+                  size="sm"
                   onClick={() => applyPreset.mutate(p.key as Parameters<typeof applyPreset.mutate>[0])}
                   disabled={applyPreset.isPending}
-                  className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
                 >
                   {p.label}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -622,12 +557,9 @@ export function FirewallPage() {
                       <td className="px-4 py-3 text-xs text-muted-foreground">{r.from || 'Any'}</td>
                       <td className="px-4 py-3 font-mono text-xs">{r.rule}</td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => setDeleteRuleTarget(r.number)}
-                          className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        >
+                        <Button variant="ghost" size="icon-sm" onClick={() => setDeleteRuleTarget(r.number)} className="hover:bg-destructive/10 hover:text-destructive">
                           <Trash2 className="h-4 w-4" />
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -658,12 +590,9 @@ export function FirewallPage() {
                       <div className="text-sm text-muted-foreground">{j.bannedCount} banned IP(s)</div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setUnbanTarget(j)}
-                    className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
-                  >
+                  <Button variant="outline" size="sm" onClick={() => setUnbanTarget(j)}>
                     <Unlock className="h-4 w-4" /> Unban
-                  </button>
+                  </Button>
                 </div>
                 {j.bannedIps.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
@@ -710,12 +639,9 @@ function Fail2BanLogViewer() {
           <h3 className="font-semibold">Fail2Ban Logs</h3>
           <span className="text-xs text-muted-foreground">(last 50 lines)</span>
         </div>
-        <button
-          onClick={() => refetch()}
-          className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
-        >
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
           <RefreshCw className="h-3.5 w-3.5" /> Refresh
-        </button>
+        </Button>
       </div>
       <div className="max-h-[500px] overflow-auto bg-background p-4">
         {logLines.length === 0 ? (
@@ -867,14 +793,15 @@ function SshSettingsTab() {
         <div className="space-y-5 p-4">
           {/* Port */}
           <div>
-            <label className="mb-1 block text-sm font-medium">SSH Port</label>
-            <input
+            <Label htmlFor="ssh-port" className="mb-1">SSH Port</Label>
+            <Input
+              id="ssh-port"
               type="number"
               min={1}
               max={65535}
               value={form.port}
               onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) || 22 })}
-              className="w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              className="max-w-xs"
             />
             <p className="mt-1 text-xs text-muted-foreground">
               Changing the SSH port will require updating your firewall rules.
@@ -921,13 +848,12 @@ function SshSettingsTab() {
             <p className="text-sm text-destructive">{String(updateSsh.error)}</p>
           )}
 
-          <button
+          <Button
             onClick={handleSave}
             disabled={updateSsh.isPending}
-            className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             {updateSsh.isPending ? 'Saving...' : 'Save SSH Settings'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
