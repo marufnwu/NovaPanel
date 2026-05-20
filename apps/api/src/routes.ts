@@ -37,7 +37,7 @@ export async function registerRoutes(fastify: FastifyInstance) {
   await fastify.register(import('./modules/mail/mail.routes.js'), { prefix: '/api/v1' });
 
   // Phase 11: Databases
-  await fastify.register(import('./modules/databases/databases.routes.js'), { prefix: '/api/v1/db' });
+  await fastify.register(import('./modules/databases/databases.routes.js'), { prefix: '/api/v1/databases' });
 
   // Phase 12: FTP
   await fastify.register(import('./modules/ftp/ftp.routes.js'), { prefix: '/api/v1' });

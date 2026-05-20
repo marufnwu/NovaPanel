@@ -5,11 +5,12 @@ import { AppError } from '../../errors.js';
 import { run } from '../../services/executor.js';
 import { runtimeManager } from '../../services/runtime-manager/index.js';
 import { jobQueue, JOB_TYPES } from '../../services/job-queue/index.js';
+import { getProcessManager } from '../../services/process-manager/index.js';
 import { logger } from '../../config/logger.js';
 import { nanoid } from 'nanoid';
 import * as sudoFs from '../../services/sudo-fs.js';
 import { auditService } from '../audit/audit.service.js';
-import type { RuntimeConfig } from '../../db/schema/site_runtimes.js';
+import type { RuntimeConfig } from '@serverforge/schemas/sites';
 
 const SITES_ROOT = '/var/www/sites';
 
@@ -25,8 +26,18 @@ export class SitesService {
   /**
    * List all sites
    */
-  async list(): Promise<Site[]> {
-    return db.select().from(sites);
+  async list(options: { includeRuntime?: boolean } = {}): Promise<Site[]> {
+    if (!options.includeRuntime) {
+      return db.select().from(sites);
+    }
+    const allSites = await db.select().from(sites);
+    const result = [];
+    for (const site of allSites) {
+      const [runtime] = await db.select().from(siteRuntimes).where(eq(siteRuntimes.siteId, site.id)).limit(1);
+      const [process] = await db.select().from(siteProcesses).where(eq(siteProcesses.siteId, site.id)).limit(1);
+      result.push({ ...site, runtime, process });
+    }
+    return result;
   }
 
   /**
@@ -189,6 +200,12 @@ export class SitesService {
     for (const domain of attachedDomains) {
       await db.delete(domains).where(eq(domains.id, domain.id));
     }
+
+    // Stop and delete process via PM2
+    try {
+      const pm = await getProcessManager();
+      await pm.delete(`site-${id}`);
+    } catch (e: any) { logger.warn({ siteId: id }, `Process cleanup: ${e}`); }
 
     // Delete site runtime and process
     await db.delete(siteProcesses).where(eq(siteProcesses.siteId, id));

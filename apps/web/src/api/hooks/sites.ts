@@ -1,82 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../client';
+import type { Site, SiteWithRuntime, RuntimeConfig, CreateSiteInput, SiteProcess } from '@serverforge/schemas/sites';
 
-// --- Types for v4 Architecture ---
+export type { Site, SiteWithRuntime, RuntimeConfig, CreateSiteInput, SiteProcess } from '@serverforge/schemas/sites';
 
-export interface RuntimeConfig {
-  schemaVersion: number;
-  runtime: 'php' | 'node' | 'python' | 'static' | 'docker';
-  version?: string;
-  buildCommand?: string;
-  startCommand?: string;
-  healthCheckPath?: string;
-  phpVersion?: string;
-  nodeVersion?: string;
-  pythonVersion?: string;
-  venvPath?: string;
-}
-
-export interface Site {
-  id: string;
-  name: string;
-  systemUser: string;
-  homeDir: string;
-  status: 'active' | 'suspended';
-  diskUsedMb: number;
-  bandwidthUsedMb: number;
-  createdAt: string;
-}
-
-export interface SiteWithDetails extends Site {
-  runtime?: SiteRuntime;
-  process?: SiteProcess;
-  domains: Domain[];
-}
-
-export interface SiteRuntime {
-  id: string;
-  siteId: string;
-  runtimeConfig: RuntimeConfig;
-  webServer: 'nginx' | 'apache';
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface SiteProcess {
-  id: string;
-  siteId: string;
-  startCommand: string;
-  internalPort?: number;
-  processManager: 'pm2' | 'supervisor' | 'systemd' | 'php-fpm';
-  replicas: number;
-  autoRestart: boolean;
-  healthCheckPath: string;
-  pid?: number;
-  uptime?: number;
-  restartCount: number;
-  memoryMb?: number;
-  cpuPercent?: number;
-}
-
-export interface Domain {
-  id: string;
-  name: string;
-  siteId: string | null;
-  parentDomainId: string | null;
-  role: 'primary' | 'attached';
-  behavior: 'normal' | 'alias' | 'redirect';
-  isSubdomain: boolean;
-  documentRoot: string | null;
-  redirectTarget: string | null;
-  sslEnabled: boolean;
-  status: 'active' | 'suspended' | 'pending';
-}
-
-export interface CreateSiteInput {
-  name: string;
-  runtime: RuntimeConfig;
-  primaryDomain?: string;
-}
+// Alias for backward compat
+export type SiteWithDetails = SiteWithRuntime;
 
 export interface UpdateSiteInput {
   name?: string;
@@ -84,17 +13,20 @@ export interface UpdateSiteInput {
 
 // --- Sites CRUD Hooks ---
 
-export function useSites() {
+export function useSites(options?: { includeRuntime?: boolean }) {
   return useQuery({
-    queryKey: ['sites'],
-    queryFn: () => api.get<Site[]>('/sites'),
+    queryKey: ['sites', options],
+    queryFn: () => {
+      const params = options?.includeRuntime ? '?include=runtime' : '';
+      return api.get<Site[]>(`/sites${params}`);
+    },
   });
 }
 
 export function useSite(id: string) {
   return useQuery({
     queryKey: ['sites', id],
-    queryFn: () => api.get<SiteWithDetails>(`/sites/${id}`),
+    queryFn: () => api.get<SiteWithRuntime>(`/sites/${id}`),
     enabled: !!id,
   });
 }
@@ -181,8 +113,6 @@ export function useDetachDomainFromSite() {
   });
 }
 
-export const useWebsites = useSites;
-export const useWebsite = useSite;
 export const useAttachDomain = useAttachDomainToSite;
 export const useDetachDomain = useDetachDomainFromSite;
 

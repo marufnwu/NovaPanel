@@ -1105,24 +1105,25 @@ SUDOERS
         log "Installing dependencies..."
         pnpm install 2>&1 | tee /tmp/novapanel-pnpm-install.log
 
-        log "Building API and web..."
-        # Build API backend first using direct tsc (avoids turbo cache permission issues)
+        log "Building schemas, API, and web..."
+        # Build shared schemas package first (required by API)
+        cd "${PANEL_HOME}" && pnpm schemas:build 2>&1 | tail -5
+
+        # Build API backend
         cd "${PANEL_HOME}/apps/api" && {
             rm -rf dist
             mkdir -p dist
-            # Build TypeScript using pnpm exec to ensure correct PATH
             pnpm exec tsc --build --force 2>&1 || {
                 warn "tsc --build failed, trying npx tsc..."
                 /usr/bin/npx tsc --build --force 2>&1 || {
-                    # Fallback: use system node with direct tsc call
                     node /opt/novapanel/node_modules/.bin/tsc --build --force 2>&1
                 }
             }
         }
-        
+
         # Copy migrations to dist folder (TypeScript compiler doesn't copy them)
         cp -r "${PANEL_HOME}/apps/api/src/db/migrations" "${PANEL_HOME}/apps/api/dist/db/" 2>/dev/null || true
-        
+
         cd "${PANEL_HOME}"
 
         # Build web frontend

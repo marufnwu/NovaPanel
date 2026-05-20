@@ -170,7 +170,7 @@ export function SiteDetailPage() {
     );
   }
 
-  const formatDate = (dateStr: string) => {
+  const formatDate = (dateStr: string | Date) => {
     return new Date(dateStr).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -267,11 +267,11 @@ export function SiteDetailPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {site.domains.length === 0 ? (
+          {site.domains?.length === 0 ? (
             <p className="text-sm text-muted-foreground">No domains attached</p>
           ) : (
             <div className="space-y-2">
-              {site.domains.map((domain) => (
+              {(site.domains ?? []).map((domain) => (
                 <div
                   key={domain.id}
                   className="flex items-center justify-between rounded-md border p-3"

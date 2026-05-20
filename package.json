@@ -10,7 +10,8 @@
     "test": "turbo test",
     "db:generate": "pnpm --filter api db:generate",
     "db:migrate": "pnpm --filter api db:migrate",
-    "db:seed": "pnpm --filter api db:seed"
+    "db:seed": "pnpm --filter api db:seed",
+    "schemas:build": "pnpm --filter @serverforge/schemas build"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

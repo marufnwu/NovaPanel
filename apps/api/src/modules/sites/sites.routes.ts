@@ -8,8 +8,10 @@ export default async function siteRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
   // GET /api/v1/sites — List all sites
-  fastify.get('/', async () => {
-    const items = await sitesService.list();
+  // Query ?include=runtime to include runtime and process data
+  fastify.get('/', async (req) => {
+    const includeRuntime = (req.query as { include?: string }).include === 'runtime';
+    const items = await sitesService.list({ includeRuntime });
     return { success: true, data: items };
   });
 

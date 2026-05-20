@@ -180,14 +180,14 @@ async generateWebsiteConfig(websiteId: string): Promise<void> {
     }
 }
 
-    // Write config file
-    const configPath = `${env.NGINX_SITES_AVAILABLE}/website-${websiteId}.conf`;
-    const enabledPath = `${env.NGINX_SITES_ENABLED}/website-${websiteId}.conf`;
+// Write config file
+    const configPath = `${env.NGINX_SITES_AVAILABLE}/site-${websiteId}.conf`;
+    const enabledPath = `${env.NGINX_SITES_ENABLED}/site-${websiteId}.conf`;
 
     await sudoFs.mkdir(env.NGINX_SITES_AVAILABLE);
 
     // Backup existing config before overwriting
-    const backupPath = `${env.NGINX_SITES_AVAILABLE}/website-${websiteId}.conf.bak`;
+    const backupPath = `${env.NGINX_SITES_AVAILABLE}/site-${websiteId}.conf.bak`;
     try {
       const existing = await sudoFs.readFile(configPath);
       await sudoFs.writeFile(backupPath, existing);

@@ -215,7 +215,7 @@ function CreateSiteModal({ open, onClose }: { open: boolean; onClose: () => void
 }
 
 export function SitesPage() {
-  const { data: sites, isLoading } = useSites();
+  const { data: sites, isLoading } = useSites({ includeRuntime: true });
   const deleteSite = useDeleteSite();
   const suspendSite = useSuspendSite();
   const activateSite = useActivateSite();
@@ -284,7 +284,13 @@ export function SitesPage() {
                     </span>
                   </TableCell>
                   <TableCell><StatusBadge status={site.status} /></TableCell>
-                  <TableCell><span className="text-sm text-muted-foreground">—</span></TableCell>
+                  <TableCell>
+                    {(site as any).runtime ? (
+                      <RuntimeBadge config={(site as any).runtime.runtimeConfig} />
+                    ) : (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <span className="flex items-center gap-1 text-sm text-muted-foreground">
                       <HardDrive className="h-3 w-3" />{site.diskUsedMb} MB

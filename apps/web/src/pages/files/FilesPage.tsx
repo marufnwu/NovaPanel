@@ -1,22 +1,23 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useDomains } from '../../api/hooks/domains';
-import { useWebsite, useWebsites } from '../../api/hooks/sites';
+import { useSites, useSite } from '../../api/hooks/sites';
 import {
   useDirectoryListing,
+  useFileContent,
   useCreateDirectory,
   useDeleteFile,
-  useFileContent,
-  useSaveFileContent,
   useRenameFile,
+  useSaveFileContent,
   useChmod,
   useArchive,
   useExtract,
   useDirectoryTree,
   useCopyFile,
   useMoveFile,
-  useDirectorySize
+  useDirectorySize,
+  type FileEntry,
+  type DirectoryTreeNode,
 } from '../../api/hooks/files';
-import type { FileEntry, DirectoryTreeNode } from '../../api/hooks/files';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -812,7 +813,7 @@ export function FilesPage() {
   }, []);
 
   const { data: domains } = useDomains();
-  const { data: websites } = useWebsites();
+  const { data: websites } = useSites();
 
   // When websiteId is in URL, use website context; otherwise use website/domain selector
   const [selectedWebsiteId, setSelectedWebsiteId] = useState('');
@@ -856,7 +857,7 @@ export function FilesPage() {
   const activeDomainId = activeWebsiteId ? undefined : (selectedDomainId || undefined);
   const hasContext = !!(activeWebsiteId || activeDomainId);
 
-  const { data: website } = useWebsite(activeWebsiteId || '');
+  const { data: website } = useSite(activeWebsiteId || '');
 
   // Load preferences from localStorage
   useEffect(() => {

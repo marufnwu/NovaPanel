@@ -4,8 +4,17 @@ import { logger } from './config/logger.js';
 import { SchedulerService } from './services/scheduler.js';
 import { jobQueue } from './services/job-queue/index.js';
 import { reconciler } from './services/reconciler/index.js';
+import { runMigrations } from './db/migrate.js';
+
+const SKIP_MIGRATE = process.argv.includes('--skip-migrate');
 
 async function main() {
+  if (!SKIP_MIGRATE) {
+    await runMigrations();
+  } else {
+    logger.info('Skipping migrations (--skip-migrate flag)');
+  }
+
   const server = await createServer();
 
   await server.listen({ port: env.PORT, host: env.HOST });

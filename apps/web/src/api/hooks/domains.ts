@@ -1,48 +1,38 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../client';
+import type { Domain, CreateDomainInput } from '@serverforge/schemas/domains';
+export type { Domain } from '@serverforge/schemas/domains';
+export type { CreateDomainInput } from '@serverforge/schemas/domains';
 
-export interface Domain {
+export interface Subdomain {
   id: string;
   name: string;
-  status: 'active' | 'suspended' | 'pending';
-  documentRoot: string | null;
+  domainId: string;
+  documentRoot: string;
   phpVersion: string;
-  phpHandler: string;
-  webServer: string;
-  sslEnabled: boolean;
-  sslCertId?: string | null;
-  diskUsedMb: number | null;
-  bandwidthUsedMb: number | null;
-  redirectHttpToHttps: boolean;
-  hsts: boolean;
-  createdAt: string;
   siteId?: string | null;
-  type: 'primary' | 'addon' | 'parked' | 'subdomain' | 'redirect' | 'mail-only';
-  isPrimary: boolean;
-  parentDomainId?: string | null;
-  redirectTarget?: string | null;
-  suspendedConfig?: string | null;
+  createdAt: string;
 }
 
-export interface CreateDomainInput {
-  name: string;
-  documentRoot?: string;
-  phpVersion?: string;
-  phpHandler?: string;
-  webServer?: string;
-  createDns?: boolean;
-  createMail?: boolean;
-  websiteMode?: 'none' | 'create' | 'existing';
-  siteId?: string;
-  websiteName?: string;
-  type?: 'primary' | 'addon' | 'parked' | 'subdomain' | 'redirect' | 'mail-only';
-  parentDomainId?: string;
-  redirectTarget?: string;
-  createDnsZone?: boolean;
-  enableMail?: boolean;
-  makePublic?: boolean;
-  tunnelId?: string;
-  skipDnsVerification?: boolean;
+export interface DomainAlias {
+  id: string;
+  alias: string;
+  domainId: string;
+  createdAt: string;
+}
+
+export interface DomainRedirect {
+  id: string;
+  sourcePath: string;
+  targetUrl: string;
+  type: '301' | '302';
+  domainId: string;
+  createdAt: string;
+}
+
+export interface DomainAliasInput {
+  domain: string;
+  targetDomain: string;
 }
 
 export interface Subdomain {

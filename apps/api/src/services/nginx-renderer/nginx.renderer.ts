@@ -48,7 +48,8 @@ export class DefaultNginxRenderer implements NginxRenderer {
       site,
       config,
       serverNames as string[],
-      primaryDomain
+      primaryDomain,
+      model.process?.internalPort ?? undefined
     );
 
     return `# NovaPanel Site: ${site.name}
@@ -65,7 +66,8 @@ ${mainBlock}
     site: SiteModel['site'],
     runtimeConfig: { runtime?: string; healthCheckPath?: string },
     serverNames: string[],
-    primaryDomain: DomainConfig | undefined
+    primaryDomain: DomainConfig | undefined,
+    internalPort?: number
   ): string {
     const documentRoot = primaryDomain?.documentRoot || `${site.homeDir}/httpdocs`;
     const runtime = runtimeConfig.runtime || 'static';
@@ -112,11 +114,11 @@ server {
 
     // Add Node.js/Python proxy config if not PHP
     if (runtime === 'node' || runtime === 'python') {
-      // Internal port will be resolved at runtime from site_processes
+      const port = internalPort || 30000;
       config += `
     # Proxy to application
     location / {
-        proxy_pass http://127.0.0.1:30000;  # Port resolved by reconciler
+        proxy_pass http://127.0.0.1:${port};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
