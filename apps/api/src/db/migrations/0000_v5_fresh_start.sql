@@ -191,6 +191,7 @@ CREATE TABLE `sites` (
 	`cpu_limit` integer,
 	`status` text DEFAULT 'active' NOT NULL,
 	`health_check_path` text DEFAULT '/health',
+	`last_deployment_id` text,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
