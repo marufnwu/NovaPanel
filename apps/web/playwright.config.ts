@@ -8,7 +8,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:8732',
+    baseURL: 'http://192.168.0.211:8732',
     trace: 'on-first-retry',
   },
   projects: [
@@ -17,10 +17,5 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: process.env.CI ? undefined : {
-    command: 'pnpm --filter @serverforge/api dev',
-    url: 'http://localhost:8732',
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  },
+  webServer: undefined,
 });
