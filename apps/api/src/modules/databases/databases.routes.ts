@@ -1,107 +1,116 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
-import { DatabasesService } from './databases.service.js';
-import { createDbSchema, createUserSchema, changePasswordSchema, importDbSchema } from './databases.schema.js';
+import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+import { databasesService } from './databases.service.js';
 import { requireAuth } from '../auth/auth.middleware.js';
 
+const createDatabaseSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1),
+  type: z.enum(['postgresql', 'mysql', 'mariadb', 'mongodb', 'redis', 'sqlite']),
+  version: z.string().optional(),
+  host: z.string().optional(),
+  port: z.number().int().optional(),
+  databaseName: z.string().optional(),
+  username: z.string().optional(),
+  password: z.string().optional(),
+  backupsEnabled: z.boolean().optional(),
+  backupSchedule: z.string().optional(),
+  publicAccess: z.boolean().optional(),
+});
+
+const updateDatabaseSchema = z.object({
+  name: z.string().min(1).optional(),
+  backupsEnabled: z.boolean().optional(),
+  backupSchedule: z.string().optional(),
+  publicAccess: z.boolean().optional(),
+  status: z.enum(['running', 'stopped', 'error']).optional(),
+});
+
+const createDbUserSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().optional(),
+  privileges: z.array(z.string()).optional(),
+});
+
+const updatePrivilegesSchema = z.object({
+  privileges: z.array(z.string()),
+});
+
 export default async function databaseRoutes(fastify: FastifyInstance) {
-  const service = new DatabasesService();
   fastify.addHook('preHandler', requireAuth);
 
-  // GET /databases — List databases
-  fastify.get('/databases', async (req) => {
-    const { domainId, page, perPage } = req.query as { domainId?: string; page?: string; perPage?: string };
-    return {
-      success: true,
-      data: await service.list(domainId, parseInt(page || '1'), parseInt(perPage || '20')),
-    };
+  fastify.get('/', async (req) => {
+    const projectId = (req.query as { projectId?: string }).projectId;
+    const result = await databasesService.list(projectId);
+    return { success: true, data: result.items, meta: { total: result.total } };
   });
 
-  // POST /databases — Create database
-  fastify.post('/databases', async (req, reply: FastifyReply) => {
-    const data = createDbSchema.parse(req.body);
-    const result = await service.create(data, req.user.id, req.ip);
-    return reply.status(201).send({ success: true, data: result });
+  fastify.post('/', async (req, reply) => {
+    const data = createDatabaseSchema.parse(req.body);
+    const database = await databasesService.create(data);
+    return reply.status(201).send({ success: true, data: database });
   });
 
-  // GET /databases/:id — Get single database
-  fastify.get('/databases/:id', async (req) => {
+  fastify.get('/:id', async (req) => {
     const { id } = req.params as { id: string };
-    return { success: true, data: await service.getDatabase(id) };
+    const database = await databasesService.get(id);
+    return { success: true, data: database };
   });
 
-  // DELETE /databases/:id — Delete database
-  fastify.delete('/databases/:id', async (req) => {
+  fastify.put('/:id', async (req) => {
     const { id } = req.params as { id: string };
-    await service.delete(id, req.user.id, req.ip);
-    return { success: true, data: null };
+    const data = updateDatabaseSchema.parse(req.body);
+    const database = await databasesService.update(id, data);
+    return { success: true, data: database };
   });
 
-  // POST /databases/:id/users — Create database user
-  fastify.post('/databases/:id/users', async (req) => {
+  fastify.delete('/:id', async (req) => {
     const { id } = req.params as { id: string };
-    const { username, password, host } = createUserSchema.parse(req.body);
-    return { success: true, data: await service.createUser(id, username, password, host, req.user.id, req.ip) };
+    const result = await databasesService.delete(id);
+    return { success: true, data: result };
   });
 
-  // DELETE /databases/:id/users/:userId — Delete database user
-  fastify.delete('/databases/:id/users/:userId', async (req) => {
+  fastify.post('/:id/start', async (req) => {
+    const { id } = req.params as { id: string };
+    const database = await databasesService.start(id);
+    return { success: true, data: database };
+  });
+
+  fastify.post('/:id/stop', async (req) => {
+    const { id } = req.params as { id: string };
+    const database = await databasesService.stop(id);
+    return { success: true, data: database };
+  });
+
+  fastify.post('/:id/restart', async (req) => {
+    const { id } = req.params as { id: string };
+    const database = await databasesService.restart(id);
+    return { success: true, data: database };
+  });
+
+  fastify.get('/:id/users', async (req) => {
+    const { id } = req.params as { id: string };
+    const users = await databasesService.listUsers(id);
+    return { success: true, data: users };
+  });
+
+  fastify.post('/:id/users', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const data = createDbUserSchema.parse(req.body);
+    const user = await databasesService.createUser({ databaseId: id, ...data });
+    return reply.status(201).send({ success: true, data: user });
+  });
+
+  fastify.delete('/:id/users/:userId', async (req) => {
     const { userId } = req.params as { userId: string };
-    await service.deleteUser(userId, req.user.id, req.ip);
-    return { success: true, data: null };
+    const result = await databasesService.deleteUser(userId);
+    return { success: true, data: result };
   });
 
-  // PUT /databases/:id/users/:userId/password — Change user password
-  fastify.put('/databases/:id/users/:userId/password', async (req) => {
+  fastify.put('/:id/users/:userId/privileges', async (req) => {
     const { userId } = req.params as { userId: string };
-    const { password } = changePasswordSchema.parse(req.body);
-    await service.changeUserPassword(userId, password, req.user.id, req.ip);
-    return { success: true, data: null };
-  });
-
-  // GET /databases/:id/export — Export database
-  fastify.get('/databases/:id/export', async (req) => {
-    const { id } = req.params as { id: string };
-    const sql = await service.exportDatabase(id, req.user.id, req.ip);
-    return { success: true, data: { sql } };
-  });
-
-  // POST /databases/:id/import — Import database
-  fastify.post('/databases/:id/import', async (req) => {
-    const { id } = req.params as { id: string };
-    const { sql } = importDbSchema.parse(req.body);
-    await service.importDatabase(id, sql, req.user.id, req.ip);
-    return { success: true, data: null };
-  });
-
-  // GET /databases/:id/info — Get database info (users, size)
-  fastify.get('/databases/:id/info', async (req) => {
-    const { id } = req.params as { id: string };
-    return { success: true, data: await service.getDatabaseInfo(id) };
-  });
-
-  // POST /databases/:id/repair — Repair MariaDB tables
-  fastify.post('/databases/:id/repair', async (req) => {
-    const { id } = req.params as { id: string };
-    return { success: true, data: await service.repairDatabase(id, req.user.id, req.ip) };
-  });
-
-  // POST /databases/:id/optimize — Optimize MariaDB tables
-  fastify.post('/databases/:id/optimize', async (req) => {
-    const { id } = req.params as { id: string };
-    return { success: true, data: await service.optimizeDatabase(id, req.user.id, req.ip) };
-  });
-
-  // POST /databases/:id/clone — Clone database
-  fastify.post('/databases/:id/clone', async (req) => {
-    const { id } = req.params as { id: string };
-    const { newName } = req.body as { newName: string };
-    return { success: true, data: await service.cloneDatabase(id, newName, req.user.id, req.ip) };
-  });
-
-  // POST /databases/:id/query — Execute SQL query
-  fastify.post('/databases/:id/query', async (req) => {
-    const { id } = req.params as { id: string };
-    const { sql } = req.body as { sql: string };
-    return { success: true, data: await service.runQuery(id, sql) };
+    const { privileges } = updatePrivilegesSchema.parse(req.body);
+    const user = await databasesService.updateUserPrivileges(userId, privileges);
+    return { success: true, data: user };
   });
 }

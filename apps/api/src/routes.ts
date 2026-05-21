@@ -14,6 +14,10 @@ export async function registerRoutes(fastify: FastifyInstance) {
   // Phase 3: Auth
   await fastify.register(import('./modules/auth/auth.routes.js'), { prefix: '/api/v1/auth' });
 
+  // Organizations + Projects (v5 multi-tenant)
+  await fastify.register(import('./modules/organizations/organizations.routes.js'), { prefix: '/api/v1/organizations' });
+  await fastify.register(import('./modules/projects/projects.routes.js'), { prefix: '/api/v1/projects' });
+
   // Phase 5: Stats
   await fastify.register(import('./modules/stats/stats.routes.js'), { prefix: '/api/v1/stats' });
 
@@ -22,6 +26,20 @@ export async function registerRoutes(fastify: FastifyInstance) {
 
   // Sites (v4 architecture - replaces websites)
   await fastify.register(import('./modules/sites/sites.routes.js'), { prefix: '/api/v1/sites' });
+
+  // Deployments
+  await fastify.register(import('./modules/deployments/deployments.routes.js'), { prefix: '/api/v1' });
+
+  // Docker runtime + Git + Build pipeline
+  await fastify.register(import('./modules/docker/docker.routes.js'), { prefix: '/api/v1' });
+  await fastify.register(import('./modules/git/git.routes.js'), { prefix: '/api/v1' });
+  await fastify.register(import('./modules/build/build.routes.js'), { prefix: '/api/v1' });
+
+  // Containers (v5 Docker runtime)
+  await fastify.register(import('./modules/containers/containers.routes.js'), { prefix: '/api/v1' });
+
+  // Container Registries
+  await fastify.register(import('./modules/registries/registries.routes.js'), { prefix: '/api/v1' });
 
   // Phase 7: Web Server + PHP (routes define their own /webserver/... and /php/... paths)
   await fastify.register(import('./modules/webserver/webserver.routes.js'), { prefix: '/api/v1' });
@@ -38,6 +56,9 @@ export async function registerRoutes(fastify: FastifyInstance) {
 
   // Phase 11: Databases
   await fastify.register(import('./modules/databases/databases.routes.js'), { prefix: '/api/v1/databases' });
+
+  // Storage (buckets + access keys)
+  await fastify.register(import('./modules/storage/storage.routes.js'), { prefix: '/api/v1' });
 
   // Phase 12: FTP
   await fastify.register(import('./modules/ftp/ftp.routes.js'), { prefix: '/api/v1' });
@@ -59,6 +80,24 @@ export async function registerRoutes(fastify: FastifyInstance) {
   // Background Jobs WebSocket
   const { registerJobsWs } = await import('./modules/jobs/jobs.ws.js');
   await registerJobsWs(fastify);
+
+  // Background Jobs REST API
+  await fastify.register(import('./modules/jobs/jobs.routes.js'), { prefix: '/api/v1' });
+
+  // Security: WAF rules + IP allowlists
+  await fastify.register(import('./modules/security/security.routes.js'), { prefix: '/api/v1' });
+
+  // Monitoring: metrics collection + alert rules
+  await fastify.register(import('./modules/monitoring/monitoring.routes.js'), { prefix: '/api/v1' });
+
+  // Billing: usage records, invoices, plans
+  await fastify.register(import('./modules/billing/billing.routes.js'), { prefix: '/api/v1' });
+
+  // Webhooks
+  await fastify.register(import('./modules/webhooks/webhooks.routes.js'), { prefix: '/api/v1' });
+
+  // Plugins
+  await fastify.register(import('./modules/plugins/plugins.routes.js'), { prefix: '/api/v1' });
 
   // Phase 16: Cron + Firewall
   await fastify.register(import('./modules/cron/cron.routes.js'), { prefix: '/api/v1' });

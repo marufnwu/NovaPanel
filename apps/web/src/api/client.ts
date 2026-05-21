@@ -29,10 +29,21 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...(options.headers as Record<string, string>),
   };
 
+  // Include org context header if available
+  try {
+    const stored = localStorage.getItem('sf-auth');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed.state?.activeOrgId) {
+        headers['x-organization-id'] = parsed.state.activeOrgId;
+      }
+    }
+  } catch {}
+
   const response = await fetch(url, {
     ...options,
     headers,
-    credentials: 'include', // Include cookies
+    credentials: 'include',
   });
 
   // Handle 401 Unauthorized — clear auth state and redirect to login

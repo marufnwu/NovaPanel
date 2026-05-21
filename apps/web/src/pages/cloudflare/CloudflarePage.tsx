@@ -444,7 +444,6 @@ function OverviewSection() {
                       </div>
                       <div>
                         <p className="text-sm font-medium">{domain.name}</p>
-                        <p className="text-xs text-muted-foreground">{domain.documentRoot}</p>
                       </div>
                     </div>
                     <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600">
@@ -521,8 +520,8 @@ function TunnelsSection({ onSetupTunnel }: { onSetupTunnel?: () => void }) {
   const handleExposeDomain = (domainName: string) => {
     if (!activeTunnel) return;
     const domain = domains?.find(d => d.name === domainName);
-    const service = domain?.sslEnabled ? 'https://localhost:443' : 'http://localhost:80';
-    const noTlsVerify = domain?.sslEnabled ?? false;
+    const service = domain?.sslStatus === 'active' ? 'https://localhost:443' : 'http://localhost:80';
+    const noTlsVerify = domain?.sslStatus !== 'active';
     addRoute.mutate(
       { tunnelId: activeTunnel.id, hostname: domainName, service, noTlsVerify, domainId: domain?.id },
       { onError: (error: any) => toast.error(error.message || 'Failed to expose domain') },
@@ -622,7 +621,6 @@ function TunnelsSection({ onSetupTunnel }: { onSetupTunnel?: () => void }) {
                     <Globe className="h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium">{domain.name}</p>
-                      <p className="text-xs text-muted-foreground">{domain.documentRoot}</p>
                     </div>
                   </div>
                   {existingRoute ? (

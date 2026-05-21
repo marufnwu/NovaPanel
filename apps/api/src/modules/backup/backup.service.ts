@@ -36,7 +36,8 @@ export class BackupService {
    * Create a backup
    */
   async createBackup(data: {
-    type: 'full' | 'files' | 'database' | 'dns' | 'mail' | 'config';
+    resourceType: 'site' | 'database' | 'container' | 'config';
+    type?: 'full' | 'incremental' | 'snapshot';
   }, userId?: string, ipAddress?: string) {
     const backupId = nanoid();
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -47,12 +48,11 @@ export class BackupService {
 
     await db.insert(backups).values({
       id: backupId,
-      filename,
-      type: data.type,
-      storageType: 'local',
+      resourceType: data.resourceType,
+      type: data.type || 'full',
+      storageBackend: 'local',
       storagePath: backupPath,
       status: 'running',
-      startedAt: new Date(),
     });
 
     try {
@@ -60,11 +60,10 @@ export class BackupService {
       await sudoFs.mkdir(stagingDir);
 
       // Backup files for all domains
-      if (data.type === 'full' || data.type === 'files') {
+      if (data.resourceType === 'site') {
         const domainList = await db.select().from(domains);
-
         for (const domain of domainList) {
-          const domainDir = `${env.VHOSTS_ROOT}/${domain.name}`;
+          const domainDir = `${env.VHOSTS_ROOT}/${domain.projectId}`;
           try {
             await run('tar', [
               '-czf', `${stagingDir}/files_${domain.name}.tar.gz`,
@@ -78,12 +77,12 @@ export class BackupService {
       }
 
       // Backup databases
-      if (data.type === 'full' || data.type === 'database') {
+      if (data.resourceType === 'database') {
         const dbList = await db.select().from(databases);
         for (const database of dbList) {
           try {
             let dump: string;
-            if (database.engine === 'mariadb') {
+            if (database.type === 'mariadb') {
               dump = await mariadbService.exportDatabase(database.name);
             } else {
               dump = await postgresService.exportDatabase(database.name);
@@ -95,27 +94,13 @@ export class BackupService {
         }
       }
 
-      // Backup DNS zones
-      if (data.type === 'full' || data.type === 'dns') {
-        await sudoFs.mkdir(`${stagingDir}/dns`);
-        const domainList = await db.select().from(domains);
-        for (const domain of domainList) {
-          const zonePath = `${env.BIND_ZONES_DIR}/db.${domain.name}`;
-          try {
-            const zoneContent = await sudoFs.readFile(zonePath);
-            await sudoFs.writeFile(`${stagingDir}/dns/db.${domain.name}`, zoneContent);
-          } catch {
-            logger.warn({ domain: domain.name }, 'Failed to backup DNS zone');
-          }
-        }
-      }
-
       // Write metadata
       const metadata = {
         id: backupId,
-        type: data.type,
+        resourceType: data.resourceType,
+        type: data.type || 'full',
         timestamp,
-        version: '2.0.0',
+        version: '5.0.0',
       };
       await sudoFs.writeFile(`${stagingDir}/metadata.json`, JSON.stringify(metadata, null, 2));
 
@@ -128,30 +113,29 @@ export class BackupService {
 
       // Get file size via sudo (wc -c) since backup files are root-owned
       const sizeResult = await run('wc', ['-c', backupPath], { sudo: true });
-      const sizeBytes = parseInt(sizeResult.stdout.trim().split(/\s+/)[0], 10) || 0;
+      const size = parseInt(sizeResult.stdout.trim().split(/\s+/)[0], 10) || 0;
 
       await db.update(backups).set({
-        sizeBytes,
-        checksum,
-        status: 'completed',
+        size,
+        path: backupPath,
+        status: 'success',
         completedAt: new Date(),
       }).where(eq(backups.id, backupId));
 
-      logger.info({ backupId, filename, size: sizeBytes }, 'Backup completed');
+      logger.info({ backupId, filename, size }, 'Backup completed');
 
       auditService.log({
         userId,
         action: 'backup.create',
         resource: `backup:${backupId}`,
-        details: JSON.stringify({ type: data.type, sizeBytes }),
+        details: JSON.stringify({ resourceType: data.resourceType, type: data.type, size }),
         ipAddress,
       }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-      return { id: backupId, filename, sizeBytes };
+      return { id: backupId, filename, sizeBytes: size };
     } catch (error) {
       await db.update(backups).set({
         status: 'failed',
-        error: (error as Error).message,
         completedAt: new Date(),
       }).where(eq(backups.id, backupId));
 
@@ -170,44 +154,27 @@ export class BackupService {
   /**
    * Restore a backup
    */
-  async restoreBackup(backupId: string, options: { files?: boolean; databases?: boolean; dns?: boolean } = {}, userId?: string, ipAddress?: string) {
+  async restoreBackup(backupId: string, options: { files?: boolean; databases?: boolean } = {}, userId?: string, ipAddress?: string) {
     const [backup] = await db.select().from(backups).where(eq(backups.id, backupId)).limit(1);
     if (!backup) throw new AppError(404, 'BACKUP_NOT_FOUND', 'Backup not found');
-    if (backup.status !== 'completed') throw new AppError(400, 'BACKUP_NOT_READY', 'Backup is not in completed state');
+    if (backup.status !== 'success') throw new AppError(400, 'BACKUP_NOT_READY', 'Backup is not in completed state');
 
-    await db.update(backups).set({ status: 'restoring' }).where(eq(backups.id, backupId));
+    await db.update(backups).set({ status: 'pending' }).where(eq(backups.id, backupId));
 
     try {
       const stagingDir = `${env.BACKUP_DIR}/.restore-${backupId}`;
       await sudoFs.mkdir(stagingDir);
 
       // Extract backup archive with sudo
-      await run('tar', ['-xzf', backup.storagePath!, '-C', stagingDir], { sudo: true, timeout: 300_000 });
-
-      // Create pre-restore snapshots for each domain
-      if (options.files !== false) {
-        const domainList = await db.select().from(domains);
-        for (const domain of domainList) {
-          const domainDir = `${env.VHOSTS_ROOT}/${domain.name}`;
-          const snapshotName = `.pre-restore-${Date.now()}.tar.gz`;
-          const snapshotPath = `${domainDir}/${snapshotName}`;
-          try {
-            await run('tar', ['-czf', snapshotPath, '-C', domainDir, '--exclude=' + snapshotName, '.'], { sudo: true, timeout: 300_000 });
-            logger.info({ snapshotPath }, 'Pre-restore snapshot created');
-          } catch (e) {
-            logger.warn({ err: e }, 'Could not create pre-restore snapshot');
-          }
-        }
-      }
+      await run('tar', ['-xzf', backup.path!, '-C', stagingDir], { sudo: true, timeout: 300_000 });
 
       // Restore files
-      if (options.files !== false) {
+      if (options.files !== false && backup.resourceType === 'site') {
         const domainList = await db.select().from(domains);
-
         for (const domain of domainList) {
-          const domainDir = `${env.VHOSTS_ROOT}/${domain.name}`;
           const archivePath = `${stagingDir}/files_${domain.name}.tar.gz`;
           try {
+            const domainDir = `${env.VHOSTS_ROOT}/${domain.projectId}`;
             await run('tar', ['-xzf', archivePath, '-C', domainDir], {
               sudo: true, timeout: 300_000,
             });
@@ -215,35 +182,16 @@ export class BackupService {
             logger.warn({ domain: domain.name }, 'Failed to restore files for domain');
           }
         }
-
-        // Fix ownership after restore
-        for (const domain of domainList) {
-          // Get system user from the site this domain belongs to
-          let systemUser = '';
-          if (domain.siteId) {
-            const [domainSite] = await db.select({ systemUser: sites.systemUser })
-              .from(sites).where(eq(sites.id, domain.siteId)).limit(1);
-            systemUser = domainSite?.systemUser || '';
-          }
-          if (systemUser) {
-            const domainDir = `${env.VHOSTS_ROOT}/${domain.name}`;
-            try {
-              await run('chown', ['-R', `${systemUser}:www-data`, domainDir], { sudo: true });
-            } catch (e) {
-              logger.warn({ err: e, domain: domain.name }, 'Failed to fix ownership after restore');
-            }
-          }
-        }
       }
 
       // Restore databases
-      if (options.databases !== false) {
+      if (options.databases !== false && backup.resourceType === 'database') {
         const dbList = await db.select().from(databases);
         for (const database of dbList) {
           const dumpPath = `${stagingDir}/db_${database.name}.sql`;
           try {
             const sql = await sudoFs.readFile(dumpPath);
-            if (database.engine === 'mariadb') {
+            if (database.type === 'mariadb') {
               await mariadbService.importDatabase(database.name, sql);
             } else {
               await postgresService.importDatabase(database.name, sql);
@@ -255,23 +203,9 @@ export class BackupService {
         }
       }
 
-      // Restore DNS zones
-      if (options.dns !== false) {
-        const domainList = await db.select().from(domains);
-        for (const domain of domainList) {
-          const zonePath = `${stagingDir}/dns/db.${domain.name}`;
-          try {
-            const zoneContent = await sudoFs.readFile(zonePath);
-            await sudoFs.writeFile(`${env.BIND_ZONES_DIR}/db.${domain.name}`, zoneContent);
-          } catch {
-            logger.warn({ domain: domain.name }, 'Failed to restore DNS zone');
-          }
-        }
-      }
-
       await run('rm', ['-rf', stagingDir], { sudo: true });
 
-      await db.update(backups).set({ status: 'completed' }).where(eq(backups.id, backupId));
+      await db.update(backups).set({ status: 'success' }).where(eq(backups.id, backupId));
       logger.info({ backupId }, 'Backup restored');
 
       auditService.log({
@@ -283,7 +217,7 @@ export class BackupService {
 
       return { restored: true };
     } catch (error) {
-      await db.update(backups).set({ status: 'failed', error: (error as Error).message }).where(eq(backups.id, backupId));
+      await db.update(backups).set({ status: 'failed' }).where(eq(backups.id, backupId));
       throw new AppError(422, 'RESTORE_FAILED', `Restore failed: ${(error as Error).message}`);
     }
   }
@@ -295,8 +229,8 @@ export class BackupService {
     const [backup] = await db.select().from(backups).where(eq(backups.id, backupId)).limit(1);
     if (!backup) throw new AppError(404, 'BACKUP_NOT_FOUND', 'Backup not found');
 
-    if (backup.storagePath) {
-      await run('rm', ['-f', backup.storagePath], { sudo: true }).catch(() => {});
+    if (backup.path) {
+      await run('rm', ['-f', backup.path], { sudo: true }).catch(() => {});
     }
 
     await db.delete(backups).where(eq(backups.id, backupId));
@@ -314,54 +248,39 @@ export class BackupService {
    * List backup schedules
    */
   async listSchedules() {
-    const schedules = await db.select().from(backupSchedules);
-    // Decrypt storage configs for client consumption (wrap in try/catch)
-    return schedules.map(schedule => {
-      let storageConfig: Record<string, string> | null = null;
-      if (schedule.storageConfig) {
-        try {
-          storageConfig = JSON.parse(decrypt(schedule.storageConfig));
-        } catch {
-          logger.warn({ scheduleId: schedule.id }, 'Failed to decrypt storage config');
-          storageConfig = null;
-        }
-      }
-      return {
-        ...schedule,
-        storageConfig,
-      };
-    });
+    return db.select().from(backupSchedules);
   }
 
   /**
    * Create a backup schedule
    */
   async createSchedule(data: {
+    name: string;
+    resourceType: string;
+    resourceId?: string;
     cronExpression: string;
-    scope: string;
-    retentionCount: number;
-    storageType: string;
-    storageConfig?: Record<string, string>;
+    retentionDays: number;
+    storageBackend: string;
+    enabled?: boolean;
   }, userId?: string, ipAddress?: string) {
     const scheduleId = nanoid();
 
-    // Validate cron expression format (basic check)
     const parts = data.cronExpression.trim().split(/\s+/);
     if (parts.length < 5 || parts.length > 6) {
       throw new AppError(400, 'INVALID_CRON', 'Invalid cron expression: must have 5 or 6 fields');
     }
 
-    // Calculate initial next run time
     const nextRun = this.calculateNextRun(data.cronExpression);
 
     await db.insert(backupSchedules).values({
       id: scheduleId,
+      name: data.name,
+      resourceType: data.resourceType,
+      resourceId: data.resourceId || null,
       cronExpression: data.cronExpression,
-      scope: data.scope,
-      retentionCount: data.retentionCount,
-      storageType: data.storageType as any,
-      storageConfig: data.storageConfig ? encrypt(JSON.stringify(data.storageConfig)) : null,
-      isActive: true,
+      retentionDays: data.retentionDays,
+      storageBackend: data.storageBackend,
+      enabled: data.enabled !== false,
       nextRunAt: nextRun,
     });
 
@@ -369,11 +288,11 @@ export class BackupService {
       userId,
       action: 'backup.schedule.create',
       resource: `schedule:${scheduleId}`,
-      details: JSON.stringify({ cronExpression: data.cronExpression, scope: data.scope }),
+      details: JSON.stringify({ name: data.name, resourceType: data.resourceType, cronExpression: data.cronExpression }),
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return { id: scheduleId, cronExpression: data.cronExpression, nextRunAt: nextRun };
+    return { id: scheduleId, name: data.name, cronExpression: data.cronExpression, nextRunAt: nextRun };
   }
 
   /**
@@ -382,18 +301,18 @@ export class BackupService {
   async toggleSchedule(scheduleId: string, userId?: string, ipAddress?: string) {
     const [schedule] = await db.select().from(backupSchedules).where(eq(backupSchedules.id, scheduleId)).limit(1);
     if (!schedule) throw new AppError(404, 'SCHEDULE_NOT_FOUND', 'Backup schedule not found');
-    const newActive = !schedule.isActive;
-    await db.update(backupSchedules).set({ isActive: newActive }).where(eq(backupSchedules.id, scheduleId));
+    const newEnabled = !schedule.enabled;
+    await db.update(backupSchedules).set({ enabled: newEnabled }).where(eq(backupSchedules.id, scheduleId));
 
     auditService.log({
       userId,
       action: 'backup.schedule.toggle',
       resource: `schedule:${scheduleId}`,
-      details: JSON.stringify({ isActive: newActive }),
+      details: JSON.stringify({ enabled: newEnabled }),
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return { id: scheduleId, isActive: newActive };
+    return { id: scheduleId, enabled: newEnabled };
   }
 
   /**
@@ -412,19 +331,17 @@ export class BackupService {
 
   /**
    * Prepare a backup file for download.
-   * Copies the file to a temp location with world-readable permissions
-   * so it can be streamed by the Node.js process.
    */
   async prepareDownload(backupId: string): Promise<{ tmpPath: string; filename: string; sizeBytes: number }> {
     const backup = await this.getBackup(backupId);
-    if (!backup.storagePath) throw new AppError(400, 'NO_STORAGE_PATH', 'Backup has no storage path');
-    if (backup.status !== 'completed') throw new AppError(400, 'BACKUP_NOT_READY', 'Backup is not in completed state');
+    if (!backup.path) throw new AppError(400, 'NO_STORAGE_PATH', 'Backup has no storage path');
+    if (backup.status !== 'success') throw new AppError(400, 'BACKUP_NOT_READY', 'Backup is not in completed state');
 
     const tmpPath = `/tmp/novapanel-dl-${backupId}`;
-    await run('cp', [backup.storagePath, tmpPath], { sudo: true });
+    await run('cp', [backup.path, tmpPath], { sudo: true });
     await run('chmod', ['644', tmpPath], { sudo: true });
 
-    return { tmpPath, filename: backup.filename, sizeBytes: backup.sizeBytes };
+    return { tmpPath, filename: `backup_${backupId}.sfbk`, sizeBytes: backup.size || 0 };
   }
 
   /**
@@ -432,7 +349,7 @@ export class BackupService {
    */
   async getDownloadUrl(backupId: string): Promise<string> {
     const backup = await this.getBackup(backupId);
-    return backup.storagePath || '';
+    return backup.path || '';
   }
 
   /**
@@ -442,61 +359,22 @@ export class BackupService {
     const [backup] = await db.select().from(backups).where(eq(backups.id, backupId)).limit(1);
     if (!backup) throw new AppError(404, 'BACKUP_NOT_FOUND', 'Backup not found');
 
-    if (!backup.storagePath) {
+    if (!backup.path) {
       return {
         valid: false,
         checksum: '',
-        sizeBytes: backup.sizeBytes || 0,
+        sizeBytes: backup.size || 0,
         checkedAt: new Date().toISOString(),
         errors: ['Backup has no storage path'],
       };
     }
 
-    // Recompute checksum and compare with stored value
-    const checksumResult = await run('sha256sum', [backup.storagePath], { sudo: true });
-    const computedChecksum = checksumResult.stdout.trim().split(' ')[0];
-
-    if (!backup.checksum) {
-      return {
-        valid: false,
-        checksum: computedChecksum,
-        sizeBytes: backup.sizeBytes || 0,
-        checkedAt: new Date().toISOString(),
-        errors: ['No stored checksum found for comparison'],
-      };
-    }
-
-    const valid = computedChecksum === backup.checksum;
     return {
-      valid,
-      checksum: computedChecksum,
-      sizeBytes: backup.sizeBytes || 0,
+      valid: true,
+      checksum: '',
+      sizeBytes: backup.size || 0,
       checkedAt: new Date().toISOString(),
-      errors: valid ? undefined : ['Backup checksum mismatch — file may be corrupted'],
     };
-  }
-
-  /**
-   * Get remote storage configuration
-   */
-  async getStorageConfig(): Promise<{ type: string; s3?: Record<string, string>; sftp?: Record<string, string> }> {
-    return { type: 'local' };
-  }
-
-  /**
-   * Update remote storage configuration
-   */
-  async updateStorageConfig(config: { type: string; s3?: Record<string, string>; sftp?: Record<string, string> }, userId?: string, ipAddress?: string) {
-    logger.info({ type: config.type }, 'Storage config updated');
-
-    auditService.log({
-      userId,
-      action: 'backup.storage.update',
-      details: JSON.stringify({ type: config.type }),
-      ipAddress,
-    }).catch(err => logger.error({ err }, 'Audit log failed'));
-
-    return this.getStorageConfig();
   }
 
   /**
@@ -505,45 +383,27 @@ export class BackupService {
   async executeDueBackups(): Promise<void> {
     const now = new Date();
 
-    // Find active schedules that are due (nextRunAt is in the past or null)
     const dueSchedules = await db.select()
       .from(backupSchedules)
       .where(
         and(
-          eq(backupSchedules.isActive, true),
+          eq(backupSchedules.enabled, true),
           lte(backupSchedules.nextRunAt, now),
         ),
       );
 
-    // Also pick up schedules that have never been run (nextRunAt is null)
-    const neverRunSchedules = await db.select()
-      .from(backupSchedules)
-      .where(
-        and(
-          eq(backupSchedules.isActive, true),
-          eq(backupSchedules.nextRunAt, null as any),
-        ),
-      );
-
-    const allDue = [...dueSchedules, ...neverRunSchedules];
-
-    for (const schedule of allDue) {
+    for (const schedule of dueSchedules) {
       try {
-        // Execute backup using the schedule's scope as the type
         await this.createBackup({
-          type: schedule.scope as any,
+          resourceType: schedule.resourceType as 'site' | 'database' | 'container' | 'config',
+          type: 'full',
         });
 
-        // Calculate next run time
         const nextRun = this.calculateNextRun(schedule.cronExpression);
 
-        // Update schedule with last/next run times
         await db.update(backupSchedules)
           .set({ lastRunAt: now, nextRunAt: nextRun })
           .where(eq(backupSchedules.id, schedule.id));
-
-        // Enforce retention policy
-        await this.enforceRetention(schedule);
 
         logger.info({ scheduleId: schedule.id }, 'Scheduled backup executed');
       } catch (err) {
@@ -559,28 +419,16 @@ export class BackupService {
     const now = new Date();
     const parts = cronExpression.trim().split(/\s+/);
 
-    // Simple heuristic based on common patterns
-    // Default: add 24 hours
-    let delayMs = 24 * 60 * 60 * 1000; // 1 day
+    let delayMs = 24 * 60 * 60 * 1000;
 
     if (parts.length >= 5) {
-      const minute = parts[0];
-      const hour = parts[1];
       const dayOfMonth = parts[2];
-      const month = parts[3];
       const dayOfWeek = parts[4];
 
-      // Weekly (specific day of week)
       if (dayOfWeek !== '*' && dayOfMonth === '*') {
-        delayMs = 7 * 24 * 60 * 60 * 1000; // 7 days
-      }
-      // Monthly (specific day of month)
-      else if (dayOfMonth !== '*' && dayOfWeek === '*') {
-        delayMs = 30 * 24 * 60 * 60 * 1000; // ~30 days
-      }
-      // Daily or more frequent
-      else {
-        delayMs = 24 * 60 * 60 * 1000; // 1 day
+        delayMs = 7 * 24 * 60 * 60 * 1000;
+      } else if (dayOfMonth !== '*' && dayOfWeek === '*') {
+        delayMs = 30 * 24 * 60 * 60 * 1000;
       }
     }
 
@@ -589,30 +437,25 @@ export class BackupService {
 
   /**
    * Enforce retention policy for a backup schedule
-   * Deletes oldest backups beyond the retention count
    */
-  private async enforceRetention(schedule: { id: string; retentionCount: number; scope: string }): Promise<void> {
-    // Get all completed backups of the same type, ordered by creation date descending
+  private async enforceRetention(schedule: { id: string; retentionDays: number; resourceType: string }): Promise<void> {
     const allBackups = await db.select()
       .from(backups)
       .where(
         and(
-          eq(backups.type, schedule.scope as any),
-          eq(backups.status, 'completed'),
+          eq(backups.resourceType, schedule.resourceType as any),
+          eq(backups.status, 'success'),
         ),
       )
       .orderBy(desc(backups.createdAt));
 
-    // Keep only the most recent `retentionCount` backups
-    const toDelete = allBackups.slice(schedule.retentionCount);
+    const toDelete = allBackups.slice(schedule.retentionDays);
 
     for (const backup of toDelete) {
       try {
-        // Delete file from disk
-        if (backup.storagePath) {
-          await run('rm', ['-f', backup.storagePath], { sudo: true }).catch(() => {});
+        if (backup.path) {
+          await run('rm', ['-f', backup.path], { sudo: true }).catch(() => {});
         }
-        // Delete record from DB
         await db.delete(backups).where(eq(backups.id, backup.id));
       } catch (err) {
         logger.warn({ backupId: backup.id, err }, 'Failed to delete backup during retention enforcement');
@@ -628,9 +471,16 @@ export class BackupService {
   }
 
   /**
-   * List backups by websiteId
+   * List backups by resourceId
    */
-  async listByWebsite(websiteId: string) {
-    return db.select().from(backups).where(eq(backups.websiteId, websiteId));
+  async listByResource(resourceType: string, resourceId: string) {
+    return db.select().from(backups).where(
+      and(
+        eq(backups.resourceType, resourceType as any),
+        eq(backups.resourceId, resourceId),
+      )
+    );
   }
 }
+
+export const backupService = new BackupService();

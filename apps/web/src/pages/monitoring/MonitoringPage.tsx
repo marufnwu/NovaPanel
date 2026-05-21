@@ -18,8 +18,12 @@ import {
   type HistoricalDataPoint,
 } from '../../api/hooks/stats';
 import { useDomains } from '../../api/hooks/domains';
+import { useMetrics, useAlertRules, useCreateAlertRule, useUpdateAlertRule, useDeleteAlertRule, useAlertHistory, useCollectMetrics, type Metric, type AlertRule, type AlertHistory } from '../../api/hooks/monitoring';
+import { useAuthStore } from '../../store/auth.store';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { toast } from '../../lib/toast';
 import {
   RefreshCw,
@@ -38,7 +42,32 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  Plus,
+  Trash2,
+  Pencil,
+  BarChart3,
+  Bell,
+  History,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -446,27 +475,12 @@ function SectionHeader({ icon: Icon, title, children }: { icon: typeof Cpu; titl
   );
 }
 
-// ─── Domain Disk Usage Row ──────────────────────────────────────────────────
+// ─── Domain Stats Row ─────────────────────────────────────────────────────
 
-function DomainDiskRow({ domain }: { domain: { name: string; diskUsedMb: number | null; status: string } }) {
-  const usedMb = domain.diskUsedMb ?? 0;
-  const maxMb = 10240; // 10GB scale for visual
-  const pct = Math.min((usedMb / maxMb) * 100, 100);
-
+function DomainStatsRow({ domain }: { domain: { name: string; status: string } }) {
   return (
     <tr className="border-b border-border last:border-0">
       <td className="px-4 py-2 font-medium text-sm">{domain.name}</td>
-      <td className="px-4 py-2">
-        <div className="flex items-center gap-2">
-          <div className="w-24 h-2 rounded-full bg-muted">
-            <div
-              className={`h-2 rounded-full ${pct > 80 ? 'bg-red-500' : pct > 50 ? 'bg-yellow-500' : 'bg-blue-500'}`}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <span className="text-xs font-mono text-muted-foreground">{usedMb > 0 ? `${usedMb} MB` : '—'}</span>
-        </div>
-      </td>
       <td className="px-4 py-2">
         <span
           className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -475,27 +489,6 @@ function DomainDiskRow({ domain }: { domain: { name: string; diskUsedMb: number 
         >
           {domain.status}
         </span>
-      </td>
-    </tr>
-  );
-}
-
-// ─── Domain Bandwidth Row ───────────────────────────────────────────────────
-
-function DomainBandwidthRow({ domain }: { domain: { name: string; bandwidthUsedMb: number | null } }) {
-  const usedMb = domain.bandwidthUsedMb ?? 0;
-
-  return (
-    <tr className="border-b border-border last:border-0">
-      <td className="px-4 py-2 font-medium text-sm">{domain.name}</td>
-      <td className="px-4 py-2 text-sm font-mono">{usedMb > 0 ? formatBytes(usedMb * 1024 * 1024) : '—'}</td>
-      <td className="px-4 py-2">
-        <div className="w-full max-w-32 h-2 rounded-full bg-muted">
-          <div
-            className="h-2 rounded-full bg-purple-500"
-            style={{ width: `${Math.min((usedMb / 102400) * 100, 100)}%` }}
-          />
-        </div>
       </td>
     </tr>
   );
@@ -604,6 +597,98 @@ function VersionBadge({ name, version }: { name: string; version: string }) {
   );
 }
 
+// ─── Alert Rule Modal ───────────────────────────────────────────────────────
+
+function AlertRuleModal({
+  initial,
+  onClose,
+  onSubmit,
+  isPending,
+}: {
+  initial?: AlertRule;
+  onClose: () => void;
+  onSubmit: (data: { name: string; description?: string; metric: string; condition: 'gt' | 'lt' | 'eq' | 'gte' | 'lte'; threshold: number; duration?: number; channels?: string[]; enabled?: boolean }) => void;
+  isPending: boolean;
+}) {
+  const [form, setForm] = useState({
+    name: initial?.name ?? '',
+    description: initial?.description ?? '',
+    metric: initial?.metric ?? '',
+    condition: initial?.condition ?? 'gt' as 'gt' | 'lt' | 'eq' | 'gte' | 'lte',
+    threshold: initial?.threshold ?? 80,
+    duration: initial?.duration ?? 60,
+    enabled: initial?.enabled ?? true,
+  });
+
+  const handleSubmit = () => {
+    onSubmit({
+      name: form.name,
+      description: form.description || undefined,
+      metric: form.metric,
+      condition: form.condition,
+      threshold: form.threshold,
+      duration: form.duration,
+      enabled: form.enabled,
+    });
+  };
+
+  return (
+    <Dialog open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{initial ? 'Edit Alert Rule' : 'Create Alert Rule'}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="ar-name">Name</Label>
+            <Input id="ar-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="High CPU Alert" />
+          </div>
+          <div>
+            <Label htmlFor="ar-desc">Description (optional)</Label>
+            <Input id="ar-desc" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Alert when CPU exceeds threshold" />
+          </div>
+          <div>
+            <Label htmlFor="ar-metric">Metric</Label>
+            <Input id="ar-metric" value={form.metric} onChange={(e) => setForm({ ...form, metric: e.target.value })} placeholder="cpu_usage" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Condition</Label>
+              <select value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value as typeof form.condition })} className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
+                <option value="gt">Greater than</option>
+                <option value="gte">Greater or equal</option>
+                <option value="lt">Less than</option>
+                <option value="lte">Less or equal</option>
+                <option value="eq">Equal</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="ar-threshold">Threshold</Label>
+              <Input id="ar-threshold" type="number" value={form.threshold} onChange={(e) => setForm({ ...form, threshold: parseInt(e.target.value) || 0 })} />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="ar-duration">Duration (seconds)</Label>
+            <Input id="ar-duration" type="number" value={form.duration} onChange={(e) => setForm({ ...form, duration: parseInt(e.target.value) || 60 })} />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Enabled</span>
+            <button onClick={() => setForm({ ...form, enabled: !form.enabled })} className={`relative h-6 w-11 rounded-full transition-colors ${form.enabled ? 'bg-primary' : 'bg-muted'}`}>
+              <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${form.enabled ? 'translate-x-5' : ''}`} />
+            </button>
+          </div>
+        </div>
+        <DialogFooter className="mt-6">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={isPending || !form.name.trim() || !form.metric.trim()}>
+            {isPending ? 'Saving...' : initial ? 'Update' : 'Create'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export function MonitoringPage() {
@@ -623,8 +708,27 @@ export function MonitoringPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>('1h');
   const [showAlertSettings, setShowAlertSettings] = useState(false);
   const [showOsInfo, setShowOsInfo] = useState(false);
+  const [tab, setTab] = useState<'overview' | 'metrics' | 'alerts' | 'history'>('overview');
+  const activeOrgId = useAuthStore((s) => s.activeOrgId);
+  const { data: metrics } = useMetrics({ limit: 100 });
+  const { data: alertRules } = useAlertRules(activeOrgId || '');
+  const { data: alertHistory } = useAlertHistory(activeOrgId || '', 100);
+  const collectMetrics = useCollectMetrics();
+  const createAlert = useCreateAlertRule();
+  const updateAlert = useUpdateAlertRule();
+  const deleteAlert = useDeleteAlertRule();
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [editAlertRule, setEditAlertRule] = useState<AlertRule | null>(null);
+  const [deleteAlertId, setDeleteAlertId] = useState<string | null>(null);
 
   const thresholds = useMemo(() => loadThresholds(), []);
+
+  const MONITORING_TABS = [
+    { key: 'overview' as const, label: 'Overview', icon: Activity },
+    { key: 'metrics' as const, label: 'Metrics History', icon: BarChart3 },
+    { key: 'alerts' as const, label: 'Alert Rules', icon: Bell },
+    { key: 'history' as const, label: 'Alert History', icon: History },
+  ];
 
   // Generate historical data from current stats
   const cpuHistory = useMemo(
@@ -687,6 +791,21 @@ export function MonitoringPage() {
     });
   };
 
+  const handleDeleteAlert = () => {
+    if (!deleteAlertId) return;
+    deleteAlert.mutate(deleteAlertId, {
+      onSuccess: () => { toast.success('Alert rule deleted'); setDeleteAlertId(null); },
+      onError: (e: Error) => toast.error(e.message || 'Failed to delete alert rule'),
+    });
+  };
+
+  const handleToggleAlert = (rule: AlertRule) => {
+    updateAlert.mutate(
+      { id: rule.id, data: { enabled: !rule.enabled } },
+      { onSuccess: () => toast.success('Alert rule updated'), onError: (e: Error) => toast.error(e.message) }
+    );
+  };
+
   return (
     <div>
       <PageHeader
@@ -706,6 +825,15 @@ export function MonitoringPage() {
         }
       />
 
+      {/* Tab bar */}
+      <div className="mb-6 flex items-center gap-1 rounded-lg border border-border p-1 w-fit">
+        {MONITORING_TABS.map((t) => (
+          <Button key={t.key} variant={tab === t.key ? 'default' : 'ghost'} size="sm" onClick={() => setTab(t.key)}>
+            <t.icon className="h-3.5 w-3.5" /> {t.label}
+          </Button>
+        ))}
+      </div>
+
       {/* Alert Threshold Configuration */}
       {showAlertSettings && (
         <div className="rounded-lg border border-border bg-card p-4 mb-6">
@@ -716,421 +844,612 @@ export function MonitoringPage() {
         </div>
       )}
 
-      {/* Server Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
-        <StatCard
-          icon={Cpu}
-          title="CPU Usage"
-          value={`${stats?.cpu.usage || 0}%`}
-          subvalue={`${stats?.cpu.cores || 0} cores`}
-          color="text-blue-500"
-          progress={stats?.cpu.usage}
-          alert={!!cpuAlert}
-        />
-        <StatCard
-          icon={Activity}
-          title="Memory"
-          value={formatBytes(stats?.memory.used || 0)}
-          subvalue={`${formatBytes(stats?.memory.total || 0)} total`}
-          color="text-purple-500"
-          progress={stats?.memory.usagePercent}
-          alert={!!ramAlert}
-        />
-        <StatCard
-          icon={HardDrive}
-          title="Disk"
-          value={formatBytes(stats?.disk.used || 0)}
-          subvalue={`${formatBytes(stats?.disk.total || 0)} total`}
-          color="text-amber-500"
-          progress={stats?.disk.usagePercent}
-          alert={!!diskAlert}
-        />
-        <StatCard
-          icon={Clock}
-          title="Uptime"
-          value={formatUptime(stats?.uptime || 0)}
-          subvalue={`Load: ${stats?.loadAvg?.map((l) => l.toFixed(2)).join(', ') || '0'}`}
-          color="text-green-500"
-        />
-      </div>
-
-      {/* Extra Stats Row: FD count, TCP connections, Disk I/O */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-muted-foreground">Open File Descriptors</span>
-            <FileText className="h-5 w-5 text-cyan-500" />
+      {/* Overview Tab */}
+      {tab === 'overview' && (
+        <>
+          {/* Server Stats Cards */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
+            <StatCard
+              icon={Cpu}
+              title="CPU Usage"
+              value={`${stats?.cpu.usage || 0}%`}
+              subvalue={`${stats?.cpu.cores || 0} cores`}
+              color="text-blue-500"
+              progress={stats?.cpu.usage}
+              alert={!!cpuAlert}
+            />
+            <StatCard
+              icon={Activity}
+              title="Memory"
+              value={formatBytes(stats?.memory.used || 0)}
+              subvalue={`${formatBytes(stats?.memory.total || 0)} total`}
+              color="text-purple-500"
+              progress={stats?.memory.usagePercent}
+              alert={!!ramAlert}
+            />
+            <StatCard
+              icon={HardDrive}
+              title="Disk"
+              value={formatBytes(stats?.disk.used || 0)}
+              subvalue={`${formatBytes(stats?.disk.total || 0)} total`}
+              color="text-amber-500"
+              progress={stats?.disk.usagePercent}
+              alert={!!diskAlert}
+            />
+            <StatCard
+              icon={Clock}
+              title="Uptime"
+              value={formatUptime(stats?.uptime || 0)}
+              subvalue={`Load: ${stats?.loadAvg?.map((l) => l.toFixed(2)).join(', ') || '0'}`}
+              color="text-green-500"
+            />
           </div>
-          <div className="text-2xl font-bold">{fdStats != null ? fdStats.openFd.toLocaleString() : 'N/A'}</div>
-          <div className="text-xs text-muted-foreground">
-            of {fdStats != null ? fdStats.maxFd.toLocaleString() : 'N/A'} limit
-            {fdStats != null && (
-              <span className={`ml-1 ${fdStats.usagePercent > 80 ? 'text-red-500' : fdStats.usagePercent > 60 ? 'text-yellow-500' : 'text-green-500'}`}>
-                ({fdStats.usagePercent.toFixed(1)}%)
-              </span>
+
+          {/* Extra Stats Row: FD count, TCP connections, Disk I/O */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm text-muted-foreground">Open File Descriptors</span>
+                <FileText className="h-5 w-5 text-cyan-500" />
+              </div>
+              <div className="text-2xl font-bold">{fdStats != null ? fdStats.openFd.toLocaleString() : 'N/A'}</div>
+              <div className="text-xs text-muted-foreground">
+                of {fdStats != null ? fdStats.maxFd.toLocaleString() : 'N/A'} limit
+                {fdStats != null && (
+                  <span className={`ml-1 ${fdStats.usagePercent > 80 ? 'text-red-500' : fdStats.usagePercent > 60 ? 'text-yellow-500' : 'text-green-500'}`}>
+                    ({fdStats.usagePercent.toFixed(1)}%)
+                  </span>
+                )}
+              </div>
+              {fdStats && (
+                <div className="mt-2 h-2 w-full rounded-full bg-muted">
+                  <div
+                    className={`h-2 rounded-full ${fdStats.usagePercent > 80 ? 'bg-red-500' : fdStats.usagePercent > 60 ? 'bg-yellow-500' : 'bg-cyan-500'}`}
+                    style={{ width: `${Math.min(fdStats.usagePercent, 100)}%` }}
+                  />
+                </div>
+              )}
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm text-muted-foreground">Active TCP Connections</span>
+                <Network className="h-5 w-5 text-indigo-500" />
+              </div>
+              <div className="text-2xl font-bold">{tcpStats != null ? tcpStats.established.toLocaleString() : 'N/A'}</div>
+              <div className="text-xs text-muted-foreground">
+                {tcpStats ? (
+                  <span>
+                    {tcpStats.established} est · {tcpStats.timeWait} timewait · {tcpStats.closeWait} closewait
+                  </span>
+                ) : 'No data available'}
+              </div>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm text-muted-foreground">Disk Read Speed</span>
+                <HardDrive className="h-5 w-5 text-amber-500" />
+              </div>
+              <div className="text-2xl font-bold">{diskIO != null ? `${formatBytes(diskIO.readBytesSec)}/s` : 'N/A'}</div>
+              <div className="text-xs text-muted-foreground">{diskIO != null ? `${diskIO.readOpsSec.toFixed(1)} ops/s` : '—'} ops/s</div>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm text-muted-foreground">Disk Write Speed</span>
+                <HardDrive className="h-5 w-5 text-red-500" />
+              </div>
+              <div className="text-2xl font-bold">{diskIO != null ? `${formatBytes(diskIO.writeBytesSec)}/s` : 'N/A'}</div>
+              <div className="text-xs text-muted-foreground">{diskIO != null ? `${diskIO.writeOpsSec.toFixed(1)} ops/s` : '—'}</div>
+            </div>
+          </div>
+
+          {/* System Info + OS Versions */}
+          <div className="rounded-lg border border-border bg-card mb-6">
+            <button
+              onClick={() => setShowOsInfo(!showOsInfo)}
+              className="w-full p-4 flex items-center justify-between hover:bg-accent/50 transition-colors"
+            >
+              <h3 className="font-semibold flex items-center gap-2">
+                <Server className="h-4 w-4" /> System Information & Software Versions
+              </h3>
+              {showOsInfo ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+            {showOsInfo && (
+              <div className="px-4 pb-4 space-y-4">
+                <div className="grid gap-4 md:grid-cols-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Hostname:</span>
+                    <span className="ml-2 font-medium">{stats?.system.hostname}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">OS:</span>
+                    <span className="ml-2 font-medium">{stats?.system.os}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Kernel:</span>
+                    <span className="ml-2 font-medium">{stats?.system.kernel}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Arch:</span>
+                    <span className="ml-2 font-medium">{stats?.system.arch}</span>
+                  </div>
+                  <div className="md:col-span-4">
+                    <span className="text-muted-foreground">IPs:</span>
+                    <span className="ml-2 font-medium">{stats?.system.ips?.join(', ') || 'N/A'}</span>
+                  </div>
+                </div>
+                <div className="border-t border-border pt-4">
+                  <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                    <Info className="h-3.5 w-3.5" /> System Details
+                  </h4>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    <VersionBadge name="Operating System" version={stats?.system.os || 'Unknown'} />
+                    <VersionBadge name="Kernel" version={stats?.system.kernel || 'Unknown'} />
+                    <VersionBadge name="Architecture" version={stats?.system.arch || 'Unknown'} />
+                    <VersionBadge name="Hostname" version={stats?.system.hostname || 'Unknown'} />
+                    <VersionBadge name="Uptime" version={formatUptime(stats?.uptime || 0)} />
+                    <VersionBadge name="Load Average" version={stats?.loadAvg?.map((l) => l.toFixed(2)).join(', ') || 'N/A'} />
+                  </div>
+                </div>
+              </div>
             )}
           </div>
-          {fdStats && (
-            <div className="mt-2 h-2 w-full rounded-full bg-muted">
-              <div
-                className={`h-2 rounded-full ${fdStats.usagePercent > 80 ? 'bg-red-500' : fdStats.usagePercent > 60 ? 'bg-yellow-500' : 'bg-cyan-500'}`}
-                style={{ width: `${Math.min(fdStats.usagePercent, 100)}%` }}
-              />
+
+          {/* Historical Graphs Section */}
+          <div className="rounded-lg border border-border bg-card mb-6">
+            <div className="p-4 border-b border-border flex items-center justify-between">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Activity className="h-4 w-4" /> Historical Graphs
+              </h3>
+              <div className="flex gap-1">
+                {timeRanges.map((range) => (
+                  <button
+                    key={range}
+                    onClick={() => setTimeRange(range)}
+                    className={`rounded px-2.5 py-1 text-xs font-medium ${
+                      timeRange === range ? 'bg-primary text-primary-foreground' : 'bg-accent hover:bg-accent/80'
+                    }`}
+                  >
+                    {range}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="p-4 grid gap-6 lg:grid-cols-2">
+              {/* CPU Usage Chart */}
+              <div className="rounded-lg border border-border p-3">
+                <AreaChart
+                  data={cpuHistory}
+                  color="#3b82f6"
+                  fillColor="rgba(59,130,246,0.1)"
+                  height={160}
+                  label={`CPU Usage — ${stats?.cpu.usage ?? 0}%`}
+                  unit="%"
+                />
+              </div>
+
+              {/* RAM Usage Chart */}
+              <div className="rounded-lg border border-border p-3">
+                <AreaChart
+                  data={memHistory}
+                  color="#a855f7"
+                  fillColor="rgba(168,85,247,0.1)"
+                  height={160}
+                  label={`RAM Usage — ${formatBytes(stats?.memory.used ?? 0)} / ${formatBytes(stats?.memory.total ?? 0)}`}
+                  unit="%"
+                />
+              </div>
+
+              {/* Network I/O Chart */}
+              <div className="rounded-lg border border-border p-3">
+                <DualLineChart
+                  data1={netRxHistory}
+                  data2={netTxHistory}
+                  color1="#22c55e"
+                  color2="#3b82f6"
+                  height={160}
+                  label="Network I/O"
+                  legend1={`↓ ${formatBytes(network?.rxSec ?? 0)}/s`}
+                  legend2={`↑ ${formatBytes(network?.txSec ?? 0)}/s`}
+                />
+              </div>
+
+              {/* Disk I/O Chart */}
+              <div className="rounded-lg border border-border p-3">
+                <DualLineChart
+                  data1={diskReadHistory}
+                  data2={diskWriteHistory}
+                  color1="#f59e0b"
+                  color2="#ef4444"
+                  height={160}
+                  label="Disk I/O"
+                  legend1="Read"
+                  legend2="Write"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Network & Disk (current stats) */}
+          <div className="grid gap-6 lg:grid-cols-2 mb-6">
+            {/* Network Stats */}
+            <div className="rounded-lg border border-border bg-card p-4">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <Wifi className="h-4 w-4" /> Network I/O
+              </h3>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Interface</span>
+                  <span className="font-medium">{network?.interface || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">↓ Received</span>
+                  <span className="font-medium text-green-500">{formatBytes(network?.rxBytes || 0)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">↑ Sent</span>
+                  <span className="font-medium text-blue-500">{formatBytes(network?.txBytes || 0)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">↓ Speed</span>
+                  <span className="font-medium">{formatBytes(network?.rxSec || 0)}/s</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">↑ Speed</span>
+                  <span className="font-medium">{formatBytes(network?.txSec || 0)}/s</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Disk Mounts */}
+            <div className="rounded-lg border border-border bg-card p-4">
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <HardDrive className="h-4 w-4" /> Disk Usage
+              </h3>
+              <div className="space-y-3">
+                {disks?.slice(0, 4).map((disk, i) => (
+                  <div key={i}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-muted-foreground">{disk.mount}</span>
+                      <span className="font-medium">{disk.usagePercent}%</span>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-muted">
+                      <div
+                        className={`h-2 rounded-full ${
+                          disk.usagePercent > 90 ? 'bg-red-500' : disk.usagePercent > 70 ? 'bg-yellow-500' : 'bg-green-500'
+                        }`}
+                        style={{ width: `${disk.usagePercent}%` }}
+                      />
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {formatBytes(disk.used)} / {formatBytes(disk.total)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Services Health Checks */}
+          <div className="rounded-lg border border-border bg-card mb-6">
+            <SectionHeader icon={Shield} title="Service Health Checks">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-green-500" />
+                  {services?.filter((s) => s.status === 'running').length ?? 0} running
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-red-500" />
+                  {services?.filter((s) => s.status !== 'running').length ?? 0} stopped
+                </span>
+              </div>
+            </SectionHeader>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-border bg-muted/50">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium text-muted-foreground">Service</th>
+                    <th className="px-4 py-2 text-left font-medium text-muted-foreground">Name</th>
+                    <th className="px-4 py-2 text-left font-medium text-muted-foreground">Status</th>
+                    <th className="px-4 py-2 text-right font-medium text-muted-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {services?.map((s) => <ServiceRow key={s.name} service={s} onRestart={handleRestartService} />)}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Top Processes */}
+          <div className="rounded-lg border border-border bg-card mb-6">
+            <SectionHeader icon={Activity} title="Top Processes">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setProcessSort('cpu')}
+                  className={`rounded px-3 py-1 text-xs ${processSort === 'cpu' ? 'bg-primary text-primary-foreground' : 'bg-accent'}`}
+                >
+                  By CPU
+                </button>
+                <button
+                  onClick={() => setProcessSort('memory')}
+                  className={`rounded px-3 py-1 text-xs ${processSort === 'memory' ? 'bg-primary text-primary-foreground' : 'bg-accent'}`}
+                >
+                  By Memory
+                </button>
+              </div>
+            </SectionHeader>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-border bg-muted/50">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium text-muted-foreground">PID</th>
+                    <th className="px-4 py-2 text-left font-medium text-muted-foreground">Name</th>
+                    <th className="px-4 py-2 text-left font-medium text-muted-foreground">CPU</th>
+                    <th className="px-4 py-2 text-left font-medium text-muted-foreground">Memory</th>
+                    <th className="px-4 py-2 text-left font-medium text-muted-foreground">State</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeProcesses?.map((p) => <ProcessRow key={p.pid} process={p} />)}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Per-Domain Stats */}
+          <div className="grid gap-6 lg:grid-cols-2 mb-6">
+            {/* Per-Domain Status */}
+            <div className="rounded-lg border border-border bg-card">
+              <SectionHeader icon={HardDrive} title="Domains" />
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-b border-border bg-muted/50">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-medium text-muted-foreground">Domain</th>
+                      <th className="px-4 py-2 text-left font-medium text-muted-foreground">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {domains && domains.length > 0 ? (
+                      domains.map((d) => <DomainStatsRow key={d.id} domain={d} />)
+                    ) : (
+                      <tr>
+                        <td colSpan={2} className="px-4 py-6 text-center text-muted-foreground text-sm">
+                          No domains found
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Per-Domain Bandwidth Usage */}
+            <div className="rounded-lg border border-border bg-card">
+              <SectionHeader icon={Wifi} title="Per-Domain Bandwidth (Monthly)" />
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="border-b border-border bg-muted/50">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-medium text-muted-foreground">Domain</th>
+                      <th className="px-4 py-2 text-left font-medium text-muted-foreground">Incoming</th>
+                      <th className="px-4 py-2 text-left font-medium text-muted-foreground">Outgoing</th>
+                      <th className="px-4 py-2 text-left font-medium text-muted-foreground">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {domainBandwidth && domainBandwidth.length > 0 ? (
+                      domainBandwidth.map((d) => (
+                        <tr key={d.domainId} className="border-b border-border last:border-0">
+                          <td className="px-4 py-2 font-medium text-sm">{d.domainName}</td>
+                          <td className="px-4 py-2 text-sm font-mono text-green-500">{formatBytes(d.incomingBytes)}</td>
+                          <td className="px-4 py-2 text-sm font-mono text-blue-500">{formatBytes(d.outgoingBytes)}</td>
+                          <td className="px-4 py-2 text-sm font-mono font-medium">{formatBytes(d.totalBytes)}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground text-sm">
+                          No bandwidth data available
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Metrics History Tab */}
+      {tab === 'metrics' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">Metrics History</h3>
+              <p className="text-sm text-muted-foreground">Historical metric data collected from your server</p>
+            </div>
+            <Button onClick={() => collectMetrics.mutate()} disabled={collectMetrics.isPending} variant="outline" size="sm">
+              <RefreshCw className={`h-4 w-4 mr-2 ${collectMetrics.isPending ? 'animate-spin' : ''}`} />
+              Collect Now
+            </Button>
+          </div>
+
+          {(!metrics || metrics.length === 0) ? (
+            <EmptyState icon={BarChart3} title="No metrics yet" description="Metrics are collected every 60 seconds. Check back soon." />
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Value</TableHead>
+                    <TableHead>Labels</TableHead>
+                    <TableHead>Timestamp</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {metrics.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell className="font-medium font-mono text-sm">{m.name}</TableCell>
+                      <TableCell className="font-mono text-sm">{m.value.toFixed(2)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {Object.entries(m.labels).map(([k, v]) => `${k}=${v}`).join(', ') || '—'}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(m.timestamp).toLocaleString()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
         </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-muted-foreground">Active TCP Connections</span>
-            <Network className="h-5 w-5 text-indigo-500" />
-          </div>
-          <div className="text-2xl font-bold">{tcpStats != null ? tcpStats.established.toLocaleString() : 'N/A'}</div>
-          <div className="text-xs text-muted-foreground">
-            {tcpStats ? (
-              <span>
-                {tcpStats.established} est · {tcpStats.timeWait} timewait · {tcpStats.closeWait} closewait
-              </span>
-            ) : 'No data available'}
-          </div>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-muted-foreground">Disk Read Speed</span>
-            <HardDrive className="h-5 w-5 text-amber-500" />
-          </div>
-          <div className="text-2xl font-bold">{diskIO != null ? `${formatBytes(diskIO.readBytesSec)}/s` : 'N/A'}</div>
-          <div className="text-xs text-muted-foreground">{diskIO != null ? `${diskIO.readOpsSec.toFixed(1)} ops/s` : '—'} ops/s</div>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-muted-foreground">Disk Write Speed</span>
-            <HardDrive className="h-5 w-5 text-red-500" />
-          </div>
-          <div className="text-2xl font-bold">{diskIO != null ? `${formatBytes(diskIO.writeBytesSec)}/s` : 'N/A'}</div>
-          <div className="text-xs text-muted-foreground">{diskIO != null ? `${diskIO.writeOpsSec.toFixed(1)} ops/s` : '—'}</div>
-        </div>
-      </div>
+      )}
 
-      {/* System Info + OS Versions */}
-      <div className="rounded-lg border border-border bg-card mb-6">
-        <button
-          onClick={() => setShowOsInfo(!showOsInfo)}
-          className="w-full p-4 flex items-center justify-between hover:bg-accent/50 transition-colors"
-        >
-          <h3 className="font-semibold flex items-center gap-2">
-            <Server className="h-4 w-4" /> System Information & Software Versions
-          </h3>
-          {showOsInfo ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </button>
-        {showOsInfo && (
-          <div className="px-4 pb-4 space-y-4">
-            <div className="grid gap-4 md:grid-cols-4 text-sm">
-              <div>
-                <span className="text-muted-foreground">Hostname:</span>
-                <span className="ml-2 font-medium">{stats?.system.hostname}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">OS:</span>
-                <span className="ml-2 font-medium">{stats?.system.os}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Kernel:</span>
-                <span className="ml-2 font-medium">{stats?.system.kernel}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Arch:</span>
-                <span className="ml-2 font-medium">{stats?.system.arch}</span>
-              </div>
-              <div className="md:col-span-4">
-                <span className="text-muted-foreground">IPs:</span>
-                <span className="ml-2 font-medium">{stats?.system.ips?.join(', ') || 'N/A'}</span>
-              </div>
+      {/* Alert Rules Tab */}
+      {tab === 'alerts' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">Alert Rules</h3>
+              <p className="text-sm text-muted-foreground">Configure alerts based on metric thresholds</p>
             </div>
-            <div className="border-t border-border pt-4">
-              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <Info className="h-3.5 w-3.5" /> System Details
-              </h4>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                <VersionBadge name="Operating System" version={stats?.system.os || 'Unknown'} />
-                <VersionBadge name="Kernel" version={stats?.system.kernel || 'Unknown'} />
-                <VersionBadge name="Architecture" version={stats?.system.arch || 'Unknown'} />
-                <VersionBadge name="Hostname" version={stats?.system.hostname || 'Unknown'} />
-                <VersionBadge name="Uptime" version={formatUptime(stats?.uptime || 0)} />
-                <VersionBadge name="Load Average" version={stats?.loadAvg?.map((l) => l.toFixed(2)).join(', ') || 'N/A'} />
-              </div>
+            <Button onClick={() => setShowAlertModal(true)} size="sm">
+              <Plus className="h-4 w-4 mr-2" /> Add Rule
+            </Button>
+          </div>
+
+          {(!alertRules || alertRules.length === 0) ? (
+            <EmptyState icon={Bell} title="No alert rules" description="Create your first alert rule to get notified when metrics exceed thresholds." />
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Enabled</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Metric</TableHead>
+                    <TableHead>Condition</TableHead>
+                    <TableHead>Threshold</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {alertRules.map((rule) => (
+                    <TableRow key={rule.id}>
+                      <TableCell>
+                        <button
+                          onClick={() => handleToggleAlert(rule)}
+                          className={`relative h-6 w-11 rounded-full transition-colors ${rule.enabled ? 'bg-primary' : 'bg-muted'}`}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${rule.enabled ? 'translate-x-5' : ''}`} />
+                        </button>
+                      </TableCell>
+                      <TableCell className="font-medium">{rule.name}</TableCell>
+                      <TableCell className="font-mono text-sm">{rule.metric}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{rule.condition} {rule.threshold}</Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{rule.duration}s</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon-sm" onClick={() => setEditAlertRule(rule)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon-sm" onClick={() => setDeleteAlertId(rule.id)} className="hover:bg-destructive/10 hover:text-destructive">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Historical Graphs Section */}
-      <div className="rounded-lg border border-border bg-card mb-6">
-        <div className="p-4 border-b border-border flex items-center justify-between">
-          <h3 className="font-semibold flex items-center gap-2">
-            <Activity className="h-4 w-4" /> Historical Graphs
-          </h3>
-          <div className="flex gap-1">
-            {timeRanges.map((range) => (
-              <button
-                key={range}
-                onClick={() => setTimeRange(range)}
-                className={`rounded px-2.5 py-1 text-xs font-medium ${
-                  timeRange === range ? 'bg-primary text-primary-foreground' : 'bg-accent hover:bg-accent/80'
-                }`}
-              >
-                {range}
-              </button>
-            ))}
-          </div>
+          )}
         </div>
-        <div className="p-4 grid gap-6 lg:grid-cols-2">
-          {/* CPU Usage Chart */}
-          <div className="rounded-lg border border-border p-3">
-            <AreaChart
-              data={cpuHistory}
-              color="#3b82f6"
-              fillColor="rgba(59,130,246,0.1)"
-              height={160}
-              label={`CPU Usage — ${stats?.cpu.usage ?? 0}%`}
-              unit="%"
-            />
+      )}
+
+      {/* Alert History Tab */}
+      {tab === 'history' && (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-lg font-semibold">Alert History</h3>
+            <p className="text-sm text-muted-foreground">Recent alerts triggered by your alert rules</p>
           </div>
 
-          {/* RAM Usage Chart */}
-          <div className="rounded-lg border border-border p-3">
-            <AreaChart
-              data={memHistory}
-              color="#a855f7"
-              fillColor="rgba(168,85,247,0.1)"
-              height={160}
-              label={`RAM Usage — ${formatBytes(stats?.memory.used ?? 0)} / ${formatBytes(stats?.memory.total ?? 0)}`}
-              unit="%"
-            />
-          </div>
-
-          {/* Network I/O Chart */}
-          <div className="rounded-lg border border-border p-3">
-            <DualLineChart
-              data1={netRxHistory}
-              data2={netTxHistory}
-              color1="#22c55e"
-              color2="#3b82f6"
-              height={160}
-              label="Network I/O"
-              legend1={`↓ ${formatBytes(network?.rxSec ?? 0)}/s`}
-              legend2={`↑ ${formatBytes(network?.txSec ?? 0)}/s`}
-            />
-          </div>
-
-          {/* Disk I/O Chart */}
-          <div className="rounded-lg border border-border p-3">
-            <DualLineChart
-              data1={diskReadHistory}
-              data2={diskWriteHistory}
-              color1="#f59e0b"
-              color2="#ef4444"
-              height={160}
-              label="Disk I/O"
-              legend1="Read"
-              legend2="Write"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Network & Disk (current stats) */}
-      <div className="grid gap-6 lg:grid-cols-2 mb-6">
-        {/* Network Stats */}
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <Wifi className="h-4 w-4" /> Network I/O
-          </h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Interface</span>
-              <span className="font-medium">{network?.interface || 'N/A'}</span>
+          {(!alertHistory || alertHistory.length === 0) ? (
+            <EmptyState icon={History} title="No alert history" description="Triggered alerts will appear here." />
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Rule</TableHead>
+                    <TableHead>Value</TableHead>
+                    <TableHead>Triggered</TableHead>
+                    <TableHead>Resolved</TableHead>
+                    <TableHead>Message</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {alertHistory.map((h) => (
+                    <TableRow key={h.id}>
+                      <TableCell className="font-medium">{h.ruleName}</TableCell>
+                      <TableCell className="font-mono text-sm">{h.value.toFixed(2)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{new Date(h.triggeredAt).toLocaleString()}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{h.resolvedAt ? new Date(h.resolvedAt).toLocaleString() : '—'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{h.message || '—'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">↓ Received</span>
-              <span className="font-medium text-green-500">{formatBytes(network?.rxBytes || 0)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">↑ Sent</span>
-              <span className="font-medium text-blue-500">{formatBytes(network?.txBytes || 0)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">↓ Speed</span>
-              <span className="font-medium">{formatBytes(network?.rxSec || 0)}/s</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">↑ Speed</span>
-              <span className="font-medium">{formatBytes(network?.txSec || 0)}/s</span>
-            </div>
-          </div>
+          )}
         </div>
+      )}
 
-        {/* Disk Mounts */}
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <HardDrive className="h-4 w-4" /> Disk Usage
-          </h3>
-          <div className="space-y-3">
-            {disks?.slice(0, 4).map((disk, i) => (
-              <div key={i}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-muted-foreground">{disk.mount}</span>
-                  <span className="font-medium">{disk.usagePercent}%</span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-muted">
-                  <div
-                    className={`h-2 rounded-full ${
-                      disk.usagePercent > 90 ? 'bg-red-500' : disk.usagePercent > 70 ? 'bg-yellow-500' : 'bg-green-500'
-                    }`}
-                    style={{ width: `${disk.usagePercent}%` }}
-                  />
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {formatBytes(disk.used)} / {formatBytes(disk.total)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* Alert Rule Modal */}
+      {showAlertModal && (
+        <AlertRuleModal
+          onClose={() => setShowAlertModal(false)}
+          onSubmit={(data) => {
+            if (!activeOrgId) return;
+            createAlert.mutate(
+              { orgId: activeOrgId, data },
+              { onSuccess: () => { toast.success('Alert rule created'); setShowAlertModal(false); }, onError: (e: Error) => toast.error(e.message || 'Failed') }
+            );
+          }}
+          isPending={createAlert.isPending}
+        />
+      )}
 
-      {/* Services Health Checks */}
-      <div className="rounded-lg border border-border bg-card mb-6">
-        <SectionHeader icon={Shield} title="Service Health Checks">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-green-500" />
-              {services?.filter((s) => s.status === 'running').length ?? 0} running
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-red-500" />
-              {services?.filter((s) => s.status !== 'running').length ?? 0} stopped
-            </span>
-          </div>
-        </SectionHeader>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-muted/50">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Service</th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Name</th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Status</th>
-                <th className="px-4 py-2 text-right font-medium text-muted-foreground">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {services?.map((s) => <ServiceRow key={s.name} service={s} onRestart={handleRestartService} />)}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {editAlertRule && (
+        <AlertRuleModal
+          initial={editAlertRule}
+          onClose={() => setEditAlertRule(null)}
+          onSubmit={(data) => {
+            updateAlert.mutate(
+              { id: editAlertRule.id, data },
+              { onSuccess: () => { toast.success('Alert rule updated'); setEditAlertRule(null); }, onError: (e: Error) => toast.error(e.message || 'Failed') }
+            );
+          }}
+          isPending={updateAlert.isPending}
+        />
+      )}
 
-      {/* Top Processes */}
-      <div className="rounded-lg border border-border bg-card mb-6">
-        <SectionHeader icon={Activity} title="Top Processes">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setProcessSort('cpu')}
-              className={`rounded px-3 py-1 text-xs ${processSort === 'cpu' ? 'bg-primary text-primary-foreground' : 'bg-accent'}`}
-            >
-              By CPU
-            </button>
-            <button
-              onClick={() => setProcessSort('memory')}
-              className={`rounded px-3 py-1 text-xs ${processSort === 'memory' ? 'bg-primary text-primary-foreground' : 'bg-accent'}`}
-            >
-              By Memory
-            </button>
-          </div>
-        </SectionHeader>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-muted/50">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">PID</th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Name</th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">CPU</th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">Memory</th>
-                <th className="px-4 py-2 text-left font-medium text-muted-foreground">State</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeProcesses?.map((p) => <ProcessRow key={p.pid} process={p} />)}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Per-Domain Disk Usage & Bandwidth */}
-      <div className="grid gap-6 lg:grid-cols-2 mb-6">
-        {/* Per-Domain Disk Usage */}
-        <div className="rounded-lg border border-border bg-card">
-          <SectionHeader icon={HardDrive} title="Per-Domain Disk Usage" />
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted/50">
-                <tr>
-                  <th className="px-4 py-2 text-left font-medium text-muted-foreground">Domain</th>
-                  <th className="px-4 py-2 text-left font-medium text-muted-foreground">Usage</th>
-                  <th className="px-4 py-2 text-left font-medium text-muted-foreground">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {domains && domains.length > 0 ? (
-                  domains.map((d) => <DomainDiskRow key={d.id} domain={d} />)
-                ) : (
-                  <tr>
-                    <td colSpan={3} className="px-4 py-6 text-center text-muted-foreground text-sm">
-                      No domains found
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Per-Domain Bandwidth Usage */}
-        <div className="rounded-lg border border-border bg-card">
-          <SectionHeader icon={Wifi} title="Per-Domain Bandwidth (Monthly)" />
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted/50">
-                <tr>
-                  <th className="px-4 py-2 text-left font-medium text-muted-foreground">Domain</th>
-                  <th className="px-4 py-2 text-left font-medium text-muted-foreground">Incoming</th>
-                  <th className="px-4 py-2 text-left font-medium text-muted-foreground">Outgoing</th>
-                  <th className="px-4 py-2 text-left font-medium text-muted-foreground">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {domainBandwidth && domainBandwidth.length > 0 ? (
-                  domainBandwidth.map((d) => (
-                    <tr key={d.domainId} className="border-b border-border last:border-0">
-                      <td className="px-4 py-2 font-medium text-sm">{d.domainName}</td>
-                      <td className="px-4 py-2 text-sm font-mono text-green-500">{formatBytes(d.incomingBytes)}</td>
-                      <td className="px-4 py-2 text-sm font-mono text-blue-500">{formatBytes(d.outgoingBytes)}</td>
-                      <td className="px-4 py-2 text-sm font-mono font-medium">{formatBytes(d.totalBytes)}</td>
-                    </tr>
-                  ))
-                ) : domains && domains.length > 0 ? (
-                  domains.map((d) => <DomainBandwidthRow key={d.id} domain={d} />)
-                ) : (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-6 text-center text-muted-foreground text-sm">
-                      No domains found
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      <ConfirmDialog
+        open={!!deleteAlertId}
+        title="Delete Alert Rule"
+        message="This will permanently delete this alert rule. You will stop receiving notifications for this rule."
+        confirmText="Delete"
+        variant="danger"
+        onConfirm={handleDeleteAlert}
+        onCancel={() => setDeleteAlertId(null)}
+      />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 ﻿import { db } from '../../db/index.js';
-import { users, sessions, tempTokens, twoFactorBackupCodes } from '../../db/schema/index.js';
+import { users, sessions, tempTokens, twoFactorBackupCodes, apiKeys } from '../../db/schema/index.js';
+import { organizations, organizationMembers } from '../../db/schema/index.js';
 import { eq, and, gt, isNull, lt } from 'drizzle-orm';
 import { verifyPassword, generateToken, hashToken, encrypt, decrypt, hashPassword, sha256 } from '../../utils/crypto.js';
 import { AppError } from '../../errors.js';
@@ -184,6 +185,7 @@ export class AuthService {
         twoFactorEnabled: user.twoFactorEnabled,
         mustChangePassword: user.mustChangePassword,
       },
+      organizations: [],
     };
   }
 
@@ -717,38 +719,73 @@ export class AuthService {
     }));
   }
 
-  // --- Generate API Token ---
-  async generateApiToken(userId: string, name: string, expiresAt?: Date, ipAddress?: string) {
-    const rawToken = generateToken('sf_');
-    const tokenHash = hashToken(rawToken);
+  // --- Generate API Key ---
+  async generateApiKey(userId: string, name: string, expiresAt?: Date, ipAddress?: string) {
+    const rawKey = generateToken('np_');
+    const keyHash = hashToken(rawKey);
+    const keyPrefix = rawKey.substring(0, 8);
 
-    // Store hash in user record (for v1, one token per user)
-    await db
-      .update(users)
-      .set({ apiTokenHash: tokenHash })
-      .where(eq(users.id, userId));
+    await db.insert(apiKeys).values({
+      id: nanoid(),
+      userId,
+      name,
+      keyPrefix,
+      keyHash,
+      permissions: '[]',
+      scopes: '[]',
+      rateLimit: 1000,
+      expiresAt: expiresAt || null,
+    });
 
-    logger.info({ userId, tokenName: name }, 'API token generated');
+    logger.info({ userId, name }, 'API key generated');
 
     auditService.log({
-      userId,
-      action: 'auth.token.create',
-      resource: `token:${name}`,
+      orgId: '',
+      actorId: userId,
+      action: 'auth.apikey.create',
+      resourceType: 'api_key',
+      resourceId: name,
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
     return {
-      token: rawToken, // Only shown once!
+      key: rawKey,
       name,
       expiresAt,
     };
   }
 
-  // --- Validate API Token ---
-  async validateApiToken(token: string) {
-    const tokenHash = hashToken(token);
-    // Look up user by token hash
-    const [user] = await db.select().from(users).where(eq(users.apiTokenHash, tokenHash)).limit(1);
+  async revokeApiKey(keyId: string, userId: string, ipAddress?: string) {
+    const [key] = await db.select().from(apiKeys).where(eq(apiKeys.id, keyId)).limit(1);
+    if (!key) throw new AppError(404, 'NOT_FOUND', 'API key not found');
+    if (key.userId !== userId) throw new AppError(403, 'FORBIDDEN', 'Cannot revoke API key belonging to another user');
+
+    await db.delete(apiKeys).where(eq(apiKeys.id, keyId));
+
+    logger.info({ keyId, userId }, 'API key revoked');
+
+    auditService.log({
+      orgId: '',
+      actorId: userId,
+      action: 'auth.apikey.revoke',
+      resourceType: 'api_key',
+      resourceId: keyId,
+      ipAddress,
+    }).catch(err => logger.error({ err }, 'Audit log failed'));
+
+    return { success: true };
+  }
+
+  // --- Validate API Key ---
+  async validateApiKey(key: string) {
+    const keyHash = hashToken(key);
+    const keyPrefix = key.substring(0, 8);
+    const [apiKey] = await db.select().from(apiKeys)
+      .where(eq(apiKeys.keyHash, keyHash))
+      .limit(1);
+    if (!apiKey) return null;
+    if (apiKey.expiresAt && apiKey.expiresAt < new Date()) return null;
+    const [user] = await db.select().from(users).where(eq(users.id, apiKey.userId!)).limit(1);
     if (!user || !user.isActive) return null;
     return user;
   }

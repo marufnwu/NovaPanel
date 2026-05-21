@@ -1,5 +1,5 @@
 import { db } from '../../db/index.js';
-import { cronJobs, cronJobHistory } from '../../db/schema/cron.js';
+import { cronJobs, cronHistory } from '../../db/schema/cron.js';
 import { eq, desc } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { run } from '../../services/executor.js';
@@ -8,60 +8,47 @@ import { logger } from '../../config/logger.js';
 import { auditService } from '../audit/audit.service.js';
 
 export class CronService {
-  /**
-   * List all cron jobs
-   */
-  async listJobs(_domainId?: string) {
-    // For single-admin mode, list all cron jobs
-    // In original multi-tenant mode, this would filter by subscription
+  async listJobs(_projectId?: string) {
     return db.select().from(cronJobs);
   }
 
-  /**
-   * Get a single cron job by ID
-   */
   async getJob(jobId: string) {
     const [job] = await db.select().from(cronJobs).where(eq(cronJobs.id, jobId)).limit(1);
     if (!job) throw new AppError(404, 'CRON_NOT_FOUND', 'Cron job not found');
     return job;
   }
 
-  /**
-   * Create a cron job
-   */
   async createJob(data: {
     command: string;
     schedule: string;
-    systemUser?: string;
-    domainId?: string;
-    websiteId?: string;
+    siteId?: string;
+    name?: string;
   }, userId?: string, ipAddress?: string) {
     const parts = data.schedule.trim().split(/\s+/);
     if (parts.length !== 5) {
       throw new AppError(400, 'INVALID_CRON', 'Cron expression must have 5 fields: min hour day month weekday');
     }
 
-    // In single-admin mode, use provided systemUser or default to root
-    const sysUser = data.systemUser || 'root';
-
     const jobId = nanoid();
+    const user = data.siteId ? 'www-data' : 'root';
 
     const cronLine = `${data.schedule} ${data.command} # serverforge:${jobId}\n`;
-    const result = await run('crontab', ['-u', sysUser, '-l'], { sudo: true });
+    const result = await run('crontab', ['-u', user, '-l'], { sudo: true });
     const existing = result.success ? result.stdout : '';
-    await run('crontab', ['-u', sysUser, '-'], {
+    await run('crontab', ['-u', user, '-'], {
       sudo: true,
       input: existing + cronLine,
     });
 
     await db.insert(cronJobs).values({
       id: jobId,
-      domainId: data.domainId || null,
-      websiteId: data.websiteId || null,
+      projectId: 'default',
+      siteId: data.siteId ?? undefined,
       command: data.command,
       schedule: data.schedule,
-      systemUser: sysUser,
-      isActive: true,
+      user: user,
+      name: data.name ?? 'Cron Job',
+      status: 'active',
     });
 
     logger.info({ jobId, command: data.command, schedule: data.schedule }, 'Cron job created');
@@ -74,35 +61,30 @@ export class CronService {
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return { id: jobId, command: data.command, schedule: data.schedule, systemUser: sysUser };
+    return { id: jobId, command: data.command, schedule: data.schedule, user };
   }
 
-  /**
-   * Update a cron job
-   */
-  async updateJob(jobId: string, data: { schedule?: string; command?: string; systemUser?: string }, userId?: string, ipAddress?: string) {
+  async updateJob(jobId: string, data: { schedule?: string; command?: string }, userId?: string, ipAddress?: string) {
     const [job] = await db.select().from(cronJobs).where(eq(cronJobs.id, jobId)).limit(1);
     if (!job) throw new AppError(404, 'CRON_NOT_FOUND', 'Cron job not found');
 
-    // Remove old entry
-    const result = await run('crontab', ['-u', job.systemUser, '-l'], { sudo: true });
+    const user = job.user ?? 'root';
+    const result = await run('crontab', ['-u', user, '-l'], { sudo: true });
     if (result.success) {
       const updated = result.stdout
         .split('\n')
         .filter(line => !line.includes(`serverforge:${jobId}`))
         .join('\n');
-      await run('crontab', ['-u', job.systemUser, '-'], { sudo: true, input: updated });
+      await run('crontab', ['-u', user, '-'], { sudo: true, input: updated });
     }
 
     const newSchedule = data.schedule || job.schedule;
     const newCommand = data.command || job.command;
-    const newUser = data.systemUser || job.systemUser;
 
-    // Add new entry
     const cronLine = `${newSchedule} ${newCommand} # serverforge:${jobId}\n`;
-    const result2 = await run('crontab', ['-u', newUser, '-l'], { sudo: true });
+    const result2 = await run('crontab', ['-u', user, '-l'], { sudo: true });
     const existing = result2.success ? result2.stdout : '';
-    await run('crontab', ['-u', newUser, '-'], {
+    await run('crontab', ['-u', user, '-'], {
       sudo: true,
       input: existing + cronLine,
     });
@@ -110,7 +92,6 @@ export class CronService {
     await db.update(cronJobs).set({
       schedule: newSchedule,
       command: newCommand,
-      systemUser: newUser,
     }).where(eq(cronJobs.id, jobId));
 
     logger.info({ jobId }, 'Cron job updated');
@@ -123,23 +104,21 @@ export class CronService {
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return { id: jobId, schedule: newSchedule, command: newCommand, systemUser: newUser };
+    return { id: jobId, schedule: newSchedule, command: newCommand };
   }
 
-  /**
-   * Delete a cron job
-   */
   async deleteJob(jobId: string, userId?: string, ipAddress?: string) {
     const [job] = await db.select().from(cronJobs).where(eq(cronJobs.id, jobId)).limit(1);
     if (!job) throw new AppError(404, 'CRON_NOT_FOUND', 'Cron job not found');
 
-    const result = await run('crontab', ['-u', job.systemUser, '-l'], { sudo: true });
+    const user = job.user ?? 'root';
+    const result = await run('crontab', ['-u', user, '-l'], { sudo: true });
     if (result.success) {
       const updated = result.stdout
         .split('\n')
         .filter(line => !line.includes(`serverforge:${jobId}`))
         .join('\n');
-      await run('crontab', ['-u', job.systemUser, '-'], { sudo: true, input: updated });
+      await run('crontab', ['-u', user, '-'], { sudo: true, input: updated });
     }
 
     await db.delete(cronJobs).where(eq(cronJobs.id, jobId));
@@ -153,89 +132,78 @@ export class CronService {
     }).catch(err => logger.error({ err }, 'Audit log failed'));
   }
 
-  /**
-   * Toggle a cron job on/off
-   */
   async toggleJob(jobId: string, userId?: string, ipAddress?: string) {
     const [job] = await db.select().from(cronJobs).where(eq(cronJobs.id, jobId)).limit(1);
     if (!job) throw new AppError(404, 'CRON_NOT_FOUND', 'Cron job not found');
 
-    const newActive = !job.isActive;
+    const newStatus = job.status === 'active' ? 'paused' : 'active';
+    const user = job.user ?? 'root';
 
-    if (newActive) {
+    if (newStatus === 'active') {
       const cronLine = `${job.schedule} ${job.command} # serverforge:${jobId}\n`;
-      const result = await run('crontab', ['-u', job.systemUser, '-l'], { sudo: true });
+      const result = await run('crontab', ['-u', user, '-l'], { sudo: true });
       const existing = result.success ? result.stdout : '';
-      await run('crontab', ['-u', job.systemUser, '-'], {
+      await run('crontab', ['-u', user, '-'], {
         sudo: true,
         input: existing + cronLine,
       });
     } else {
-      const result = await run('crontab', ['-u', job.systemUser, '-l'], { sudo: true });
+      const result = await run('crontab', ['-u', user, '-l'], { sudo: true });
       if (result.success) {
         const updated = result.stdout
           .split('\n')
           .filter(line => !line.includes(`serverforge:${jobId}`))
           .join('\n');
-        await run('crontab', ['-u', job.systemUser, '-'], { sudo: true, input: updated });
+        await run('crontab', ['-u', user, '-'], { sudo: true, input: updated });
       }
     }
 
-    await db.update(cronJobs).set({ isActive: newActive }).where(eq(cronJobs.id, jobId));
+    await db.update(cronJobs).set({ status: newStatus }).where(eq(cronJobs.id, jobId));
 
     auditService.log({
       userId,
       action: 'cron.job.toggle',
       resource: `cron:${jobId}`,
-      details: JSON.stringify({ isActive: newActive }),
+      details: JSON.stringify({ status: newStatus }),
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return { id: jobId, isActive: newActive };
+    return { id: jobId, status: newStatus };
   }
 
-  /**
-   * Run a cron job immediately
-   */
   async runJob(jobId: string, userId?: string, ipAddress?: string) {
     const [job] = await db.select().from(cronJobs).where(eq(cronJobs.id, jobId)).limit(1);
     if (!job) throw new AppError(404, 'CRON_NOT_FOUND', 'Cron job not found');
 
     const startTime = new Date();
     const historyId = nanoid();
+    const jobUser = job.user ?? 'root';
 
-    // Mark as running
     await db.update(cronJobs).set({
-      lastRun: startTime,
-      lastStatus: 'running',
+      lastRunAt: startTime,
     }).where(eq(cronJobs.id, jobId));
 
-    // Create history entry with start time
-    await db.insert(cronJobHistory).values({
+    await db.insert(cronHistory).values({
       id: historyId,
       jobId: jobId,
-      startTime: startTime,
+      startedAt: startTime,
     });
 
-    const result = await run('su', ['-c', job.command, job.systemUser], { sudo: true, timeout: 60_000 });
+    const result = await run('su', ['-c', job.command, jobUser], { sudo: true, timeout: 60_000 });
 
     const endTime = new Date();
-    const durationMs = endTime.getTime() - startTime.getTime();
 
-    // Update job with final status
     await db.update(cronJobs).set({
-      lastRun: endTime,
-      lastStatus: result.success ? 'success' : 'failed',
+      lastRunAt: endTime,
+      lastExitCode: result.exitCode ?? 0,
     }).where(eq(cronJobs.id, jobId));
 
-    // Update history entry with final details
-    await db.update(cronJobHistory).set({
-      endTime: endTime,
-      durationMs: durationMs,
+    await db.update(cronHistory).set({
+      completedAt: endTime,
       exitCode: result.exitCode ?? 0,
-      outputPreview: result.stdout?.substring(0, 1000) || '',
-      errorPreview: result.stderr?.substring(0, 500) || '',
-    }).where(eq(cronJobHistory.id, historyId));
+      output: result.stdout?.substring(0, 1000) || '',
+      error: result.stderr?.substring(0, 500) || '',
+    }).where(eq(cronHistory.id, historyId));
 
     auditService.log({
       userId,
@@ -248,34 +216,29 @@ export class CronService {
     return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
   }
 
-  /**
-   * Get cron job execution history
-   */
-  async getJobHistory(jobId: string, limit: number = 50): Promise<Array<{ id: string; jobId: string; startTime: string; endTime: string | null; durationMs: number | null; exitCode: number | null; outputPreview: string | null; errorPreview: string | null }>> {
+  async getJobHistory(jobId: string, limit: number = 50) {
     const [job] = await db.select().from(cronJobs).where(eq(cronJobs.id, jobId)).limit(1);
     if (!job) throw new AppError(404, 'CRON_NOT_FOUND', 'Cron job not found');
 
-    const history = await db.select().from(cronJobHistory)
-      .where(eq(cronJobHistory.jobId, jobId))
-      .orderBy(desc(cronJobHistory.startTime))
+    const history = await db.select().from(cronHistory)
+      .where(eq(cronHistory.jobId, jobId))
+      .orderBy(desc(cronHistory.startedAt))
       .limit(limit);
 
     return history.map(h => ({
       id: h.id,
       jobId: h.jobId,
-      startTime: h.startTime?.toISOString() || '',
-      endTime: h.endTime?.toISOString() || null,
-      durationMs: h.durationMs || null,
+      startTime: h.startedAt?.toISOString() || '',
+      endTime: h.completedAt?.toISOString() || null,
       exitCode: h.exitCode || null,
-      outputPreview: h.outputPreview || null,
-      errorPreview: h.errorPreview || null,
+      output: h.output || null,
+      error: h.error || null,
     }));
   }
 
-  /**
-   * List cron jobs by websiteId
-   */
-  async listByWebsite(websiteId: string) {
-    return db.select().from(cronJobs).where(eq(cronJobs.websiteId, websiteId));
+  async listBySite(siteId: string) {
+    return db.select().from(cronJobs).where(eq(cronJobs.siteId, siteId));
   }
 }
+
+export const cronService = new CronService();

@@ -35,6 +35,16 @@ import { SiteDetailPage } from './pages/sites/SiteDetailPage';
 import { DatabaseDetailPage } from './pages/databases/DatabaseDetailPage';
 import { CloudflarePage } from './pages/cloudflare/CloudflarePage';
 import { ResetPasswordPage } from './pages/reset-password/ResetPasswordPage';
+import { SecurityPage } from './pages/security/SecurityPage';
+import { StoragePage } from './pages/storage/StoragePage';
+import { ContainersPage } from './pages/containers/ContainersPage';
+import { BillingPage } from './pages/billing/BillingPage';
+import { WebhooksPage } from './pages/webhooks/WebhooksPage';
+import { PluginsPage } from './pages/plugins/PluginsPage';
+import { ProjectsPage } from './pages/projects/ProjectsPage';
+import { RegistriesPage } from './pages/registries/RegistriesPage';
+import { JobsPage } from './pages/jobs/JobsPage';
+import { OrganizationsPage } from './pages/organizations/OrganizationsPage';
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -69,6 +79,30 @@ const sitesRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/sites',
   component: SitesPage,
+});
+
+const projectsRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/projects',
+  component: ProjectsPage,
+});
+
+const registriesRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/registries',
+  component: RegistriesPage,
+});
+
+const jobsRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/jobs',
+  component: JobsPage,
+});
+
+const organizationsRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/organizations',
+  component: OrganizationsPage,
 });
 
 const siteDetailRoute = createRoute({
@@ -241,6 +275,42 @@ const resetPasswordRoute = createRoute({
   component: ResetPasswordPage,
 });
 
+const securityRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/security',
+  component: SecurityPage,
+});
+
+const storageRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/storage',
+  component: StoragePage,
+});
+
+const containersRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/containers',
+  component: ContainersPage,
+});
+
+const billingRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/billing',
+  component: BillingPage,
+});
+
+const webhooksRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/webhooks',
+  component: WebhooksPage,
+});
+
+const pluginsRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/plugins',
+  component: PluginsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   resetPasswordRoute,
@@ -248,6 +318,10 @@ const routeTree = rootRoute.addChildren([
     indexRoute,
     domainsRoute,
     sitesRoute,
+    projectsRoute,
+    registriesRoute,
+    jobsRoute,
+    organizationsRoute,
     siteDetailRoute,
     webserverRoute,
     phpRoute,
@@ -271,6 +345,12 @@ const routeTree = rootRoute.addChildren([
     monitoringRoute,
     notificationsRoute,
     installerRoute,
+    securityRoute,
+    storageRoute,
+    containersRoute,
+    billingRoute,
+    webhooksRoute,
+    pluginsRoute,
   ]),
 ]);
 

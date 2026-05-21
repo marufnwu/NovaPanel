@@ -2,6 +2,7 @@
 import {
   LayoutDashboard,
   Globe,
+  Layers,
   Server,
   Code2,
   ShieldCheck,
@@ -14,22 +15,34 @@ import {
   Terminal,
   Clock,
   Flame,
+  Activity,
   Archive,
+  Bell,
+  BarChart3,
   ScrollText,
   Settings,
+  Key,
+  Wrench,
+  Building2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Activity,
-  Bell,
-  Package,
-  Wrench,
-  Layers,
+  Check,
   ArrowLeft,
-  Loader2,
+  ShieldAlert,
+  HardDrive,
+  Box,
+  CreditCard,
+  Webhook,
+  Package,
+  Container,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useState, useEffect, useMemo } from 'react';
 import { useServerFeatures } from '../../api/hooks/features';
+import { useOrganizations, useSwitchOrganization } from '../../api/hooks/organizations';
+import type { Organization } from '../../api/hooks/organizations';
+import { useAuthStore } from '../../store/auth.store';
 
 interface NavItem {
   label: string;
@@ -54,6 +67,7 @@ const navGroups: NavGroupDef[] = [
     title: 'Overview',
     items: [
       { label: 'Dashboard', path: '/', icon: LayoutDashboard },
+      { label: 'Projects', path: '/projects', icon: FolderOpen },
     ],
   },
   {
@@ -88,7 +102,10 @@ const navGroups: NavGroupDef[] = [
       { label: 'Terminal', path: '/terminal', icon: Terminal },
       { label: 'Cron', path: '/cron', icon: Clock },
       { label: 'Firewall', path: '/firewall', icon: Flame },
-      { label: 'Logs', path: '/logs', icon: ScrollText },
+      { label: 'Security', path: '/security', icon: ShieldAlert },
+      { label: 'Storage', path: '/storage', icon: HardDrive },
+      { label: 'Containers', path: '/containers', icon: Box },
+      { label: 'Registries', path: '/registries', icon: Container },
       { label: 'Monitoring', path: '/monitoring', icon: Activity },
     ],
   },
@@ -99,12 +116,18 @@ const navGroups: NavGroupDef[] = [
       { label: 'Installer', path: '/installer', icon: Package },
       { label: 'Notifications', path: '/notifications', icon: Bell },
       { label: 'Audit Log', path: '/audit', icon: ScrollText },
+      { label: 'Billing', path: '/billing', icon: CreditCard },
+      { label: 'Webhooks', path: '/webhooks', icon: Webhook },
+      { label: 'Plugins', path: '/plugins', icon: Package },
+      { label: 'Jobs', path: '/jobs', icon: BarChart3 },
     ],
   },
   {
     title: 'Account',
     items: [
       { label: 'Profile', path: '/settings', icon: Settings },
+      { label: 'API Tokens', path: '/settings/api-tokens', icon: Key },
+      { label: 'Organizations', path: '/organizations', icon: Building2 },
       { label: 'Server Settings', path: '/settings/server', icon: Wrench },
     ],
   },
@@ -158,6 +181,64 @@ function getVisibleItems(group: NavGroupDef, features: Record<string, boolean> |
   });
 }
 
+function OrganizationSwitcher() {
+  const { organizations, activeOrgId, setActiveOrg } = useAuthStore();
+  const { data: orgs } = useOrganizations();
+  const switchOrg = useSwitchOrganization();
+  const [open, setOpen] = useState(false);
+
+  const allOrgs = orgs || organizations || [];
+  const activeOrg = allOrgs.find((o: Organization) => o.id === activeOrgId) || allOrgs[0];
+
+  if (allOrgs.length === 0) {
+    return (
+      <div className="border-b border-border px-3 py-3">
+        <div className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+          <Building2 className="h-4 w-4" />
+          No organizations
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-b border-border px-3 py-3">
+      <div className="relative">
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex w-full items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm hover:bg-muted transition-colors"
+        >
+          <Building2 className="h-4 w-4 shrink-0 text-primary" />
+          <span className="flex-1 truncate text-left font-medium">{activeOrg?.name || 'Select Org'}</span>
+          <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
+        </button>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+            <div className="absolute left-0 right-0 top-full z-20 mt-1 rounded-md border bg-popover shadow-md">
+              {allOrgs.map((org: Organization) => (
+                <button
+                  key={org.id}
+                  onClick={() => {
+                    setActiveOrg(org.id);
+                    switchOrg.mutate(org.id);
+                    setOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent transition-colors"
+                >
+                  <Building2 className="h-4 w-4 shrink-0" />
+                  <span className="flex-1 truncate text-left">{org.name}</span>
+                  {org.id === activeOrgId && <Check className="h-4 w-4 text-primary" />}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(getStoredCollapsed);
   const matchRoute = useMatchRoute();
@@ -189,7 +270,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex h-14 items-center border-b border-border px-4">
         {!collapsed && (
-          <span className="text-lg font-bold text-primary">ServerForge</span>
+          <span className="text-lg font-bold text-primary">NovaPanel</span>
         )}
         <button
           onClick={() => setCollapsed((prev) => !prev)}
@@ -201,6 +282,9 @@ export function Sidebar() {
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
       </div>
+
+      {/* Organization Switcher */}
+      {!collapsed && <OrganizationSwitcher />}
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-2">

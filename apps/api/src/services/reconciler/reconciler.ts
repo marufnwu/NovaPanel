@@ -1,41 +1,28 @@
 import { db } from '../../db/index.js';
 import { sites } from '../../db/schema/sites.js';
-import { siteStates } from '../../db/schema/site_states.js';
-import { siteRuntimes } from '../../db/schema/site_runtimes.js';
-import { siteProcesses } from '../../db/schema/site_processes.js';
 import { domains } from '../../db/schema/domains.js';
+import { containers } from '../../db/schema/containers.js';
 import { eq } from 'drizzle-orm';
 import { logger } from '../../config/logger.js';
-import { nginxRenderer } from '../nginx-renderer/index.js';
-import { jobQueue, JOB_TYPES } from '../job-queue/index.js';
-import { getProcessManager } from '../process-manager/index.js';
-import { runtimeManager } from '../runtime-manager/index.js';
 import { run } from '../executor.js';
 
-const RECONCILE_INTERVAL_MS = 60000; // 60 seconds
+const RECONCILE_INTERVAL_MS = 60000;
 
 interface DesiredState {
   site: any;
-  runtime: any;
-  process: any;
+  containers: any[];
   domains: any[];
 }
 
 interface ActualState {
   nginxStatus: 'ok' | 'missing' | 'invalid' | 'reload_needed' | 'unknown';
-  processStatus: 'running' | 'stopped' | 'error' | 'restarting' | 'unknown';
-  processPid?: number;
-  processRunning?: boolean;
-  portCorrect?: boolean;
+  containersStatus: Record<string, 'running' | 'stopped' | 'error' | 'unknown'>;
 }
 
 export class Reconciler {
   private isRunning = false;
   private interval: NodeJS.Timeout | null = null;
 
-  /**
-   * Start the reconciler loop
-   */
   start(): void {
     if (this.isRunning) {
       logger.warn('Reconciler already running');
@@ -51,15 +38,11 @@ export class Reconciler {
       });
     }, RECONCILE_INTERVAL_MS);
 
-    // Run immediately on start
     this.reconcileAll().catch(err => {
       logger.error({ err }, 'Initial reconciliation error');
     });
   }
 
-  /**
-   * Stop the reconciler loop
-   */
   stop(): void {
     if (!this.isRunning) return;
 
@@ -71,9 +54,6 @@ export class Reconciler {
     logger.info('Reconciler stopped');
   }
 
-  /**
-   * Reconcile all sites
-   */
   async reconcileAll(): Promise<void> {
     const allSites = await db.select().from(sites);
 
@@ -86,188 +66,119 @@ export class Reconciler {
     }
   }
 
-  /**
-   * Reconcile a single site
-   */
   async reconcileSite(siteId: string): Promise<void> {
-    const startTime = Date.now();
+    const site = await db.select().from(sites).where(eq(sites.id, siteId)).limit(1).then(r => r[0]);
+    if (!site) return;
 
-    // Get desired state from DB
-    const desiredState = await this.getDesiredState(siteId);
-    if (!desiredState) {
-      logger.warn({ siteId }, 'Site not found for reconciliation');
-      return;
+    const desired = await this.getDesiredState(siteId);
+    const actual = await this.getActualState(siteId);
+    const drift = this.detectDrift(desired, actual);
+
+    if (drift.hasDrift && desired) {
+      logger.info({ siteId, drift }, 'Drift detected, repairing');
+      await this.repairDrift(siteId, desired, drift);
     }
 
-    // Get actual state from infrastructure
-    const actualState = await this.getActualState(siteId);
-
-    // Compare and repair drift
-    const drift = this.detectDrift(desiredState, actualState);
-
-    if (drift.hasDrift) {
-      logger.info({ siteId, drift }, 'Drift detected, initiating repair');
-      await this.repairDrift(siteId, desiredState, drift);
-    }
-
-    // Update observed state
-    await this.updateObservedState(siteId, actualState, Date.now() - startTime);
-
-    logger.debug({ siteId, duration: Date.now() - startTime }, 'Site reconciliation completed');
+    const durationMs = Date.now();
+    await this.updateObservedState(siteId, actual, durationMs);
   }
 
-  /**
-   * Get desired state from database
-   */
   private async getDesiredState(siteId: string): Promise<DesiredState | null> {
     const [site] = await db.select().from(sites).where(eq(sites.id, siteId)).limit(1);
     if (!site) return null;
 
-    const [runtime] = await db.select().from(siteRuntimes).where(eq(siteRuntimes.siteId, siteId)).limit(1);
-    const [process] = await db.select().from(siteProcesses).where(eq(siteProcesses.siteId, siteId)).limit(1);
+    const siteContainers = await db.select().from(containers).where(eq(containers.projectId, site.projectId));
     const siteDomains = await db.select().from(domains).where(eq(domains.siteId, siteId));
 
-    return { site, runtime, process, domains: siteDomains };
+    return { site, containers: siteContainers, domains: siteDomains };
   }
 
-  /**
-   * Get actual state from infrastructure
-   */
   private async getActualState(siteId: string): Promise<ActualState> {
-    const state: ActualState = {
-      nginxStatus: 'unknown',
-      processStatus: 'unknown',
-    };
-
-    // Check nginx config
-    const configPath = nginxRenderer.getConfigPath(siteId);
+    let nginxStatus: ActualState['nginxStatus'] = 'unknown';
     try {
-      const { success } = await run('test', ['-f', configPath], { sudo: true });
-      if (!success) {
-        state.nginxStatus = 'missing';
-      } else {
-        // Validate nginx config
-        const validateResult = await run('nginx', ['-t', '-c', configPath], { sudo: true });
-        state.nginxStatus = validateResult.success ? 'ok' : 'invalid';
+      const result = await run('nginx', ['-t'], { sudo: true });
+      nginxStatus = result.exitCode === 0 ? 'ok' : 'invalid';
+    } catch {
+      nginxStatus = 'missing';
+    }
+
+    const siteContainers = await db.select().from(containers).where(eq(containers.projectId, siteId));
+    const containersStatus: Record<string, 'running' | 'stopped' | 'error' | 'unknown'> = {};
+
+    for (const c of siteContainers) {
+      if (!c.containerId) {
+        containersStatus[c.id] = 'stopped';
+        continue;
       }
-    } catch {
-      state.nginxStatus = 'missing';
+      try {
+        const { stdout } = await run('docker', ['inspect', '--format', '{{.State.Running}}', c.containerId], { sudo: true });
+        containersStatus[c.id] = stdout.trim() === 'true' ? 'running' : 'stopped';
+      } catch {
+        containersStatus[c.id] = 'error';
+      }
     }
 
-    // Check process
-    try {
-      const processManager = await getProcessManager();
-      const status = await processManager.getStatus(`site-${siteId}`);
-      state.processRunning = status.running;
-      state.processPid = status.pid;
-      state.processStatus = status.status === 'online' ? 'running' :
-                           status.status === 'stopped' ? 'stopped' : 'error';
-    } catch {
-      state.processStatus = 'unknown';
-    }
-
-    return state;
+    return { nginxStatus, containersStatus };
   }
 
-  /**
-   * Detect drift between desired and actual state
-   */
-  private detectDrift(desired: DesiredState, actual: ActualState): {
+  private detectDrift(desired: DesiredState | null, actual: ActualState): {
     hasDrift: boolean;
     nginxReloadNeeded?: boolean;
-    processRestartNeeded?: boolean;
-    configRegenNeeded?: boolean;
+    containerRestartNeeded?: Record<string, boolean>;
   } {
-    const drift: {
-      hasDrift: boolean;
-      nginxReloadNeeded?: boolean;
-      processRestartNeeded?: boolean;
-      configRegenNeeded?: boolean;
-    } = { hasDrift: false };
+    if (!desired) return { hasDrift: false };
 
-    // Nginx drift
-    if (actual.nginxStatus === 'missing' || actual.nginxStatus === 'invalid') {
-      drift.hasDrift = true;
-      drift.configRegenNeeded = true;
-    } else if (actual.nginxStatus === 'ok' && desired.site.status === 'suspended') {
-      // Site is suspended but nginx is OK - needs reload
-      drift.hasDrift = true;
-      drift.nginxReloadNeeded = true;
+    const containerRestartNeeded: Record<string, boolean> = {};
+    let hasDrift = false;
+
+    if (actual.nginxStatus === 'reload_needed' || actual.nginxStatus === 'invalid') {
+      hasDrift = true;
     }
 
-    // Process drift
-    if (desired.process && !actual.processRunning && desired.site.status === 'active') {
-      drift.hasDrift = true;
-      drift.processRestartNeeded = true;
+    for (const c of desired.containers) {
+      const status = actual.containersStatus[c.id];
+      if (c.status === 'running' && (status === 'stopped' || status === 'error' || status === 'unknown')) {
+        containerRestartNeeded[c.id] = true;
+        hasDrift = true;
+      }
     }
 
-    return drift;
+    return { hasDrift, containerRestartNeeded };
   }
 
-  /**
-   * Repair drift by enqueueing appropriate jobs
-   */
   private async repairDrift(
     siteId: string,
     desired: DesiredState,
-    drift: { nginxReloadNeeded?: boolean; processRestartNeeded?: boolean; configRegenNeeded?: boolean }
+    drift: { nginxReloadNeeded?: boolean; containerRestartNeeded?: Record<string, boolean> }
   ): Promise<void> {
-    if (drift.configRegenNeeded) {
-      await jobQueue.enqueue(JOB_TYPES.NGINX_CONFIG_REGENERATE, { siteId });
+    try {
+      await run('nginx', ['-s', 'reload'], { sudo: true });
+    } catch {
+      await run('systemctl', ['reload', 'nginx'], { sudo: true }).catch(() => {});
     }
 
-    if (drift.nginxReloadNeeded) {
-      await jobQueue.enqueue(JOB_TYPES.NGINX_RELOAD, { siteId });
+    if (drift.containerRestartNeeded) {
+      for (const [containerId] of Object.entries(drift.containerRestartNeeded)) {
+        const [container] = await db.select().from(containers).where(eq(containers.id, containerId)).limit(1);
+        if (container?.containerId) {
+          try {
+            await run('docker', ['restart', container.containerId], { sudo: true });
+          } catch (err) {
+            logger.warn({ err, containerId }, 'Failed to restart container during reconcile');
+          }
+        }
+      }
     }
 
-    if (drift.processRestartNeeded && desired.process) {
-      await jobQueue.enqueue(JOB_TYPES.PM2_RESTART, {
-        siteId,
-        processName: `site-${siteId}`
-      });
-    }
+    logger.info({ siteId }, 'Drift repaired');
   }
 
-  /**
-   * Update observed state in database
-   */
   private async updateObservedState(
     siteId: string,
     actual: ActualState,
     durationMs: number
   ): Promise<void> {
-    const [existing] = await db.select()
-      .from(siteStates)
-      .where(eq(siteStates.siteId, siteId))
-      .limit(1);
-
-    const updateData = {
-      nginxStatus: actual.nginxStatus,
-      nginxConfigValid: actual.nginxStatus === 'ok',
-      nginxReloadNeeded: false, // Reset after handling
-      processStatus: actual.processStatus,
-      processRunning: actual.processRunning,
-      processPid: actual.processPid,
-      lastReconcileAt: new Date(),
-      observedAt: new Date(),
-    };
-
-    if (existing) {
-      await db.update(siteStates)
-        .set(updateData)
-        .where(eq(siteStates.siteId, siteId));
-    } else {
-      await db.insert(siteStates).values({
-        id: `state_${siteId.substring(4)}`,
-        siteId,
-        ...updateData,
-        lastDeploymentStatus: 'unknown',
-        sslProvisioned: false,
-        sslAutoRenew: true,
-        dnsResolving: null,
-        dnsPointsToServer: null,
-      });
-    }
+    logger.debug({ siteId, actual, durationMs }, 'Observed state logged');
   }
 }
 

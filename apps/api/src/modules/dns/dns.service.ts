@@ -3,448 +3,246 @@ import { dnsZones, dnsRecords } from '../../db/schema/dns.js';
 import { domains } from '../../db/schema/domains.js';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { bindService } from '../../services/bind.service.js';
-import { run } from '../../services/executor.js';
-import { env } from '../../config/env.js';
 import { AppError } from '../../errors.js';
 import { logger } from '../../config/logger.js';
-import * as sudoFs from '../../services/sudo-fs.js';
-import { resolve4, resolve6, resolveMx } from 'node:dns/promises';
 import { auditService } from '../audit/audit.service.js';
-import { createDnsError } from '../../utils/error-messages.js';
-import { detectNetworkInfo } from '../../utils/network.js';
-import { settingsService } from '../settings/settings.service.js';
+import { CloudflareClient } from '../../services/cloudflare-client.js';
+import { env } from '../../config/env.js';
 
 export class DnsService {
-  /**
-   * Get DNS zone and all records for a domain
-   */
   async getZone(domainId: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    let [zone] = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
-
-    // Auto-create zone if it doesn't exist
-    if (!zone) {
-      zone = await this.ensureZone(domainId);
-    }
+    const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
+    if (!zone) throw new AppError(404, 'ZONE_NOT_FOUND', 'DNS zone not found');
 
     const records = await db.select().from(dnsRecords).where(eq(dnsRecords.zoneId, zone.id));
-
     return { zone, records };
   }
 
-  /**
-   * Ensure a DNS zone exists for a domain, creating one with defaults if missing
-   */
-  async ensureZone(domainId: string) {
+  async ensureZone(domainId: string, userId?: string, ipAddress?: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    // Check again in case it was created concurrently
-    const [existing] = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
-    if (existing) return existing;
+    const existing = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
+    if (existing[0]) return existing[0];
 
-    const zoneId = nanoid();
-    const serial = Math.floor(Date.now() / 1000);
-
-    // Get configured custom nameservers from settings
-    const nsSettings = await settingsService.getNameserverSettings();
-    const primaryNs = nsSettings.ns1 ? `${nsSettings.ns1}.` : 'ns1.example.com.';
-
-    await db.insert(dnsZones).values({
-      id: zoneId,
+    const [zone] = await db.insert(dnsZones).values({
+      id: nanoid(),
+      projectId: domain.projectId,
       domainId,
-      serial,
-      ttl: 3600,
-      primaryNs: primaryNs,
-      adminEmail: 'admin.example.com.',
-      refresh: 86400,
-      retry: 7200,
-      expire: 3600000,
-      minimumTtl: 172800,
-      isActive: true,
-    });
+      name: domain.name,
+      dnssecEnabled: false,
+    }).returning();
 
-    // Get server IP for default records
-    let serverIp = '127.0.0.1';
-    try {
-      const networkInfo = await detectNetworkInfo();
-      serverIp = networkInfo.primaryIp || '127.0.0.1';
-    } catch {
-      // Use default IP if network detection fails
-    }
+    auditService.log({ userId, action: 'dns.zone.create', resource: `zone:${zone.id}`, ipAddress }).catch(() => {});
 
-    // Insert default DNS records
-    const defaultRecords = [
-      { type: 'A', name: '@', value: serverIp, priority: null },
-      { type: 'A', name: 'www', value: serverIp, priority: null },
-      { type: 'A', name: 'mail', value: serverIp, priority: null },
-      { type: 'MX', name: '@', value: `mail.${domain.name}.`, priority: 10 },
-      { type: 'TXT', name: '@', value: `"v=spf1 a mx ip4:${serverIp} ~all"`, priority: null },
-      { type: 'NS', name: '@', value: nsSettings.ns1 ? `${nsSettings.ns1}.` : 'ns1.example.com.', priority: null },
-      { type: 'NS', name: '@', value: nsSettings.ns2 ? `${nsSettings.ns2}.` : 'ns2.example.com.', priority: null },
-    ];
-
-    for (const rec of defaultRecords) {
-      await db.insert(dnsRecords).values({
-        id: nanoid(),
-        zoneId,
-        type: rec.type as any,
-        name: rec.name,
-        value: rec.value,
-        ttl: 3600,
-        priority: rec.priority,
-        isSystem: true,
-      });
-    }
-
-    // Write zone file to disk and add to named.conf.local
-    try {
-      await this.rewriteZoneFile(zoneId);
-      await bindService.addZoneToConfig(domain.name);
-      await bindService.reload();
-    } catch (e) {
-      logger.warn({ err: e, domainId, domain: domain.name }, 'Failed to write BIND zone file during zone creation — DB records saved');
-    }
-
-    logger.info({ domainId, domain: domain.name }, 'DNS zone auto-created with default records');
-
-    const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.id, zoneId)).limit(1);
-    return zone!;
+    return zone;
   }
 
-  /**
-   * Create a DNS record
-   */
   async createRecord(domainId: string, data: {
     type: string; name: string; value: string; ttl?: number; priority?: number;
   }, userId?: string, ipAddress?: string) {
-    // Ensure zone exists (auto-create if missing)
-    const zone = await this.ensureZone(domainId);
+    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    const recordId = nanoid();
-    await db.insert(dnsRecords).values({
-      id: recordId,
+    let zoneArr = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
+    let zone = zoneArr[0];
+    if (!zone) zone = await this.ensureZone(domainId, userId, ipAddress);
+
+    const [record] = await db.insert(dnsRecords).values({
+      id: nanoid(),
       zoneId: zone.id,
-      type: data.type as any,
       name: data.name,
+      type: data.type as 'A' | 'AAAA' | 'CNAME' | 'MX' | 'TXT' | 'SRV' | 'CAA' | 'NS' | 'PTR',
       value: data.value,
       ttl: data.ttl || 3600,
-      priority: data.priority,
-      isSystem: false,
-    });
+      priority: data.priority || null,
+    }).returning();
 
-    // Bump serial and rewrite zone file
-    await this.rewriteZoneFile(zone.id);
+    auditService.log({ userId, action: 'dns.record.create', resource: `record:${record.id}`, ipAddress }).catch(() => {});
 
-    logger.info({ domainId, type: data.type, name: data.name }, 'DNS record created');
+    if (env.CF_API_TOKEN) {
+      await this.syncRecordToCloudflare(zone, record, domain.name).catch(err =>
+        logger.warn({ err, recordId: record.id }, 'Failed to sync DNS record to Cloudflare')
+      );
+    }
 
-    auditService.log({
-      userId,
-      action: 'dns.record.create',
-      resource: `domain:${domainId}`,
-      details: JSON.stringify({ type: data.type, name: data.name, value: data.value }),
-      ipAddress,
-    }).catch(err => logger.error({ err }, 'Audit log failed'));
-
-    return { id: recordId, ...data };
+    return record;
   }
 
-  /**
-   * Update a DNS record
-   */
   async updateRecord(recordId: string, data: { name?: string; value?: string; ttl?: number; priority?: number }, userId?: string, ipAddress?: string) {
     const [record] = await db.select().from(dnsRecords).where(eq(dnsRecords.id, recordId)).limit(1);
     if (!record) throw new AppError(404, 'RECORD_NOT_FOUND', 'DNS record not found');
 
-    if (record.isSystem) {
-      throw new AppError(403, 'SYSTEM_RECORD', 'Cannot modify system-generated DNS record');
-    }
-
-    const updateData: Record<string, unknown> = {};
+    const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (data.name !== undefined) updateData.name = data.name;
     if (data.value !== undefined) updateData.value = data.value;
     if (data.ttl !== undefined) updateData.ttl = data.ttl;
     if (data.priority !== undefined) updateData.priority = data.priority;
 
-    await db.update(dnsRecords).set(updateData).where(eq(dnsRecords.id, recordId));
-    await this.rewriteZoneFile(record.zoneId);
+    const [updated] = await db.update(dnsRecords).set(updateData).where(eq(dnsRecords.id, recordId)).returning();
 
-    auditService.log({
-      userId,
-      action: 'dns.record.update',
-      resource: `record:${recordId}`,
-      details: JSON.stringify(data),
-      ipAddress,
-    }).catch(err => logger.error({ err }, 'Audit log failed'));
+    auditService.log({ userId, action: 'dns.record.update', resource: `record:${recordId}`, ipAddress }).catch(() => {});
 
-    return { id: recordId, ...data };
+    if (env.CF_API_TOKEN) {
+      const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.id, record.zoneId)).limit(1);
+      if (zone) {
+        const [domain] = await db.select().from(domains).where(eq(domains.id, zone.domainId)).limit(1);
+        if (domain) {
+          await this.syncRecordToCloudflare(zone, updated, domain.name, recordId).catch(err =>
+            logger.warn({ err, recordId }, 'Failed to sync DNS record update to Cloudflare')
+          );
+        }
+      }
+    }
+
+    return updated;
   }
 
-  /**
-   * Delete a DNS record
-   */
   async deleteRecord(recordId: string, userId?: string, ipAddress?: string) {
     const [record] = await db.select().from(dnsRecords).where(eq(dnsRecords.id, recordId)).limit(1);
     if (!record) throw new AppError(404, 'RECORD_NOT_FOUND', 'DNS record not found');
 
-    if (record.isSystem) {
-      throw new AppError(403, 'SYSTEM_RECORD', 'Cannot delete system-generated DNS record');
-    }
-
     await db.delete(dnsRecords).where(eq(dnsRecords.id, recordId));
-    await this.rewriteZoneFile(record.zoneId);
 
-    auditService.log({
-      userId,
-      action: 'dns.record.delete',
-      resource: `record:${recordId}`,
-      ipAddress,
-    }).catch(err => logger.error({ err }, 'Audit log failed'));
+    auditService.log({ userId, action: 'dns.record.delete', resource: `record:${recordId}`, ipAddress }).catch(() => {});
+
+    if (env.CF_API_TOKEN) {
+      const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.id, record.zoneId)).limit(1);
+      if (zone) {
+        const [domain] = await db.select().from(domains).where(eq(domains.id, zone.domainId)).limit(1);
+        if (domain) {
+          const cf = new CloudflareClient(env.CF_API_TOKEN, env.CF_ACCOUNT_ID);
+          const cfZone = await cf.getZoneByName(domain.name);
+          if (cfZone) {
+            await cf.deleteDnsRecord(cfZone.id, recordId).catch(err =>
+              logger.warn({ err, recordId }, 'Failed to delete DNS record from Cloudflare')
+            );
+          }
+        }
+      }
+    }
   }
 
-  /**
-   * Import DNS zone from BIND format text
-   */
   async importZone(domainId: string, bindFormat: string, userId?: string, ipAddress?: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    // Parse BIND format (simplified parser)
-    const records = this.parseBindFormat(bindFormat);
+    let zoneArr = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
+    let zone = zoneArr[0];
+    if (!zone) zone = await this.ensureZone(domainId, userId, ipAddress);
 
-    // Get existing zone
-    const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
-    if (!zone) throw new AppError(404, 'ZONE_NOT_FOUND', 'DNS zone not found for this domain');
+    const lines = bindFormat.split('\n');
+    let soa: Record<string, unknown> | null = null;
 
-    // Delete existing non-system records
-    const existingRecords = await db.select().from(dnsRecords).where(eq(dnsRecords.zoneId, zone.id));
-    for (const rec of existingRecords) {
-      if (!rec.isSystem) {
-        await db.delete(dnsRecords).where(eq(dnsRecords.id, rec.id));
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith(';') || trimmed.startsWith('#')) continue;
+
+      if (trimmed.startsWith('@') && trimmed.includes('SOA')) {
+        soa = { raw: trimmed };
+        continue;
+      }
+
+      const aMatch = trimmed.match(/^([^\s]+)\s+(\d+)?\s+IN\s+(A|AAAA|CNAME|MX|TXT|SRV)\s+(.+)$/);
+      if (aMatch) {
+        const [, name, ttl, type, value] = aMatch;
+        const recordName = name === '@' ? domain.name : name;
+        const recordTtl = ttl ? parseInt(ttl) : 3600;
+
+        if (type === 'MX') {
+          const mxMatch = value.match(/^(\d+)\s+(.+)$/);
+          if (mxMatch) {
+            await db.insert(dnsRecords).values({
+              id: nanoid(),
+              zoneId: zone.id,
+              name: recordName,
+              type: 'MX',
+              value: mxMatch[2],
+              priority: parseInt(mxMatch[1]),
+              ttl: recordTtl,
+            }).onConflictDoNothing();
+          }
+        } else {
+          await db.insert(dnsRecords).values({
+            id: nanoid(),
+            zoneId: zone.id,
+            name: recordName,
+            type: type as 'A' | 'AAAA' | 'CNAME' | 'MX' | 'TXT' | 'SRV' | 'CAA' | 'NS' | 'PTR',
+            value: value.replace(/[;.]$/, ''),
+            ttl: recordTtl,
+          }).onConflictDoNothing();
+        }
       }
     }
 
-    // Insert parsed records
-    for (const rec of records) {
-      await db.insert(dnsRecords).values({
-        id: nanoid(),
-        zoneId: zone.id,
-        type: rec.type as any,
-        name: rec.name,
-        value: rec.value,
-        ttl: rec.ttl || 3600,
-        priority: rec.priority,
-        isSystem: false,
-      });
+    if (soa) {
+      await db.update(dnsZones).set({ soa: JSON.stringify(soa) }).where(eq(dnsZones.id, zone.id));
     }
 
-    await this.rewriteZoneFile(zone.id);
-    logger.info({ domainId, recordCount: records.length }, 'DNS zone imported');
+    auditService.log({ userId, action: 'dns.zone.import', resource: `zone:${zone.id}`, ipAddress }).catch(() => {});
 
-    auditService.log({
-      userId,
-      action: 'dns.zone.import',
-      resource: `domain:${domainId}`,
-      details: JSON.stringify({ recordCount: records.length }),
-      ipAddress,
-    }).catch(err => logger.error({ err }, 'Audit log failed'));
-
-    return { imported: records.length };
+    return zone;
   }
 
-  /**
-   * Export DNS zone as BIND format text
-   */
   async exportZone(domainId: string): Promise<string> {
-    const { zone, records } = await this.getZone(domainId);
-    if (!zone) throw new AppError(404, 'ZONE_NOT_FOUND', 'DNS zone not found');
-
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    let output = `$ORIGIN ${domain!.name}.\n`;
-    output += `$TTL ${zone.ttl}\n`;
-    output += `@   IN  SOA ${zone.primaryNs}. ${zone.adminEmail}. (\n`;
-    output += `        ${zone.serial}  ; Serial\n`;
-    output += `        ${zone.refresh}  ; Refresh\n`;
-    output += `        ${zone.retry}    ; Retry\n`;
-    output += `        ${zone.expire}  ; Expire\n`;
-    output += `        ${zone.minimumTtl}  ; Minimum TTL\n`;
-    output += `    )\n\n`;
-
-    for (const rec of records) {
-      const priority = rec.priority ? `${rec.priority} ` : '';
-      output += `${rec.name}   ${rec.ttl || ''}   IN  ${rec.type}   ${priority}${rec.value}\n`;
-    }
-
-    return output;
-  }
-
-  /**
-   * Reset DNS to default records (A, www, mail, MX, SPF)
-   */
-  async resetToDefaults(domainId: string, userId?: string, ipAddress?: string) {
     const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
     if (!zone) throw new AppError(404, 'ZONE_NOT_FOUND', 'DNS zone not found');
 
-    // Delete all non-system records
-    const existingRecords = await db.select().from(dnsRecords).where(eq(dnsRecords.zoneId, zone.id));
-    for (const rec of existingRecords) {
-      if (!rec.isSystem) {
-        await db.delete(dnsRecords).where(eq(dnsRecords.id, rec.id));
-      }
+    const records = await db.select().from(dnsRecords).where(eq(dnsRecords.zoneId, zone.id));
+
+    const lines: string[] = [];
+    lines.push(`$ORIGIN ${domain.name}.`);
+    lines.push(`$TTL 3600`);
+    lines.push(`@  IN  SOA  ns1.${domain.name}.  admin.${domain.name}.  (`);
+    lines.push(`  ${Date.now()}  ; Serial`);
+    lines.push(`  7200  ; Refresh`);
+    lines.push(`  3600  ; Retry`);
+    lines.push(`  1209600  ; Expire`);
+    lines.push(`  3600 )  ; Minimum TTL`);
+    lines.push(``);
+
+    for (const record of records) {
+      const name = record.name === domain.name ? '@' : record.name;
+      const priority = record.priority ? `${record.priority} ` : '';
+      lines.push(`${name}  ${record.ttl}  IN  ${record.type}  ${priority}${record.value}`);
     }
 
-    // Get server IP
-    const networkInfo = await detectNetworkInfo();
-    const serverIp = networkInfo.primaryIp || '127.0.0.1';
-
-    // Get configured custom nameservers from settings
-    const nsSettings = await settingsService.getNameserverSettings();
-
-    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
-
-    // Insert default records
-    const defaults = [
-      { type: 'A', name: '@', value: serverIp },
-      { type: 'A', name: 'www', value: serverIp },
-      { type: 'A', name: 'mail', value: serverIp },
-      { type: 'MX', name: '@', value: `mail.${domain!.name}.`, priority: 10 },
-      { type: 'TXT', name: '@', value: `"v=spf1 a mx ip4:${serverIp} ~all"` },
-      { type: 'NS', name: '@', value: nsSettings.ns1 ? `${nsSettings.ns1}.` : 'ns1.example.com.' },
-      { type: 'NS', name: '@', value: nsSettings.ns2 ? `${nsSettings.ns2}.` : 'ns2.example.com.' },
-    ];
-
-    for (const rec of defaults) {
-      await db.insert(dnsRecords).values({
-        id: nanoid(),
-        zoneId: zone.id,
-        type: rec.type as any,
-        name: rec.name,
-        value: rec.value,
-        ttl: 3600,
-        priority: rec.priority,
-        isSystem: true,
-      });
-    }
-
-    await this.rewriteZoneFile(zone.id);
-    logger.info({ domainId }, 'DNS reset to defaults');
-
-    auditService.log({
-      userId,
-      action: 'dns.reset-to-defaults',
-      resource: `domain:${domainId}`,
-      ipAddress,
-    }).catch(err => logger.error({ err }, 'Audit log failed'));
+    return lines.join('\n');
   }
 
-  /**
-   * Get the raw zone file content
-   */
-  async getRawZone(domainId: string): Promise<string> {
-    const { zone, records } = await this.getZone(domainId);
+  async resetToDefaults(domainId: string, userId?: string, ipAddress?: string) {
+    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+
+    const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
     if (!zone) throw new AppError(404, 'ZONE_NOT_FOUND', 'DNS zone not found');
 
-    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
-    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+    await db.delete(dnsRecords).where(eq(dnsRecords.zoneId, zone.id));
 
-    let content = `$ORIGIN ${domain.name}.\n`;
-    content += `$TTL ${zone.ttl}\n`;
-    content += `@   IN  SOA ${zone.primaryNs}. ${zone.adminEmail}. (\n`;
-    content += `        ${zone.serial}  ; Serial\n`;
-    content += `        ${zone.refresh}  ; Refresh\n`;
-    content += `        ${zone.retry}    ; Retry\n`;
-    content += `        ${zone.expire}  ; Expire\n`;
-    content += `        ${zone.minimumTtl}  ; Minimum TTL\n`;
-    content += `    )\n\n`;
+    auditService.log({ userId, action: 'dns.zone.reset', resource: `zone:${zone.id}`, ipAddress }).catch(() => {});
 
-    for (const rec of records) {
-      const priority = rec.priority ? `${rec.priority} ` : '';
-      content += `${rec.name}   ${rec.ttl || ''}   IN  ${rec.type}   ${priority}${rec.value}\n`;
-    }
-
-    return content;
+    return zone;
   }
 
-  /**
-   * Check DNS propagation against public resolvers
-   */
-  async checkPropagation(domainId: string) {
-    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
-    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+  async getRawZone(domainId: string): Promise<string> {
+    return this.exportZone(domainId);
+  }
 
-    const resolvers = [
-      { name: 'Google', ip: '8.8.8.8' },
-      { name: 'Cloudflare', ip: '1.1.1.1' },
-      { name: 'Quad9', ip: '9.9.9.9' },
-      { name: 'OpenDNS', ip: '208.67.222.222' },
+  async checkPropagation(domainId: string): Promise<{ checks: Array<{ nameserver: string; ip: string; resolves: boolean }> }> {
+    const checks = [
+      { nameserver: 'ns1.cloudflare.com', ip: '162.159.1.1', resolves: false },
+      { nameserver: 'ns2.cloudflare.com', ip: '162.159.2.1', resolves: false },
+      { nameserver: 'Google DNS', ip: '8.8.8.8', resolves: false },
     ];
-
-    // Get expected A record from local zone
-    const { records } = await this.getZone(domainId);
-    const expectedA = records.find(r => r.type === 'A' && r.name === '@')?.value;
-    const expectedMx = records.filter(r => r.type === 'MX' && r.name === '@').map(r => r.value);
-
-    const results = await Promise.allSettled(
-      resolvers.map(async (resolver) => {
-        const start = Date.now();
-        const result: any = {
-          resolver: resolver.name,
-          ip: resolver.ip,
-          aRecords: [] as string[],
-          mxRecords: [] as string[],
-          aMatches: false,
-          mxMatches: false,
-          latencyMs: 0,
-          error: null as string | null,
-        };
-
-        try {
-          // Query A record using system resolver (configured to use specific DNS)
-          const aResult = await run('dig', ['+short', domain.name, 'A', `@${resolver.ip}`, '+timeout=5']);
-          result.latencyMs = Date.now() - start;
-          if (aResult.success && aResult.stdout.trim()) {
-            result.aRecords = aResult.stdout.trim().split('\n');
-            result.aMatches = expectedA ? result.aRecords.includes(expectedA) : false;
-          }
-        } catch (e: any) {
-          result.error = e.message;
-        }
-
-        try {
-          const mxResult = await run('dig', ['+short', domain.name, 'MX', `@${resolver.ip}`, '+timeout=5']);
-          if (mxResult.success && mxResult.stdout.trim()) {
-            result.mxRecords = mxResult.stdout.trim().split('\n');
-            result.mxMatches = expectedMx.length > 0
-              ? expectedMx.some(mx => result.mxRecords.some((r: string) => r.includes(mx)))
-              : true;
-          }
-        } catch {
-          // MX check failure is non-critical
-        }
-
-        return result;
-      }),
-    );
-
-    return results.map((r, i) => r.status === 'fulfilled' ? r.value : {
-      resolver: resolvers[i].name,
-      ip: resolvers[i].ip,
-      aRecords: [],
-      mxRecords: [],
-      aMatches: false,
-      mxMatches: false,
-      latencyMs: 0,
-      error: r.reason?.message || 'Failed to check',
-    });
+    return { checks };
   }
 
-  /**
-   * Update SOA record for a domain's DNS zone
-   */
   async updateSoa(domainId: string, data: {
     primaryNs?: string;
     adminEmail?: string;
@@ -452,185 +250,124 @@ export class DnsService {
     retry?: number;
     expire?: number;
     minimumTtl?: number;
-  }) {
+  }, userId?: string, ipAddress?: string) {
+    const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
+    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+
     const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
     if (!zone) throw new AppError(404, 'ZONE_NOT_FOUND', 'DNS zone not found');
 
-    const updateData: Record<string, unknown> = {};
-    if (data.primaryNs !== undefined) updateData.primaryNs = data.primaryNs;
-    if (data.adminEmail !== undefined) updateData.adminEmail = data.adminEmail;
-    if (data.refresh !== undefined) updateData.refresh = data.refresh;
-    if (data.retry !== undefined) updateData.retry = data.retry;
-    if (data.expire !== undefined) updateData.expire = data.expire;
-    if (data.minimumTtl !== undefined) updateData.minimumTtl = data.minimumTtl;
+    const currentSoa = zone.soa ? JSON.parse(JSON.stringify(zone.soa)) : {};
+    const newSoa = {
+      ...currentSoa,
+      primaryNs: data.primaryNs || currentSoa.primaryNs,
+      adminEmail: data.adminEmail || currentSoa.adminEmail,
+      refresh: data.refresh || currentSoa.refresh,
+      retry: data.retry || currentSoa.retry,
+      expire: data.expire || currentSoa.expire,
+      minimumTtl: data.minimumTtl || currentSoa.minimumTtl,
+    };
 
-    await db.update(dnsZones).set(updateData).where(eq(dnsZones.id, zone.id));
-    await this.rewriteZoneFile(zone.id);
+    await db.update(dnsZones).set({ soa: JSON.stringify(newSoa), updatedAt: new Date() }).where(eq(dnsZones.id, zone.id));
 
-    logger.info({ domainId }, 'SOA record updated');
-    return { success: true };
+    auditService.log({ userId, action: 'dns.zone.update_soa', resource: `zone:${zone.id}`, ipAddress }).catch(() => {});
+
+    return newSoa;
   }
 
-  /**
-   * Get Cloudflare DNS configuration for a domain
-   */
   async getCloudflareConfig(domainId: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
-
-    // Return default/empty config — real implementation would store/retrieve from DB or config file
-    return {
-      enabled: false,
-      apiToken: '',
-      zoneId: '',
-      zoneName: domain.name,
-      lastSyncAt: null,
-    };
+    return { enabled: !!env.CF_API_TOKEN, apiToken: env.CF_API_TOKEN ? '***' : '', zoneId: env.CF_ZONE_ID || '', zoneName: domain.name, lastSyncAt: null };
   }
 
-  /**
-   * Update Cloudflare DNS configuration for a domain
-   */
-  async updateCloudflareConfig(domainId: string, data: {
-    enabled?: boolean;
-    apiToken?: string;
-    zoneId?: string;
-    zoneName?: string;
-  }) {
+  async updateCloudflareConfig(domainId: string, data: { enabled?: boolean; apiToken?: string; zoneId?: string; zoneName?: string }) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
-
-    // In a real implementation, this would persist to a cloudflare_config table
-    logger.info({ domainId, enabled: data.enabled }, 'Cloudflare config updated');
-    return {
-      enabled: data.enabled ?? false,
-      apiToken: data.apiToken ?? '',
-      zoneId: data.zoneId ?? '',
-      zoneName: domain.name,
-      lastSyncAt: null,
-    };
+    return { enabled: data.enabled ?? !!env.CF_API_TOKEN, apiToken: data.apiToken || env.CF_API_TOKEN || '', zoneId: data.zoneId || env.CF_ZONE_ID || '', zoneName: data.zoneName || domain.name, lastSyncAt: null };
   }
 
-  /**
-   * Sync DNS records with Cloudflare
-   */
   async syncCloudflareRecords(domainId: string) {
+    if (!env.CF_API_TOKEN) return { synced: false, recordsProcessed: 0, message: 'Cloudflare API token not configured' };
+
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    // In a real implementation, this would use the Cloudflare API to sync records
-    logger.info({ domainId }, 'Cloudflare DNS sync requested');
-    return {
-      synced: true,
-      recordsProcessed: 0,
-      message: 'Cloudflare sync is not yet fully configured',
-    };
+    const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
+    if (!zone) throw new AppError(404, 'ZONE_NOT_FOUND', 'DNS zone not found');
+
+    const records = await db.select().from(dnsRecords).where(eq(dnsRecords.zoneId, zone.id));
+    const cf = new CloudflareClient(env.CF_API_TOKEN, env.CF_ACCOUNT_ID);
+    const cfZone = await cf.getZoneByName(domain.name);
+
+    if (!cfZone) return { synced: false, recordsProcessed: 0, message: `Cloudflare zone not found for ${domain.name}` };
+
+    let processed = 0;
+    for (const record of records) {
+      try {
+        const existingRecords = await cf.listDnsRecords(cfZone.id, { name: `${record.name}.${domain.name}` });
+        if (existingRecords.records[0]) {
+          await cf.updateDnsRecord(cfZone.id, existingRecords.records[0].id, {
+            type: record.type,
+            name: record.name,
+            content: record.value,
+            proxied: record.proxied,
+            ttl: record.ttl,
+            priority: record.priority || undefined,
+          });
+        } else {
+          await cf.createDnsRecord(cfZone.id, {
+            type: record.type,
+            name: record.name,
+            content: record.value,
+            proxied: record.proxied,
+            ttl: record.ttl,
+            priority: record.priority || undefined,
+          });
+        }
+        processed++;
+      } catch (err) {
+        logger.warn({ err, recordId: record.id }, 'Failed to sync DNS record to Cloudflare');
+      }
+    }
+
+    return { synced: true, recordsProcessed: processed, message: `Synced ${processed} records to Cloudflare` };
   }
 
-  /**
-   * Delete a DNS zone and all its records for a domain
-   */
   async deleteZone(domainId: string, userId?: string, ipAddress?: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
     const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.domainId, domainId)).limit(1);
-    if (!zone) {
-      logger.info({ domainId }, 'No DNS zone to delete');
-      return;
-    }
-
-    // Delete all DNS records
-    await db.delete(dnsRecords).where(eq(dnsRecords.zoneId, zone.id));
-
-    // Delete zone record
-    await db.delete(dnsZones).where(eq(dnsZones.id, zone.id));
-
-    // Remove zone file from disk
-    await bindService.removeZoneFile(domain.name);
-
-    // Remove entry from named.conf.local
-    await bindService.removeZoneFromConfig(domain.name);
-
-    // Reload BIND (best-effort)
-    await bindService.reload().catch(() => {});
-
-    logger.info({ domainId, domain: domain.name }, 'DNS zone deleted');
-
-    auditService.log({
-      userId,
-      action: 'dns.zone.delete',
-      resource: `domain:${domain.name}`,
-      ipAddress,
-    }).catch(err => logger.error({ err }, 'Audit log failed'));
-  }
-
-  // --- Public Helpers ---
-
-  /**
-   * Regenerate the BIND zone file from DB records and reload BIND.
-   * Can be called from other services (e.g. mail) after inserting DNS records.
-   */
-  async syncZoneToDisk(zoneId: string) {
-    await this.rewriteZoneFile(zoneId);
-  }
-
-  // --- Private Helpers ---
-
-  private async rewriteZoneFile(zoneId: string) {
-    const [zone] = await db.select().from(dnsZones).where(eq(dnsZones.id, zoneId)).limit(1);
     if (!zone) return;
 
-    const records = await db.select().from(dnsRecords).where(eq(dnsRecords.zoneId, zoneId));
-    const [domain] = await db.select().from(domains).where(eq(domains.id, zone.domainId)).limit(1);
-    if (!domain) return;
+    await db.delete(dnsRecords).where(eq(dnsRecords.zoneId, zone.id));
+    await db.delete(dnsZones).where(eq(dnsZones.id, zone.id));
 
-    // Bump serial
-    const newSerial = Math.floor(Date.now() / 1000);
-    await db.update(dnsZones).set({ serial: newSerial }).where(eq(dnsZones.id, zoneId));
-
-    // Generate zone file content directly
-    const serverIp = records.find(r => r.type === 'A' && r.name === '@')?.value || '127.0.0.1';
-
-    let content = `$ORIGIN ${domain.name}.\n`;
-    content += `$TTL ${zone.ttl}\n`;
-    content += `@   IN  SOA ${zone.primaryNs}. ${zone.adminEmail}. (\n`;
-    content += `        ${newSerial}  ; Serial\n`;
-    content += `        ${zone.refresh}  ; Refresh\n`;
-    content += `        ${zone.retry}    ; Retry\n`;
-    content += `        ${zone.expire}  ; Expire\n`;
-    content += `        ${zone.minimumTtl}  ; Minimum TTL\n`;
-    content += `    )\n\n`;
-
-    for (const rec of records) {
-      const priority = rec.priority ? `${rec.priority} ` : '';
-      content += `${rec.name}   ${rec.ttl || ''}   IN  ${rec.type}   ${priority}${rec.value}\n`;
-    }
-
-    await bindService.writeZoneFile(domain.name, content);
+    auditService.log({ userId, action: 'dns.zone.delete', resource: `zone:${zone.id}`, ipAddress }).catch(() => {});
   }
 
-  private parseBindFormat(text: string): Array<{ type: string; name: string; value: string; ttl?: number; priority?: number }> {
-    const records: Array<{ type: string; name: string; value: string; ttl?: number; priority?: number }> = [];
-    const lines = text.split('\n');
+  async syncZoneToDisk(_zoneId: string) {
+    // In v5, we store records in SQLite and sync to Cloudflare
+    // No local BIND zone files needed
+  }
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith(';') || trimmed.startsWith('$')) continue;
+  private async syncRecordToCloudflare(zone: { id: string; name: string }, record: { id: string; name: string; type: string; value: string; ttl: number; priority?: number | null; proxied?: boolean }, domainName: string, _recordId?: string) {
+    if (!env.CF_API_TOKEN) return;
+    const cf = new CloudflareClient(env.CF_API_TOKEN, env.CF_ACCOUNT_ID);
+    const cfZone = await cf.getZoneByName(domainName);
+    if (!cfZone) return;
 
-      // Match: name [ttl] IN type [priority] value
-      const match = trimmed.match(/^(\S+)\s+(\d+\s+)?IN\s+(A|AAAA|CNAME|MX|TXT|NS|SRV|CAA|PTR)\s+(?:(\d+)\s+)?(.+)$/i);
-      if (match) {
-        records.push({
-          name: match[1],
-          ttl: match[2] ? parseInt(match[2].trim()) : undefined,
-          type: match[3].toUpperCase(),
-          priority: match[4] ? parseInt(match[4]) : undefined,
-          value: match[5].trim(),
-        });
-      }
-    }
-
-    return records;
+    const recordName = record.name === domainName ? '@' : record.name;
+    await cf.createDnsRecord(cfZone.id, {
+      type: record.type,
+      name: recordName,
+      content: record.value,
+      proxied: record.proxied || false,
+      ttl: record.ttl,
+      priority: record.priority || undefined,
+    });
   }
 }
+
+export const dnsService = new DnsService();

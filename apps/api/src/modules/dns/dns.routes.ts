@@ -74,44 +74,28 @@ export default async function dnsRoutes(fastify: FastifyInstance) {
   fastify.put('/domains/:id/dns/soa', async (req) => {
     const { id } = req.params as { id: string };
     const data = req.body as any;
-    try {
-      return { success: true, data: await service.updateSoa(id, data) };
-    } catch (error: any) {
-      return { success: false, error: error.message };
-    }
+    return { success: true, data: await service.updateSoa(id, data, req.user.id, req.ip) };
   });
 
   // GET /domains/:id/dns/cloudflare — Get Cloudflare DNS config
   fastify.get('/domains/:id/dns/cloudflare', async (req) => {
     const { id } = req.params as { id: string };
-    try {
-      const config = await service.getCloudflareConfig(id);
-      return { success: true, data: config };
-    } catch (error: any) {
-      return { success: true, data: { enabled: false, apiToken: '', zoneId: '', zoneName: '', lastSyncAt: null } };
-    }
+    const config = await service.getCloudflareConfig(id);
+    return { success: true, data: config };
   });
 
   // PUT /domains/:id/dns/cloudflare — Update Cloudflare DNS config
   fastify.put('/domains/:id/dns/cloudflare', async (req) => {
     const { id } = req.params as { id: string };
     const data = req.body as any;
-    try {
-      const config = await service.updateCloudflareConfig(id, data);
-      return { success: true, data: config };
-    } catch (error: any) {
-      return { success: false, error: error.message };
-    }
+    const config = await service.updateCloudflareConfig(id, data);
+    return { success: true, data: config };
   });
 
   // POST /domains/:id/dns/cloudflare/sync — Sync DNS records with Cloudflare
   fastify.post('/domains/:id/dns/cloudflare/sync', async (req) => {
     const { id } = req.params as { id: string };
-    try {
-      const result = await service.syncCloudflareRecords(id);
-      return { success: true, data: result };
-    } catch (error: any) {
-      return { success: false, error: error.message };
-    }
+    const result = await service.syncCloudflareRecords(id);
+    return { success: true, data: result };
   });
 }

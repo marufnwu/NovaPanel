@@ -1,51 +1,65 @@
 import { db } from '../../db/index.js';
 import { auditLogs } from '../../db/schema/audit.js';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 
+interface AuditLogInput {
+  orgId?: string;
+  projectId?: string;
+  actorType?: 'user' | 'api_key' | 'system';
+  actorId?: string;
+  action: string;
+  resourceType?: string;
+  resourceId?: string;
+  metadata?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  userId?: string;
+  resource?: string;
+  details?: string;
+}
+
 export class AuditService {
-  /**
-   * Log an audit event
-   */
-  async log(data: {
-    userId?: string;
-    action: string;
-    resource?: string;
-    details?: string;
-    ipAddress?: string;
-    userAgent?: string;
-  }) {
+  async log(data: AuditLogInput) {
     await db.insert(auditLogs).values({
       id: nanoid(),
-      userId: data.userId || null,
+      orgId: data.orgId || data.actorId || '',
+      projectId: data.projectId || null,
+      actorType: data.actorType || 'user',
+      actorId: data.actorId || data.userId || '',
       action: data.action,
-      resource: data.resource || null,
-      details: data.details || null,
+      resourceType: data.resourceType || data.resource || '',
+      resourceId: data.resourceId || null,
+      metadata: data.metadata || data.details || null,
       ipAddress: data.ipAddress || null,
       userAgent: data.userAgent || null,
     });
   }
 
-  /**
-   * List audit logs with optional filtering
-   */
   async list(filters: {
-    userId?: string;
+    orgId?: string;
+    projectId?: string;
+    actorType?: string;
+    action?: string;
+    resourceType?: string;
     limit?: number;
     offset?: number;
   }) {
     const limit = filters.limit || 50;
     const offset = filters.offset || 0;
 
-    if (filters.userId) {
-      return db.select().from(auditLogs)
-        .where(eq(auditLogs.userId, filters.userId))
-        .orderBy(desc(auditLogs.createdAt))
-        .limit(limit)
-        .offset(offset);
+    const conditions = [];
+    if (filters.orgId) {
+      conditions.push(eq(auditLogs.orgId, filters.orgId));
+    }
+    if (filters.projectId) {
+      conditions.push(eq(auditLogs.projectId, filters.projectId));
     }
 
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
     return db.select().from(auditLogs)
+      .where(whereClause)
       .orderBy(desc(auditLogs.createdAt))
       .limit(limit)
       .offset(offset);

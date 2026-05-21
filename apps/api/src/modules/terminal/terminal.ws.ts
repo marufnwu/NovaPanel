@@ -135,7 +135,7 @@ async function validateTerminalAuth(req: any): Promise<any | null> {
   // 3. Try query param token (API token)
   const token = (req.query as any)?.token as string;
   if (token) {
-    const user = await authService.validateApiToken(token);
+    const user = await authService.validateApiKey(token);
     if (user && user.isActive) {
       return user;
     }

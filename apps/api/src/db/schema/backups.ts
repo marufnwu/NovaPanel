@@ -1,39 +1,39 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { domains } from './domains.js';
-import { sites } from './sites.js';
 
 export const backups = sqliteTable('backups', {
   id: text('id').primaryKey(),
-  websiteId: text('website_id').references(() => sites.id, { onDelete: 'set null' }),
-  filename: text('filename').notNull(),
-  sizeBytes: integer('size_bytes').notNull().default(0),
-  type: text('type', { enum: ['full', 'files', 'database', 'dns', 'mail', 'config'] }).notNull().default('full'),
-  storageType: text('storage_type', { enum: ['local', 's3', 'sftp', 'b2'] }).notNull().default('local'),
+  projectId: text('project_id'),
+  resourceType: text('resource_type', { enum: ['site', 'database', 'container', 'config'] }).notNull(),
+  resourceId: text('resource_id'),
+  type: text('type', { enum: ['full', 'incremental', 'snapshot'] }).default('full').notNull(),
+  status: text('status', { enum: ['pending', 'running', 'success', 'failed'] }).default('pending').notNull(),
+  size: integer('size'),
+  path: text('path'),
+  storageBackend: text('storage_backend', { enum: ['local', 's3', 'b2', 'wasabi'] }).default('local').notNull(),
   storagePath: text('storage_path'),
-  checksum: text('checksum'),
-  encrypted: integer('encrypted', { mode: 'boolean' }).default(false).notNull(),
-  encryptionAlgorithm: text('encryption_algorithm', { enum: ['aes-256-cbc', 'aes-256-gcm'] }).default('aes-256-cbc'),
-  status: text('status', { enum: ['pending', 'running', 'completed', 'failed', 'restoring'] }).notNull().default('pending'),
-  error: text('error'),
-  startedAt: integer('started_at', { mode: 'timestamp' }),
-  completedAt: integer('completed_at', { mode: 'timestamp' }),
+  retentionDays: integer('retention_days').default(30).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  completedAt: integer('completed_at', { mode: 'timestamp' }),
 });
 
 export const backupSchedules = sqliteTable('backup_schedules', {
   id: text('id').primaryKey(),
-  domainId: text('domain_id').references(() => domains.id, { onDelete: 'cascade' }),
-  cronExpression: text('cron_expression').notNull().default('0 2 * * *'), // 2 AM daily
-  scope: text('scope').default('full').notNull(),       // full, files, database, dns, mail, config
-  retentionCount: integer('retention_count').default(7).notNull(),
-  storageType: text('storage_type', { enum: ['local', 's3', 'sftp', 'b2'] }).default('local').notNull(),
-  storageConfig: text('storage_config'), // JSON: { endpoint, bucket, accessKey, secretKey, path }
-  isActive: integer('is_active', { mode: 'boolean' }).default(true).notNull(),
+  projectId: text('project_id'),
+  name: text('name').notNull(),
+  resourceType: text('resource_type').notNull(),
+  resourceId: text('resource_id'),
+  cronExpression: text('cron_expression').notNull(),
+  retentionDays: integer('retention_days').default(30).notNull(),
+  storageBackend: text('storage_backend').default('local').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).default(true).notNull(),
   lastRunAt: integer('last_run_at', { mode: 'timestamp' }),
   nextRunAt: integer('next_run_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }),
 });
 
 export type Backup = typeof backups.$inferSelect;
+export type NewBackup = typeof backups.$inferInsert;
 export type BackupSchedule = typeof backupSchedules.$inferSelect;
+export type NewBackupSchedule = typeof backupSchedules.$inferInsert;

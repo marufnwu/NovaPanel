@@ -10,7 +10,6 @@ import { requireAuth } from '../auth/auth.middleware.js';
 import { db } from '../../db/index.js';
 import { domains } from '../../db/schema/domains.js';
 import { sites } from '../../db/schema/sites.js';
-import { eq } from 'drizzle-orm';
 import { run } from '../../services/executor.js';
 import { AppError } from '../../errors.js';
 
@@ -34,45 +33,12 @@ const DANGEROUS_EXTENSIONS = [
  * 3. Otherwise → return DEFAULT_HOME_DIR
  */
 async function resolveHomeDir(domainId?: string, websiteId?: string): Promise<string> {
-  // Site-scoped: use the site's homeDir directly
   if (websiteId) {
-    try {
-      const [site] = await db.select().from(sites).where(eq(sites.id, websiteId)).limit(1);
-      if (site) {
-        return site.homeDir.replace(/\/+$/, '');
-      }
-    } catch {
-      // Fall through to default
-    }
     return `/var/www/sites/${websiteId}`;
   }
-
-  // Domain-scoped (legacy): resolve from domain's documentRoot
   if (domainId) {
-    try {
-      const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
-      if (domain) {
-        const docRoot = domain.documentRoot;
-        // For parked/redirect/mail-only domains, documentRoot may be null - use homeDir as fallback
-        if (!docRoot) {
-          return `/var/www/vhosts/${domainId}`;
-        }
-        // Strip trailing slash and take parent if it ends with /httpdocs or similar
-        const trimmed = docRoot.replace(/\/+$/, '');
-        const lastSegment = trimmed.split('/').pop();
-        if (lastSegment && ['httpdocs', 'public_html', 'htdocs', 'web'].includes(lastSegment)) {
-          return trimmed.substring(0, trimmed.lastIndexOf('/'));
-        }
-        return trimmed;
-      }
-    } catch {
-      // Fall through to default
-    }
-
-    // Fallback: use domainId as-is (legacy behavior)
     return `/var/www/vhosts/${domainId}`;
   }
-
   return DEFAULT_HOME_DIR;
 }
 

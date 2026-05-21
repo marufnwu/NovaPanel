@@ -1,0 +1,129 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../client';
+
+export interface Container {
+  id: string;
+  projectId: string;
+  name: string;
+  type: 'compose' | 'dockerfile' | 'image';
+  status: 'running' | 'stopped' | 'restarting' | 'exited';
+  image?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface CreateContainerPayload {
+  projectId: string;
+  name: string;
+  type: 'compose' | 'dockerfile' | 'image';
+  composeFile?: string;
+  dockerfile?: string;
+  image?: string;
+  env?: Record<string, string>;
+  secrets?: string[];
+  networkMode?: string;
+  exposedPorts?: number[];
+  cpuLimit?: number;
+  memoryLimit?: number;
+  replicas?: number;
+}
+
+export interface UpdateContainerPayload {
+  name?: string;
+  composeFile?: string;
+  dockerfile?: string;
+  image?: string;
+  env?: Record<string, string>;
+  secrets?: string[];
+  networkMode?: string;
+  exposedPorts?: number[];
+  cpuLimit?: number;
+  memoryLimit?: number;
+  replicas?: number;
+}
+
+export function useContainers(projectId: string) {
+  return useQuery({
+    queryKey: ['containers', projectId],
+    queryFn: () => api.get<Container[]>(`/containers?projectId=${projectId}`),
+    enabled: !!projectId,
+  });
+}
+
+export function useContainer(id: string) {
+  return useQuery({
+    queryKey: ['containers', id],
+    queryFn: () => api.get<Container>(`/containers/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useCreateContainer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateContainerPayload) => api.post<Container>('/containers', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['containers'] });
+    },
+  });
+}
+
+export function useUpdateContainer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & UpdateContainerPayload) =>
+      api.put<Container>(`/containers/${id}`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['containers'] });
+    },
+  });
+}
+
+export function useDeleteContainer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/containers/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['containers'] });
+    },
+  });
+}
+
+export function useStartContainer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post(`/containers/${id}/start`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['containers'] });
+    },
+  });
+}
+
+export function useStopContainer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post(`/containers/${id}/stop`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['containers'] });
+    },
+  });
+}
+
+export function useRestartContainer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post(`/containers/${id}/restart`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['containers'] });
+    },
+  });
+}
+
+export function useContainerLogs(id: string) {
+  return useQuery({
+    queryKey: ['containers', id, 'logs'],
+    queryFn: () => api.get<{ logs: string }>(`/containers/${id}/logs`),
+    enabled: !!id,
+    refetchInterval: 5000,
+  });
+}

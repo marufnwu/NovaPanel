@@ -30,12 +30,9 @@ import {
 import { toast } from '../../lib/toast';
 
 const DOMAIN_TYPES = [
-  { value: 'primary', label: 'Primary' },
-  { value: 'addon', label: 'Addon' },
-  { value: 'parked', label: 'Parked' },
+  { value: 'apex', label: 'Apex' },
   { value: 'subdomain', label: 'Subdomain' },
-  { value: 'redirect', label: 'Redirect' },
-  { value: 'mail-only', label: 'Mail Only' },
+  { value: 'wildcard', label: 'Wildcard' },
 ];
 
 function StatusBadge({ status }: { status: Domain['status'] }) {
@@ -51,7 +48,7 @@ function CreateDomainModal({ open, onClose }: { open: boolean; onClose: () => vo
   const createDomain = useCreateDomain();
   const { data: sites } = useSites();
   const verifyDns = useVerifyDomainDns();
-  const [form, setForm] = useState<CreateDomainInput & { key: number }>({ name: '', type: 'primary', key: 0 });
+  const [form, setForm] = useState<CreateDomainInput & { key: number }>({ name: '', type: 'apex', skipDnsVerification: false, key: 0 });
   const [dnsStatus, setDnsStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -60,7 +57,7 @@ function CreateDomainModal({ open, onClose }: { open: boolean; onClose: () => vo
     createDomain.mutate(
       { ...form, skipDnsVerification: true },
       {
-        onSuccess: () => { toast.success(`Domain "${form.name}" created`); onClose(); setForm({ name: '', type: 'primary', key: form.key + 1 }); setDnsStatus(null); },
+        onSuccess: () => { toast.success(`Domain "${form.name}" created`); onClose(); setForm({ name: '', type: 'apex', skipDnsVerification: false, key: form.key + 1 }); setDnsStatus(null); },
         onError: (err: any) => toast.error(err?.message || 'Failed to create domain'),
       }
     );
@@ -103,12 +100,7 @@ function CreateDomainModal({ open, onClose }: { open: boolean; onClose: () => vo
               </Select>
             </div>
           </div>
-          {form.type === 'redirect' && (
-            <div>
-              <Label>Redirect Target URL</Label>
-              <Input value={form.redirectTarget || ''} onChange={(e) => setForm({ ...form, redirectTarget: e.target.value })} placeholder="https://other.com" className="mt-1" />
-            </div>
-          )}
+          
           <div className="flex items-center gap-2">
             <Button type="button" variant="outline" size="sm" onClick={checkDns} disabled={!form.name || verifyDns.isPending}>
               {verifyDns.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Search className="mr-1 h-3 w-3" />}
@@ -162,9 +154,9 @@ export function DomainsPage() {
     ), enableSorting: false },
     { accessorKey: 'name', header: 'Domain', cell: ({ row }) => (
       <div className="flex items-center gap-2">
-        {row.original.sslEnabled && <Shield className="h-3.5 w-3.5 text-green-500" />}
+        {row.original.sslStatus === 'active' && <Shield className="h-3.5 w-3.5 text-green-500" />}
         <span className="font-medium">{row.original.name}</span>
-        {row.original.type !== 'primary' && <TypeBadge type={row.original.type} />}
+        {row.original.type !== 'apex' && <TypeBadge type={row.original.type} />}
       </div>
     )},
     { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusBadge status={row.original.status} /> },
@@ -178,7 +170,7 @@ export function DomainsPage() {
         ) : (
           <Button variant="ghost" size="icon" onClick={() => activateDomain.mutate(row.original.id, { onSuccess: () => toast.success('Activated'), onError: () => toast.error('Failed') })}><CheckCircle className="h-3.5 w-3.5 text-green-500" /></Button>
         )}
-        {row.original.type !== 'primary' && (
+        {row.original.type !== 'apex' && (
           <Button variant="ghost" size="icon" onClick={() => makePrimary.mutate(row.original.id, { onSuccess: () => toast.success('Promoted to primary'), onError: () => toast.error('Failed') })}><ArrowUpDown className="h-3.5 w-3.5" /></Button>
         )}
         <Button variant="ghost" size="icon" onClick={() => setDeleteId(row.original.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>

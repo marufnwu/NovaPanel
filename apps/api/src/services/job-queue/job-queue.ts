@@ -3,14 +3,18 @@ import { backgroundJobs, type BackgroundJob, type NewBackgroundJob } from '../..
 import { eq, and } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { logger } from '../../config/logger.js';
-import { jobHandlers } from './job-handlers.js';
+import { jobHandlers, JOB_TYPES } from './index.js';
 
 const WORKER_INTERVAL_MS = 5000; // Poll every 5 seconds
 const MAX_CONCURRENT_JOBS = 3;
+const METRIC_INTERVAL_MS = 60000; // Collect metrics every 60 seconds
+const ALERT_INTERVAL_MS = 60000; // Evaluate alerts every 60 seconds
 
 class JobQueueService {
   private isRunning = false;
   private workerInterval: NodeJS.Timeout | null = null;
+  private metricInterval: NodeJS.Timeout | null = null;
+  private alertInterval: NodeJS.Timeout | null = null;
   private processingCount = 0;
 
   /**
@@ -32,10 +36,28 @@ class JobQueueService {
       });
     }, WORKER_INTERVAL_MS);
 
+    // Schedule recurring metrics collection
+    this.metricInterval = setInterval(() => {
+      this.enqueue(JOB_TYPES.METRIC_COLLECT, {}, { maxRetries: 1 }).catch(err => {
+        logger.error({ err }, 'Failed to enqueue metric collect');
+      });
+    }, METRIC_INTERVAL_MS);
+
+    // Schedule recurring alert evaluation
+    this.alertInterval = setInterval(() => {
+      this.enqueue(JOB_TYPES.ALERT_EVALUATE, {}, { maxRetries: 1 }).catch(err => {
+        logger.error({ err }, 'Failed to enqueue alert evaluate');
+      });
+    }, ALERT_INTERVAL_MS);
+
     // Process immediately on start
     this.processJobs().catch(err => {
       logger.error({ err }, 'Initial job processing error');
     });
+
+    // Enqueue initial metric and alert jobs
+    this.enqueue(JOB_TYPES.METRIC_COLLECT, {}, { maxRetries: 1 });
+    this.enqueue(JOB_TYPES.ALERT_EVALUATE, {}, { maxRetries: 1 });
   }
 
   /**
@@ -48,6 +70,14 @@ class JobQueueService {
     if (this.workerInterval) {
       clearInterval(this.workerInterval);
       this.workerInterval = null;
+    }
+    if (this.metricInterval) {
+      clearInterval(this.metricInterval);
+      this.metricInterval = null;
+    }
+    if (this.alertInterval) {
+      clearInterval(this.alertInterval);
+      this.alertInterval = null;
     }
     logger.info('Job queue worker stopped');
   }
@@ -63,20 +93,7 @@ class JobQueueService {
       maxRetries?: number;
     } = {}
   ): Promise<string> {
-    const { dedupeKey, maxRetries = 3 } = options;
-
-    // Check for duplicate job if dedupeKey provided
-    if (dedupeKey) {
-      const [existing] = await db.select()
-        .from(backgroundJobs)
-        .where(eq(backgroundJobs.dedupeKey, dedupeKey))
-        .limit(1);
-
-      if (existing && ['pending', 'processing'].includes(existing.status)) {
-        logger.debug({ dedupeKey, existingJob: existing.id }, 'Duplicate job skipped');
-        return existing.id;
-      }
-    }
+    const { maxRetries = 3 } = options;
 
     const jobId = nanoid();
     const newJob: NewBackgroundJob = {
@@ -84,14 +101,12 @@ class JobQueueService {
       type,
       payload,
       status: 'pending',
-      dedupeKey: dedupeKey || null,
-      maxRetries,
-      retryCount: 0,
-      progress: 0,
+      maxAttempts: maxRetries,
+      runAt: new Date(),
     };
 
     await db.insert(backgroundJobs).values(newJob);
-    logger.debug({ jobId, type, dedupeKey }, 'Job enqueued');
+    logger.debug({ jobId, type }, 'Job enqueued');
 
     return jobId;
   }
@@ -131,10 +146,10 @@ class JobQueueService {
     this.processingCount++;
 
     try {
-      // Mark as processing
+      // Mark as running
       await db.update(backgroundJobs)
-        .set({ 
-          status: 'processing',
+        .set({
+          status: 'running',
           startedAt: new Date(),
         })
         .where(eq(backgroundJobs.id, job.id));
@@ -145,7 +160,7 @@ class JobQueueService {
       const result = await handler(job.payload as Record<string, unknown>);
 
       if (result.success) {
-        await this.completeJob(job.id, 'completed', result);
+        await this.completeJob(job.id, 'success', result);
       } else {
         await this.handleJobFailure(job, result.error || 'Job failed');
       }
@@ -161,22 +176,22 @@ class JobQueueService {
    * Handle job failure with retry logic
    */
   private async handleJobFailure(job: BackgroundJob, error: string): Promise<void> {
-    const newRetryCount = job.retryCount + 1;
+    const newAttempts = job.attempts + 1;
 
-    if (newRetryCount < job.maxRetries) {
+    if (newAttempts < job.maxAttempts) {
       // Retry job
-      logger.warn({ jobId: job.id, retryCount: newRetryCount, maxRetries: job.maxRetries, error }, 'Job failed, will retry');
-      
+      logger.warn({ jobId: job.id, attempts: newAttempts, maxAttempts: job.maxAttempts, error }, 'Job failed, will retry');
+
       await db.update(backgroundJobs)
         .set({
           status: 'pending',
-          retryCount: newRetryCount,
+          attempts: newAttempts,
           result: { error },
         })
         .where(eq(backgroundJobs.id, job.id));
     } else {
       // Max retries exceeded
-      logger.error({ jobId: job.id, retryCount: newRetryCount, error }, 'Job failed permanently');
+      logger.error({ jobId: job.id, attempts: newAttempts, error }, 'Job failed permanently');
       await this.completeJob(job.id, 'failed', { error });
     }
   }
@@ -184,11 +199,11 @@ class JobQueueService {
   /**
    * Mark job as completed
    */
-  private async completeJob(jobId: string, status: 'completed' | 'failed', result: unknown): Promise<void> {
+  private async completeJob(jobId: string, status: 'success' | 'failed', result: unknown): Promise<void> {
     await db.update(backgroundJobs)
       .set({
         status,
-        result: status === 'completed' ? result : { error: (result as { error?: string }).error },
+        result: status === 'success' ? result : { error: (result as { error?: string }).error },
         completedAt: new Date(),
       })
       .where(eq(backgroundJobs.id, jobId));
@@ -221,7 +236,7 @@ class JobQueueService {
     }
 
     await db.update(backgroundJobs)
-      .set({ status: 'cancelled', completedAt: new Date() })
+      .set({ status: 'failed', completedAt: new Date() })
       .where(eq(backgroundJobs.id, jobId));
 
     return true;

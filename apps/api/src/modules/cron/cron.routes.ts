@@ -20,14 +20,12 @@ export default async function cronRoutes(fastify: FastifyInstance) {
 
   // POST /cron
   fastify.post('/cron', async (req, reply: FastifyReply) => {
-    const body = req.body as { command?: string; schedule?: string; systemUser?: string; domainId?: string; websiteId?: string };
-    const { command, schedule } = createCronJobSchema.parse(req.body);
+    const { command, schedule, siteId, name } = createCronJobSchema.parse(req.body);
     const job = await service.createJob({
       command,
       schedule,
-      systemUser: body.systemUser,
-      domainId: body.domainId,
-      websiteId: body.websiteId,
+      siteId,
+      name,
     }, req.user.id, req.ip);
     return reply.status(201).send({ success: true, data: job });
   });
@@ -35,8 +33,8 @@ export default async function cronRoutes(fastify: FastifyInstance) {
   // PUT /cron/:id
   fastify.put('/cron/:id', async (req) => {
     const { id } = req.params as { id: string };
-    const { schedule, command, systemUser } = req.body as { schedule?: string; command?: string; systemUser?: string };
-    return { success: true, data: await service.updateJob(id, { schedule, command, systemUser }, req.user.id, req.ip) };
+    const { schedule, command } = req.body as { schedule?: string; command?: string };
+    return { success: true, data: await service.updateJob(id, { schedule, command }, req.user.id, req.ip) };
   });
 
   // DELETE /cron/:id

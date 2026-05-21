@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authService } from './auth.service.js';
 import { requireAuth } from './auth.middleware.js';
+import { AppError } from '../../errors.js';
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -297,6 +298,22 @@ export default async function authRoutes(fastify: FastifyInstance) {
     },
   });
 
+  // --- Switch Organization ---
+  const switchOrgSchema = z.object({
+    orgId: z.string().min(1),
+  });
+
+  fastify.post('/switch-org', {
+    preHandler: [requireAuth],
+    handler: async (req) => {
+      const { orgId } = switchOrgSchema.parse(req.body);
+      const { organizationsService } = await import('../organizations/organizations.service.js');
+      const org = await organizationsService.get(orgId, req.user.id);
+      if (!org) throw new AppError(404, 'ORG_NOT_FOUND', 'Organization not found');
+      return { success: true, data: { orgId: org.id, name: org.name, slug: org.slug, role: (org as any).role } };
+    },
+  });
+
   // --- API Token ---
 
   // POST /api/v1/auth/token
@@ -304,7 +321,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
     preHandler: [requireAuth],
     handler: async (req) => {
       const { name, expiresAt } = generateApiTokenSchema.parse(req.body);
-      const result = await authService.generateApiToken(
+      const result = await authService.generateApiKey(
         req.user.id,
         name,
         expiresAt ? new Date(expiresAt) : undefined,

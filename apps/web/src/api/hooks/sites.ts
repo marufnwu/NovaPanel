@@ -1,32 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../client';
-import type { Site, SiteWithRuntime, RuntimeConfig, CreateSiteInput, SiteProcess } from '@serverforge/schemas/sites';
+import type { Site, CreateSiteInput, Deployment } from '@serverforge/schemas/sites';
 
-export type { Site, SiteWithRuntime, RuntimeConfig, CreateSiteInput, SiteProcess } from '@serverforge/schemas/sites';
-
-// Alias for backward compat
-export type SiteWithDetails = SiteWithRuntime;
+export type { Site, CreateSiteInput, Deployment } from '@serverforge/schemas/sites';
 
 export interface UpdateSiteInput {
   name?: string;
+  runtime?: string;
+  status?: string;
 }
 
-// --- Sites CRUD Hooks ---
-
-export function useSites(options?: { includeRuntime?: boolean }) {
+export function useSites() {
   return useQuery({
-    queryKey: ['sites', options],
-    queryFn: () => {
-      const params = options?.includeRuntime ? '?include=runtime' : '';
-      return api.get<Site[]>(`/sites${params}`);
-    },
+    queryKey: ['sites'],
+    queryFn: () => api.get<Site[]>('/sites'),
   });
 }
 
 export function useSite(id: string) {
   return useQuery({
     queryKey: ['sites', id],
-    queryFn: () => api.get<SiteWithRuntime>(`/sites/${id}`),
+    queryFn: () => api.get<Site>(`/sites/${id}`),
     enabled: !!id,
   });
 }
@@ -61,8 +55,6 @@ export function useDeleteSite() {
   });
 }
 
-// --- Status Actions ---
-
 export function useSuspendSite() {
   const qc = useQueryClient();
   return useMutation({
@@ -84,8 +76,6 @@ export function useActivateSite() {
     },
   });
 }
-
-// --- Domain Attachment ---
 
 export function useAttachDomainToSite() {
   const qc = useQueryClient();
@@ -116,37 +106,69 @@ export function useDetachDomainFromSite() {
 export const useAttachDomain = useAttachDomainToSite;
 export const useDetachDomain = useDetachDomainFromSite;
 
-// --- Process Management ---
+export function useSiteDeployments(siteId: string) {
+  return useQuery({
+    queryKey: ['sites', siteId, 'deployments'],
+    queryFn: () => api.get<Deployment[]>(`/sites/${siteId}/deployments`),
+    enabled: !!siteId,
+  });
+}
 
-export function useStartSiteProcess() {
+export function useSiteBuild() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.post(`/sites/${id}/process/start`),
-    onSuccess: (_data, id) => {
-      qc.invalidateQueries({ queryKey: ['sites'] });
-      qc.invalidateQueries({ queryKey: ['sites', id] });
+    mutationFn: (siteId: string) => api.post<{ deploymentId: string }>(`/sites/${siteId}/build`),
+    onSuccess: (_data, siteId) => {
+      qc.invalidateQueries({ queryKey: ['sites', siteId, 'deployments'] });
+      qc.invalidateQueries({ queryKey: ['sites', siteId] });
     },
   });
 }
 
-export function useStopSiteProcess() {
+export function useSiteDeploy() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.post(`/sites/${id}/process/stop`),
-    onSuccess: (_data, id) => {
-      qc.invalidateQueries({ queryKey: ['sites'] });
-      qc.invalidateQueries({ queryKey: ['sites', id] });
+    mutationFn: (siteId: string) => api.post<{ deploymentId: string }>(`/sites/${siteId}/deploy`),
+    onSuccess: (_data, siteId) => {
+      qc.invalidateQueries({ queryKey: ['sites', siteId, 'deployments'] });
+      qc.invalidateQueries({ queryKey: ['sites', siteId] });
     },
   });
 }
 
-export function useRestartSiteProcess() {
+export function useSiteLogs(siteId: string) {
+  return useQuery({
+    queryKey: ['sites', siteId, 'logs'],
+    queryFn: () => api.get<{ logs: string }>(`/sites/${siteId}/logs`),
+    enabled: !!siteId,
+    refetchInterval: 5000,
+  });
+}
+
+export function useSiteStatus(siteId: string) {
+  return useQuery({
+    queryKey: ['sites', siteId, 'status'],
+    queryFn: () => api.get<{ running: boolean; containerId?: string }>(`/sites/${siteId}/status`),
+    enabled: !!siteId,
+    refetchInterval: 3000,
+  });
+}
+
+export function useSiteStop() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.post(`/sites/${id}/process/restart`),
-    onSuccess: (_data, id) => {
-      qc.invalidateQueries({ queryKey: ['sites'] });
-      qc.invalidateQueries({ queryKey: ['sites', id] });
+    mutationFn: (siteId: string) => api.post(`/sites/${siteId}/stop`),
+    onSuccess: (_data, siteId) => {
+      qc.invalidateQueries({ queryKey: ['sites', siteId, 'status'] });
+      qc.invalidateQueries({ queryKey: ['sites', siteId] });
     },
+  });
+}
+
+export function useSiteDockerfile(siteId: string) {
+  return useQuery({
+    queryKey: ['sites', siteId, 'dockerfile'],
+    queryFn: () => api.get<{ dockerfile: string }>(`/sites/${siteId}/dockerfile`),
+    enabled: !!siteId,
   });
 }

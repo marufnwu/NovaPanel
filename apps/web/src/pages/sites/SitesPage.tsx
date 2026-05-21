@@ -1,13 +1,13 @@
 import { useState } from 'react';
-import { 
-  useSites, 
-  useCreateSite, 
-  useDeleteSite, 
-  useSuspendSite, 
+import {
+  useSites,
+  useCreateSite,
+  useDeleteSite,
+  useSuspendSite,
   useActivateSite,
   type Site,
-  type RuntimeConfig,
 } from '../../api/hooks/sites';
+import { RuntimeConfigSchema } from '@serverforge/schemas/sites';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
@@ -37,10 +37,16 @@ import {
 } from 'lucide-react';
 import { toast } from '../../lib/toast';
 
-const RUNTIMES = [
+type Runtime = 'docker' | 'node' | 'python' | 'php' | 'go' | 'ruby' | 'rust' | 'static';
+
+const RUNTIMES: { value: Runtime; label: string }[] = [
   { value: 'php', label: 'PHP' },
   { value: 'node', label: 'Node.js' },
   { value: 'python', label: 'Python' },
+  { value: 'go', label: 'Go' },
+  { value: 'ruby', label: 'Ruby' },
+  { value: 'rust', label: 'Rust' },
+  { value: 'docker', label: 'Docker' },
   { value: 'static', label: 'Static' },
 ];
 
@@ -53,59 +59,40 @@ function StatusBadge({ status }: { status: Site['status'] }) {
   return <Badge variant={variant}>{status}</Badge>;
 }
 
-function RuntimeBadge({ config }: { config: RuntimeConfig }) {
-  const label = config.runtime === 'php' 
-    ? `PHP ${config.phpVersion || config.version || '?'}`
-    : config.runtime === 'node'
-    ? `Node ${config.nodeVersion || config.version || '?'}`
-    : config.runtime === 'python'
-    ? `Python ${config.pythonVersion || config.version || '?'}`
-    : config.runtime?.toUpperCase() || 'Unknown';
-  
-  return <Badge variant="secondary">{label}</Badge>;
-}
-
 function CreateSiteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const createSite = useCreateSite();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<{
     name: string;
-    runtime: RuntimeConfig['runtime'];
-    phpVersion: string;
-    nodeVersion: string;
-    nodeBuildCommand: string;
-    nodeStartCommand: string;
-    pythonVersion: string;
-    pythonStartCommand: string;
+    runtime: Runtime;
+    version: string;
+    buildCommand: string;
+    startCommand: string;
     primaryDomain: string;
   }>({
     name: '',
-    runtime: 'php' as RuntimeConfig['runtime'],
-    phpVersion: '8.2',
-    nodeVersion: '20',
-    nodeBuildCommand: '',
-    nodeStartCommand: '',
-    pythonVersion: '3.11',
-    pythonStartCommand: '',
+    runtime: 'php',
+    version: '8.2',
+    buildCommand: '',
+    startCommand: '',
     primaryDomain: '',
   });
 
-  const buildRuntimeConfig = (): RuntimeConfig => {
-    const base: RuntimeConfig = {
-      schemaVersion: 1,
+  const buildRuntimeConfig = () => {
+    return {
+      schemaVersion: 1 as const,
       runtime: form.runtime,
+      version: form.version,
+      buildCommand: form.buildCommand || undefined,
+      startCommand: form.startCommand || undefined,
     };
-    if (form.runtime === 'php') return { ...base, phpVersion: form.phpVersion, version: form.phpVersion };
-    if (form.runtime === 'node') return { ...base, nodeVersion: form.nodeVersion, version: form.nodeVersion, buildCommand: form.nodeBuildCommand || undefined, startCommand: form.nodeStartCommand || undefined };
-    if (form.runtime === 'python') return { ...base, pythonVersion: form.pythonVersion, version: form.pythonVersion, startCommand: form.pythonStartCommand || undefined };
-    return base;
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
     createSite.mutate(
-      { name: form.name, runtime: buildRuntimeConfig(), primaryDomain: form.primaryDomain || undefined },
+      { name: form.name, runtime: buildRuntimeConfig(), sourceType: 'empty' as const, primaryDomain: form.primaryDomain || undefined },
       {
         onSuccess: () => { toast.success(`Site "${form.name}" created`); onClose(); },
         onError: (err: Error) => toast.error(err.message || 'Failed to create site'),
@@ -147,7 +134,7 @@ function CreateSiteModal({ open, onClose }: { open: boolean; onClose: () => void
                   <Label>Runtime</Label>
                   <div className="grid grid-cols-2 gap-2 mt-2">
                     {RUNTIMES.map((r) => (
-                      <Button key={r.value} type="button" variant={form.runtime === r.value ? 'default' : 'outline'} onClick={() => setForm({ ...form, runtime: r.value as RuntimeConfig['runtime'] })}>
+                      <Button key={r.value} type="button" variant={form.runtime === r.value ? 'default' : 'outline'} onClick={() => setForm({ ...form, runtime: r.value })}>
                         {r.label}
                       </Button>
                     ))}
@@ -156,7 +143,7 @@ function CreateSiteModal({ open, onClose }: { open: boolean; onClose: () => void
                 {form.runtime === 'php' && (
                   <div>
                     <Label>PHP Version</Label>
-                    <select value={form.phpVersion} onChange={(e) => setForm({ ...form, phpVersion: e.target.value })} className="mt-2 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
+                    <select value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })} className="mt-2 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
                       {PHP_VERSIONS.map(v => <option key={v} value={v}>PHP {v}</option>)}
                     </select>
                   </div>
@@ -164,22 +151,22 @@ function CreateSiteModal({ open, onClose }: { open: boolean; onClose: () => void
                 {form.runtime === 'node' && (
                   <>
                     <div><Label>Node.js Version</Label>
-                      <select value={form.nodeVersion} onChange={(e) => setForm({ ...form, nodeVersion: e.target.value })} className="mt-2 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
+                      <select value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })} className="mt-2 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
                         {NODE_VERSIONS.map(v => <option key={v} value={v}>Node {v}</option>)}
                       </select>
                     </div>
-                    <div><Label>Build Command</Label><Input className="mt-2" value={form.nodeBuildCommand} onChange={(e) => setForm({ ...form, nodeBuildCommand: e.target.value })} placeholder="npm run build" /></div>
-                    <div><Label>Start Command</Label><Input className="mt-2" value={form.nodeStartCommand} onChange={(e) => setForm({ ...form, nodeStartCommand: e.target.value })} placeholder="npm start" /></div>
+                    <div><Label>Build Command</Label><Input className="mt-2" value={form.buildCommand} onChange={(e) => setForm({ ...form, buildCommand: e.target.value })} placeholder="npm run build" /></div>
+                    <div><Label>Start Command</Label><Input className="mt-2" value={form.startCommand} onChange={(e) => setForm({ ...form, startCommand: e.target.value })} placeholder="npm start" /></div>
                   </>
                 )}
                 {form.runtime === 'python' && (
                   <>
                     <div><Label>Python Version</Label>
-                      <select value={form.pythonVersion} onChange={(e) => setForm({ ...form, pythonVersion: e.target.value })} className="mt-2 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
+                      <select value={form.version} onChange={(e) => setForm({ ...form, version: e.target.value })} className="mt-2 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
                         {PYTHON_VERSIONS.map(v => <option key={v} value={v}>Python {v}</option>)}
                       </select>
                     </div>
-                    <div><Label>Start Command</Label><Input className="mt-2" value={form.pythonStartCommand} onChange={(e) => setForm({ ...form, pythonStartCommand: e.target.value })} placeholder="gunicorn app:app" /></div>
+                    <div><Label>Start Command</Label><Input className="mt-2" value={form.startCommand} onChange={(e) => setForm({ ...form, startCommand: e.target.value })} placeholder="gunicorn app:app" /></div>
                   </>
                 )}
                 {form.runtime === 'static' && <p className="text-sm text-muted-foreground">Static sites are served directly by nginx.</p>}
@@ -215,7 +202,7 @@ function CreateSiteModal({ open, onClose }: { open: boolean; onClose: () => void
 }
 
 export function SitesPage() {
-  const { data: sites, isLoading } = useSites({ includeRuntime: true });
+  const { data: sites, isLoading } = useSites();
   const deleteSite = useDeleteSite();
   const suspendSite = useSuspendSite();
   const activateSite = useActivateSite();
@@ -285,15 +272,11 @@ export function SitesPage() {
                   </TableCell>
                   <TableCell><StatusBadge status={site.status} /></TableCell>
                   <TableCell>
-                    {(site as any).runtime ? (
-                      <RuntimeBadge config={(site as any).runtime.runtimeConfig} />
-                    ) : (
-                      <span className="text-sm text-muted-foreground">—</span>
-                    )}
+                    <Badge variant="secondary">{site.runtime?.toUpperCase() || 'Unknown'}</Badge>
                   </TableCell>
                   <TableCell>
                     <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                      <HardDrive className="h-3 w-3" />{site.diskUsedMb} MB
+                      <HardDrive className="h-3 w-3" />—
                     </span>
                   </TableCell>
                   <TableCell className="text-right">

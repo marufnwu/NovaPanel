@@ -1,33 +1,35 @@
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { domains } from './domains.js';
 
 export const dnsZones = sqliteTable('dns_zones', {
   id: text('id').primaryKey(),
-  domainId: text('domain_id').notNull().references(() => domains.id, { onDelete: 'cascade' }),
-  serial: integer('serial').notNull(),
-  ttl: integer('ttl').default(3600),
-  primaryNs: text('primary_ns').notNull(),
-  adminEmail: text('admin_email').notNull(),
-  refresh: integer('refresh').default(86400),
-  retry: integer('retry').default(7200),
-  expire: integer('expire').default(3600000),
-  minimumTtl: integer('minimum_ttl').default(172800),
-  isActive: integer('is_active', { mode: 'boolean' }).default(true),
+  projectId: text('project_id').notNull(),
+  domainId: text('domain_id').notNull(),
+  name: text('name').notNull(),
+  soa: text('soa', { mode: 'json' }),
+  nsRecords: text('ns_records', { mode: 'json' }),
+  dnssecEnabled: integer('dnssec_enabled', { mode: 'boolean' }).default(false).notNull(),
+  dnssecKeys: text('dnssec_keys', { mode: 'json' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }),
 });
 
 export const dnsRecords = sqliteTable('dns_records', {
   id: text('id').primaryKey(),
-  zoneId: text('zone_id').notNull().references(() => dnsZones.id, { onDelete: 'cascade' }),
-  type: text('type', { enum: ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA', 'PTR'] }).notNull(),
+  zoneId: text('zone_id').notNull(),
   name: text('name').notNull(),
+  type: text('type', { enum: ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'SRV', 'CAA', 'NS', 'PTR'] }).notNull(),
   value: text('value').notNull(),
-  ttl: integer('ttl').default(3600),
-  priority: integer('priority'),                    // for MX, SRV
-  isSystem: integer('is_system', { mode: 'boolean' }).default(false), // auto-generated records
+  ttl: integer('ttl').default(3600).notNull(),
+  priority: integer('priority'),
+  weight: integer('weight'),
+  port: integer('port'),
+  proxied: integer('proxied', { mode: 'boolean' }).default(false).notNull(),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }),
 });
 
 export type DnsZone = typeof dnsZones.$inferSelect;
+export type NewDnsZone = typeof dnsZones.$inferInsert;
 export type DnsRecord = typeof dnsRecords.$inferSelect;
+export type NewDnsRecord = typeof dnsRecords.$inferInsert;

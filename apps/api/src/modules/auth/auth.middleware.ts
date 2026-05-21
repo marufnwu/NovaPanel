@@ -14,6 +14,8 @@ declare module 'fastify' {
     sessionId: string;
     authMethod?: 'session' | 'token';
     tokenPermissions?: string[];
+    orgId?: string;
+    projectId?: string;
   }
 }
 
@@ -40,34 +42,24 @@ export async function requireAuth(req: FastifyRequest, _reply: FastifyReply) {
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.slice(7);
 
-      // 2a. Try the new token system first (dynamic API tokens stored in api_tokens table)
+      // 2a. Try the new token system first (dynamic API tokens stored in api_keys table)
       const tokenResult = await tokensService.validateToken(token);
-      if (tokenResult.valid && tokenResult.user && tokenResult.token) {
+      if (tokenResult && tokenResult.valid && tokenResult.user && tokenResult.token) {
         // Fetch the full user record so downstream code gets a complete User object.
         const [fullUser] = await db.select().from(users).where(eq(users.id, tokenResult.user.id)).limit(1);
         if (fullUser && fullUser.isActive) {
           user = fullUser;
           authMethod = 'token';
-          tokenPermissions = tokenResult.token.permissions;
-
-          // Record token usage (fire-and-forget)
-          tokensService.recordUsage(
-            tokenResult.token.id,
-            req.method,
-            req.url,
-            200, // will be updated by response hook if needed
-            req.ip,
-            req.headers['user-agent'] || '',
-          );
+          tokenPermissions = JSON.parse(tokenResult.token.permissions || '[]');
         }
       }
 
       // 2b. Fall back to the legacy single-token check (users.apiTokenHash) for backward compat
       if (!user) {
-        user = await authService.validateApiToken(token);
+        user = await authService.validateApiKey(token);
         if (user) {
           authMethod = 'token';
-          tokenPermissions = undefined; // legacy tokens have no scoped permissions
+          tokenPermissions = undefined;
         }
       }
     }
@@ -80,6 +72,9 @@ export async function requireAuth(req: FastifyRequest, _reply: FastifyReply) {
   req.user = user;
   req.authMethod = authMethod;
   req.tokenPermissions = tokenPermissions;
+
+  req.orgId = (req.headers['x-organization-id'] as string) || undefined;
+  req.projectId = (req.headers['x-project-id'] as string) || undefined;
 
   if (sessionId) {
     req.sessionId = sessionId;

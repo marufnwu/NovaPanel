@@ -16,6 +16,14 @@ interface LoginResponse {
     twoFactorEnabled: boolean;
     mustChangePassword: boolean;
   };
+  organizations: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    plan: 'free' | 'starter' | 'pro' | 'enterprise';
+    status: 'active' | 'suspended' | 'cancelled';
+    role?: 'owner' | 'admin' | 'member' | 'billing';
+  }>;
   requiresTwoFactor?: boolean;
   userId?: string;
   lockedUntil?: string;
@@ -66,7 +74,8 @@ export function useLogin() {
       if (data.requiresTwoFactor && data.userId) {
         setPendingTwoFactor(data.userId);
       } else if (data.user) {
-        setUser(data.user as any, data.sessionHash);
+        const activeOrgId = data.organizations?.[0]?.id;
+        setUser(data.user as any, data.sessionHash, data.organizations, activeOrgId);
       }
     },
   });
@@ -84,7 +93,8 @@ export function useLogin2FA() {
     }) => api.post<LoginResponse>('/auth/login', data),
     onSuccess: (data) => {
       if (data.user) {
-        setUser(data.user as any, data.sessionHash);
+        const activeOrgId = data.organizations?.[0]?.id;
+        setUser(data.user as any, data.sessionHash, data.organizations, activeOrgId);
         clearPendingTwoFactor();
       }
     },

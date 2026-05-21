@@ -1,119 +1,86 @@
 import { z } from 'zod';
 
 export const RuntimeConfigSchema = z.object({
-  schemaVersion: z.number().int().min(1),
-  runtime: z.enum(['php', 'node', 'python', 'static', 'docker', 'ruby', 'go']),
+  schemaVersion: z.number().int().min(1).default(1),
+  runtime: z.enum(['docker', 'node', 'python', 'php', 'go', 'ruby', 'rust', 'static']),
   version: z.string().optional(),
   buildCommand: z.string().optional(),
   startCommand: z.string().optional(),
   healthCheckPath: z.string().optional(),
-  phpVersion: z.string().optional(),
-  nodeVersion: z.string().optional(),
-  pythonVersion: z.string().optional(),
-  venvPath: z.string().optional(),
-  dockerfile: z.string().optional(),
-  dockerImage: z.string().optional(),
 });
 
 export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>;
 
 export const SiteSchema = z.object({
   id: z.string(),
+  projectId: z.string(),
   name: z.string(),
-  systemUser: z.string(),
-  homeDir: z.string(),
-  status: z.enum(['active', 'suspended']),
-  diskUsedMb: z.number().int().default(0),
-  bandwidthUsedMb: z.number().int().default(0),
+  slug: z.string(),
+  description: z.string().nullable(),
+  runtime: z.enum(['docker', 'node', 'python', 'php', 'go', 'ruby', 'rust', 'static']),
+  runtimeVersion: z.string().nullable(),
+  sourceType: z.enum(['git', 'docker_registry', 'upload', 'empty']),
+  gitRepo: z.string().nullable(),
+  gitBranch: z.string().default('main'),
+  buildCommand: z.string().nullable(),
+  outputDirectory: z.string().default('dist'),
+  installCommand: z.string().nullable(),
+  startCommand: z.string().nullable(),
+  port: z.number().int().nullable(),
+  replicas: z.number().int().default(1),
+  autoRestart: z.boolean().default(true),
+  memoryLimit: z.number().int().nullable(),
+  cpuLimit: z.number().int().nullable(),
+  status: z.enum(['active', 'building', 'deploying', 'error', 'suspended']),
+  healthCheckPath: z.string().default('/health'),
   createdAt: z.string().or(z.date()),
+  updatedAt: z.string().or(z.date()).nullable(),
 });
 
 export type Site = z.infer<typeof SiteSchema>;
 
-export const SiteWithRuntimeSchema = SiteSchema.extend({
-  runtime: z.object({
-    id: z.string(),
-    siteId: z.string(),
-    runtimeConfig: RuntimeConfigSchema,
-    webServer: z.enum(['nginx', 'apache']),
-    createdAt: z.string().or(z.date()),
-    updatedAt: z.string().or(z.date()),
-  }).optional(),
-  process: z.object({
-    id: z.string(),
-    siteId: z.string(),
-    startCommand: z.string(),
-    internalPort: z.number().int().optional(),
-    processManager: z.enum(['pm2', 'supervisor', 'systemd', 'php-fpm']),
-    replicas: z.number().int().default(1),
-    autoRestart: z.boolean().default(true),
-    healthCheckPath: z.string().optional(),
-    pid: z.number().int().optional(),
-    uptime: z.number().int().optional(),
-    restartCount: z.number().int().default(0),
-    memoryMb: z.number().int().optional(),
-    cpuPercent: z.number().int().optional(),
-    createdAt: z.string().or(z.date()),
-    updatedAt: z.string().or(z.date()),
-  }).optional(),
-  domains: z.array(z.any()).optional(),
-});
-
-export type SiteWithRuntime = z.infer<typeof SiteWithRuntimeSchema>;
-
 export const CreateSiteInputSchema = z.object({
   name: z.string().min(1, 'Site name is required'),
+  projectId: z.string().optional(),
   runtime: RuntimeConfigSchema,
   primaryDomain: z.string().optional(),
+  sourceType: z.enum(['git', 'docker_registry', 'upload', 'empty']).default('empty'),
+  gitRepo: z.string().optional(),
+  gitBranch: z.string().optional(),
+  buildCommand: z.string().optional(),
+  startCommand: z.string().optional(),
 });
 
 export type CreateSiteInput = z.infer<typeof CreateSiteInputSchema>;
 
-export const SiteProcessSchema = z.object({
+export const DeploymentSchema = z.object({
   id: z.string(),
   siteId: z.string(),
-  startCommand: z.string(),
-  internalPort: z.number().int().optional(),
-  processManager: z.enum(['pm2', 'supervisor', 'systemd', 'php-fpm']),
-  replicas: z.number().int().default(1),
-  autoRestart: z.boolean().default(true),
-  healthCheckPath: z.string().optional(),
-  pid: z.number().int().optional(),
-  uptime: z.number().int().optional(),
-  restartCount: z.number().int().default(0),
-  memoryMb: z.number().int().optional(),
-  cpuPercent: z.number().int().optional(),
+  sequence: z.number().int(),
+  sourceType: z.enum(['git', 'docker_registry', 'upload', 'rollback']),
+  gitRef: z.string().nullable(),
+  commitSha: z.string().nullable(),
+  commitMessage: z.string().nullable(),
+  status: z.enum(['pending', 'building', 'testing', 'deploying', 'success', 'failed', 'cancelled']),
+  buildLogs: z.string().nullable(),
+  deployLogs: z.string().nullable(),
+  deployedAt: z.string().or(z.date()).nullable(),
+  durationMs: z.number().int().nullable(),
+  errorMessage: z.string().nullable(),
   createdAt: z.string().or(z.date()),
-  updatedAt: z.string().or(z.date()),
 });
 
-export type SiteProcess = z.infer<typeof SiteProcessSchema>;
+export type Deployment = z.infer<typeof DeploymentSchema>;
 
-export const SiteStateSchema = z.object({
+export const SiteEnvVarSchema = z.object({
   id: z.string(),
   siteId: z.string(),
-  nginxStatus: z.enum(['ok', 'missing', 'invalid', 'reload_needed', 'unknown']).default('unknown'),
-  nginxConfigValid: z.boolean().optional(),
-  nginxReloadNeeded: z.boolean().default(false),
-  processStatus: z.enum(['running', 'stopped', 'error', 'restarting', 'unknown']).default('unknown'),
-  processRunning: z.boolean().optional(),
-  processPid: z.number().int().optional(),
-  processUptime: z.number().int().optional(),
-  processRestartCount: z.number().int().default(0),
-  currentInternalPort: z.number().int().optional(),
-  deployedCommitSha: z.string().optional(),
-  lastDeploymentStatus: z.enum(['success', 'failed', 'pending', 'unknown']).default('unknown'),
-  lastDeployAt: z.string().or(z.date()).optional(),
-  sslProvisioned: z.boolean().default(false),
-  sslExpiresAt: z.string().or(z.date()).optional(),
-  sslAutoRenew: z.boolean().default(true),
-  dnsResolving: z.boolean().optional(),
-  dnsPointsToServer: z.boolean().optional(),
-  lastHealthCheckAt: z.string().or(z.date()).optional(),
-  lastHealthyAt: z.string().or(z.date()).optional(),
-  lastReconcileAt: z.string().or(z.date()).optional(),
-  reconcileErrors: z.any().optional(),
-  observedAt: z.string().or(z.date()),
+  key: z.string(),
+  value: z.string(),
+  scope: z.enum(['runtime', 'build', 'secret']).default('runtime'),
+  isSystem: z.boolean().default(false),
+  createdAt: z.string().or(z.date()),
+  updatedAt: z.string().or(z.date()).nullable(),
 });
 
-export type SiteState = z.infer<typeof SiteStateSchema>;
+export type SiteEnvVar = z.infer<typeof SiteEnvVarSchema>;
