@@ -35,7 +35,7 @@ export function useRegistries() {
   const orgId = activeOrgId || 'default';
   return useQuery({
     queryKey: ['registries', orgId],
-    queryFn: () => api.get<Registry[]>(`/registries?orgId=${orgId}`),
+    queryFn: () => api.get<Registry[]>(`/registries/list?orgId=${orgId}`),
     enabled: !!orgId,
   });
 }

@@ -22,7 +22,7 @@ const updateRegistrySchema = z.object({
 export default async function registryRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
-  fastify.get('/', async (req) => {
+  fastify.get('/list', async (req) => {
     const orgId = (req.query as { orgId?: string }).orgId;
     const items = await registriesService.list(orgId);
     return { success: true, data: items };
