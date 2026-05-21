@@ -8,7 +8,7 @@ import { db } from '../../db/index.js';
 export default async function dockerRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
-  fastify.post('/sites/:id/build', async (req, reply) => {
+  fastify.post('/sites/:id/docker-build', async (req, reply) => {
     const { id } = req.params as { id: string };
     const { deploymentsService } = await import('../deployments/deployments.service.js');
     const deployment = await deploymentsService.create({ siteId: id, sourceType: 'git' });
