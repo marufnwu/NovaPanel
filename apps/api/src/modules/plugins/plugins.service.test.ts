@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PluginsService } from './plugins.service.js';
-import { AppError } from '../../utils/errors.js';
 
 vi.mock('../../db/index', () => ({
   db: {
@@ -130,6 +129,7 @@ describe('Plugins Service', () => {
         version: '2.0.0',
         description: 'New description',
         author: 'Author',
+        manifest: {},
       };
       const result = await service.create(data);
       expect(result.name).toBeTruthy();
