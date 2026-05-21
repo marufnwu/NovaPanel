@@ -28,7 +28,7 @@ export default async function registryRoutes(fastify: FastifyInstance) {
     return { success: true, data: items };
   });
 
-  fastify.post('/', async (req, reply) => {
+  fastify.post('/create', async (req, reply) => {
     const data = createRegistrySchema.parse(req.body);
     const registry = await registriesService.create(data);
     return reply.status(201).send({ success: true, data: registry });

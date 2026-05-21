@@ -51,7 +51,7 @@ export function useRegistry(id: string) {
 export function useCreateRegistry() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: CreateRegistryInput) => api.post<Registry>('/registries', data),
+    mutationFn: (data: CreateRegistryInput) => api.post<Registry>('/registries/create', data),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['registries', vars.orgId] });
     },
