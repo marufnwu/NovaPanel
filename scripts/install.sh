@@ -1008,7 +1008,7 @@ SUDOERS
         fi
 
         local REPO_URL="https://github.com/marufnwu/NovaPanel.git"
-        local REPO_BRANCH="master"
+        local REPO_BRANCH="release"
         local CLONE_DIR="${PANEL_HOME}-src"
 
         if [ -d "${CLONE_DIR}/.git" ]; then
@@ -1496,7 +1496,7 @@ phase_summary() {
         echo "  Please review the errors above before continuing."
         echo ""
         echo "  To retry installation, run:"
-        echo "    curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/master/scripts/install.sh | sudo bash"
+        echo "    curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/release/scripts/install.sh | sudo bash"
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         exit 1

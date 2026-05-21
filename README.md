@@ -100,13 +100,13 @@ NovaPanel is a comprehensive **Linux server administration** tool that provides 
 The fastest way to get NovaPanel running on a fresh Ubuntu or Debian server:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/master/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/release/scripts/install.sh | sudo bash
 ```
 
 With custom settings:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/master/scripts/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/release/scripts/install.sh | \
   sudo ADMIN_EMAIL=admin@yourdomain.com \
          ADMIN_PASSWORD=YourStrongPassword123 \
          PANEL_URL=http://yourserver.com:8732 \
@@ -126,19 +126,19 @@ docker compose up -d
 To safely remove NovaPanel from your server (preserves user data and databases):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/master/scripts/uninstall.sh | sudo bash -s -- --confirm
+curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/release/scripts/uninstall.sh | sudo bash -s -- --confirm
 ```
 
 For full purge (removes all data including websites and databases):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/master/scripts/uninstall.sh | sudo bash -s -- --confirm --purge
+curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/release/scripts/uninstall.sh | sudo bash -s -- --confirm --purge
 ```
 
 To also remove system packages (nginx, php, mariadb, etc.):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/master/scripts/uninstall.sh | sudo bash -s -- --confirm --purge --remove-packages
+curl -fsSL https://raw.githubusercontent.com/marufnwu/NovaPanel/release/scripts/uninstall.sh | sudo bash -s -- --confirm --purge --remove-packages
 ```
 
 > ⚠️ **Always back up your data before using `--purge`!** Website data in `/var/www/` and databases are preserved by default.
