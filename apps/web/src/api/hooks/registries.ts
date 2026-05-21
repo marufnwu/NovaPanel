@@ -43,7 +43,7 @@ export function useRegistries() {
 export function useRegistry(id: string) {
   return useQuery({
     queryKey: ['registries', id],
-    queryFn: () => api.get<Registry>(`/registries/${id}`),
+    queryFn: () => api.get<Registry>(`/registries/registry/${id}`),
     enabled: !!id,
   });
 }
@@ -62,7 +62,7 @@ export function useUpdateRegistry() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...data }: { id: string } & UpdateRegistryInput) =>
-      api.put<Registry>(`/registries/${id}`, data),
+      api.put<Registry>(`/registries/registry/${id}`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['registries'] });
     },
@@ -72,7 +72,7 @@ export function useUpdateRegistry() {
 export function useDeleteRegistry() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.delete(`/registries/${id}`),
+      mutationFn: (id: string) => api.delete(`/registries/registry/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['registries'] });
     },

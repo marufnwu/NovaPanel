@@ -34,21 +34,21 @@ export default async function registryRoutes(fastify: FastifyInstance) {
     return reply.status(201).send({ success: true, data: registry });
   });
 
-  fastify.get('/:id', async (req) => {
+  fastify.get('/registry/:id', async (req) => {
     const { id } = req.params as { id: string };
     const registry = await registriesService.get(id);
     if (!registry) return { success: false, error: 'Registry not found' };
     return { success: true, data: registry };
   });
 
-  fastify.put('/:id', async (req) => {
+  fastify.put('/registry/:id', async (req) => {
     const { id } = req.params as { id: string };
     const data = updateRegistrySchema.parse(req.body);
     const registry = await registriesService.update(id, data);
     return { success: true, data: registry };
   });
 
-  fastify.delete('/:id', async (req) => {
+  fastify.delete('/registry/:id', async (req) => {
     const { id } = req.params as { id: string };
     const result = await registriesService.delete(id);
     return { success: true, data: result };
