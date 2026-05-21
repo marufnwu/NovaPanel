@@ -1,49 +1,36 @@
--- NovaPanel v5 Fresh Start Migration
--- Drop all existing tables first
-DROP TABLE IF EXISTS `activity_logs`;
-DROP TABLE IF EXISTS `background_jobs`;
-DROP TABLE IF EXISTS `site_health_checks`;
-DROP TABLE IF EXISTS `site_env_vars`;
-DROP TABLE IF EXISTS `deployments`;
-DROP TABLE IF EXISTS `site_states`;
-DROP TABLE IF EXISTS `site_processes`;
-DROP TABLE IF EXISTS `site_runtimes`;
-DROP TABLE IF EXISTS `domain_ssl_bindings`;
-DROP TABLE IF EXISTS `backups`;
-DROP TABLE IF EXISTS `backup_schedules`;
-DROP TABLE IF EXISTS `notifications`;
-DROP TABLE IF EXISTS `notification_preferences`;
-DROP TABLE IF EXISTS `api_tokens`;
-DROP TABLE IF EXISTS `cloudflare_redirect_rules`;
-DROP TABLE IF EXISTS `cloudflare_zones`;
-DROP TABLE IF EXISTS `audit_logs`;
-DROP TABLE IF EXISTS `tunnel_routes`;
-DROP TABLE IF EXISTS `cloudflare_tunnels`;
-DROP TABLE IF EXISTS `cron_jobs`;
-DROP TABLE IF EXISTS `cron_job_history`;
-DROP TABLE IF EXISTS `ftp_accounts`;
-DROP TABLE IF EXISTS `dns_records`;
-DROP TABLE IF EXISTS `dns_zones`;
-DROP TABLE IF EXISTS `mailboxes`;
-DROP TABLE IF EXISTS `mail_forwards`;
-DROP TABLE IF EXISTS `mail_aliases`;
-DROP TABLE IF EXISTS `mail_domains`;
-DROP TABLE IF EXISTS `databases`;
-DROP TABLE IF EXISTS `database_users`;
-DROP TABLE IF EXISTS `ssl_certificates`;
-DROP TABLE IF EXISTS `domain_redirects`;
-DROP TABLE IF EXISTS `domains`;
-DROP TABLE IF EXISTS `sites`;
-DROP TABLE IF EXISTS `server_stats`;
-DROP TABLE IF EXISTS `users`;
-DROP TABLE IF EXISTS `sessions`;
-DROP TABLE IF EXISTS `temp_tokens`;
-DROP TABLE IF EXISTS `two_factor_backup_codes`;
-DROP TABLE IF EXISTS `tunnels`;
-DROP TABLE IF EXISTS `installed_apps`;
-
--- v5 Tables
-
+CREATE TABLE `sessions` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`session_hash` text NOT NULL,
+	`expires_at` integer NOT NULL,
+	`last_activity_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`user_agent` text,
+	`ip_address` text,
+	`remember_me` integer DEFAULT false NOT NULL,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE `temp_tokens` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`token_hash` text NOT NULL,
+	`expires_at` integer NOT NULL,
+	`used_at` integer,
+	`ip_address` text,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE TABLE `two_factor_backup_codes` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`code_hash` text NOT NULL,
+	`used_at` integer,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
 CREATE TABLE `users` (
 	`id` text PRIMARY KEY NOT NULL,
 	`username` text NOT NULL,
@@ -65,46 +52,23 @@ CREATE TABLE `users` (
 	`must_change_password` integer DEFAULT false NOT NULL,
 	`last_login_at` integer,
 	`password_reset_token` text,
-	`password_reset_expires_at` integer,
+	`password_reset_at` integer,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-CREATE UNIQUE INDEX `users_username_unique` ON `users` (`username`);
-CREATE UNIQUE INDEX `users_email_unique` ON `users` (`email`);
-
-CREATE TABLE `sessions` (
+--> statement-breakpoint
+CREATE UNIQUE INDEX `users_username_unique` ON `users` (`username`);--> statement-breakpoint
+CREATE UNIQUE INDEX `users_email_unique` ON `users` (`email`);--> statement-breakpoint
+CREATE TABLE `organization_members` (
 	`id` text PRIMARY KEY NOT NULL,
+	`org_id` text NOT NULL,
 	`user_id` text NOT NULL,
-	`session_hash` text NOT NULL,
-	`expires_at` integer NOT NULL,
-	`last_activity_at` integer DEFAULT (unixepoch()) NOT NULL,
-	`user_agent` text,
-	`ip_address` text,
-	`remember_me` integer DEFAULT false NOT NULL,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+	`role` text DEFAULT 'member' NOT NULL,
+	`permissions` text DEFAULT '[]' NOT NULL,
+	`invited_by` text,
+	`joined_at` integer DEFAULT (unixepoch()) NOT NULL
 );
-
-CREATE TABLE `temp_tokens` (
-	`id` text PRIMARY KEY NOT NULL,
-	`user_id` text NOT NULL,
-	`token_hash` text NOT NULL,
-	`expires_at` integer NOT NULL,
-	`used_at` integer,
-	`ip_address` text,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
-);
-
-CREATE TABLE `two_factor_backup_codes` (
-	`id` text PRIMARY KEY NOT NULL,
-	`user_id` text NOT NULL,
-	`code_hash` text NOT NULL,
-	`used_at` integer,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
-);
-
+--> statement-breakpoint
 CREATE TABLE `organizations` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
@@ -117,18 +81,8 @@ CREATE TABLE `organizations` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-CREATE UNIQUE INDEX `organizations_slug_unique` ON `organizations` (`slug`);
-
-CREATE TABLE `organization_members` (
-	`id` text PRIMARY KEY NOT NULL,
-	`org_id` text NOT NULL,
-	`user_id` text NOT NULL,
-	`role` text DEFAULT 'member' NOT NULL,
-	`permissions` text DEFAULT '[]' NOT NULL,
-	`invited_by` text,
-	`joined_at` integer DEFAULT (unixepoch()) NOT NULL
-);
-
+--> statement-breakpoint
+CREATE UNIQUE INDEX `organizations_slug_unique` ON `organizations` (`slug`);--> statement-breakpoint
 CREATE TABLE `projects` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,
@@ -140,7 +94,7 @@ CREATE TABLE `projects` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
+--> statement-breakpoint
 CREATE TABLE `roles` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,
@@ -151,7 +105,7 @@ CREATE TABLE `roles` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
+--> statement-breakpoint
 CREATE TABLE `api_keys` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text,
@@ -167,7 +121,47 @@ CREATE TABLE `api_keys` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
+--> statement-breakpoint
+CREATE TABLE `deployments` (
+	`id` text PRIMARY KEY NOT NULL,
+	`site_id` text NOT NULL,
+	`sequence` integer NOT NULL,
+	`source_type` text,
+	`git_ref` text,
+	`commit_sha` text,
+	`commit_message` text,
+	`status` text DEFAULT 'pending' NOT NULL,
+	`build_logs` text,
+	`deploy_logs` text,
+	`deployed_at` integer,
+	`duration_ms` integer,
+	`error_message` text,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `site_env_vars` (
+	`id` text PRIMARY KEY NOT NULL,
+	`site_id` text NOT NULL,
+	`key` text NOT NULL,
+	`value` text NOT NULL,
+	`scope` text DEFAULT 'runtime' NOT NULL,
+	`is_system` integer DEFAULT false NOT NULL,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`updated_at` integer
+);
+--> statement-breakpoint
+CREATE TABLE `site_health_checks` (
+	`id` text PRIMARY KEY NOT NULL,
+	`site_id` text NOT NULL,
+	`path` text DEFAULT '/health',
+	`interval` integer DEFAULT 30,
+	`timeout` integer DEFAULT 5,
+	`healthy_threshold` integer DEFAULT 1,
+	`unhealthy_threshold` integer DEFAULT 3,
+	`enabled` integer DEFAULT true NOT NULL,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `sites` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
@@ -190,55 +184,12 @@ CREATE TABLE `sites` (
 	`memory_limit` integer,
 	`cpu_limit` integer,
 	`status` text DEFAULT 'active' NOT NULL,
-	`health_check_path` text DEFAULT '/health',
 	`last_deployment_id` text,
+	`health_check_path` text DEFAULT '/health',
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
-CREATE TABLE `deployments` (
-	`id` text PRIMARY KEY NOT NULL,
-	`site_id` text NOT NULL,
-	`sequence` integer NOT NULL,
-	`source_type` text,
-	`git_ref` text,
-	`commit_sha` text,
-	`commit_message` text,
-	`status` text DEFAULT 'pending' NOT NULL,
-	`build_logs` text,
-	`deploy_logs` text,
-	`deployed_at` integer,
-	`duration_ms` integer,
-	`error_message` text,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	FOREIGN KEY (`site_id`) REFERENCES `sites`(`id`) ON DELETE CASCADE
-);
-
-CREATE TABLE `site_env_vars` (
-	`id` text PRIMARY KEY NOT NULL,
-	`site_id` text NOT NULL,
-	`key` text NOT NULL,
-	`value` text NOT NULL,
-	`scope` text DEFAULT 'runtime' NOT NULL,
-	`is_system` integer DEFAULT false NOT NULL,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	`updated_at` integer,
-	FOREIGN KEY (`site_id`) REFERENCES `sites`(`id`) ON DELETE CASCADE
-);
-
-CREATE TABLE `site_health_checks` (
-	`id` text PRIMARY KEY NOT NULL,
-	`site_id` text NOT NULL,
-	`path` text DEFAULT '/health',
-	`interval` integer DEFAULT 30,
-	`timeout` integer DEFAULT 5,
-	`healthy_threshold` integer DEFAULT 1,
-	`unhealthy_threshold` integer DEFAULT 3,
-	`enabled` integer DEFAULT true NOT NULL,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	FOREIGN KEY (`site_id`) REFERENCES `sites`(`id`) ON DELETE CASCADE
-);
-
+--> statement-breakpoint
 CREATE TABLE `domains` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
@@ -259,7 +210,7 @@ CREATE TABLE `domains` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
+--> statement-breakpoint
 CREATE TABLE `ssl_certificates` (
 	`id` text PRIMARY KEY NOT NULL,
 	`domain_id` text NOT NULL,
@@ -270,14 +221,22 @@ CREATE TABLE `ssl_certificates` (
 	`issued_at` integer,
 	`expires_at` integer,
 	`auto_renew` integer DEFAULT true NOT NULL,
-	`renewal_days_before_expiry` integer DEFAULT 14 NOT NULL,
+	`renewal_days` integer DEFAULT 14 NOT NULL,
 	`status` text DEFAULT 'pending' NOT NULL,
 	`last_error` text,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	`updated_at` integer,
-	FOREIGN KEY (`domain_id`) REFERENCES `domains`(`id`) ON DELETE CASCADE
+	`updated_at` integer
 );
-
+--> statement-breakpoint
+CREATE TABLE `database_users` (
+	`id` text PRIMARY KEY NOT NULL,
+	`database_id` text NOT NULL,
+	`username` text NOT NULL,
+	`password` text,
+	`privileges` text DEFAULT '[]' NOT NULL,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `databases` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
@@ -298,30 +257,7 @@ CREATE TABLE `databases` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
-CREATE TABLE `database_users` (
-	`id` text PRIMARY KEY NOT NULL,
-	`database_id` text NOT NULL,
-	`username` text NOT NULL,
-	`password` text,
-	`privileges` text DEFAULT '[]' NOT NULL,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	FOREIGN KEY (`database_id`) REFERENCES `databases`(`id`) ON DELETE CASCADE
-);
-
-CREATE TABLE `dns_zones` (
-	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
-	`domain_id` text NOT NULL,
-	`name` text NOT NULL,
-	`soa` text,
-	`ns_records` text,
-	`dnssec_enabled` integer DEFAULT false NOT NULL,
-	`dnssec_keys` text,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	`updated_at` integer
-);
-
+--> statement-breakpoint
 CREATE TABLE `dns_records` (
 	`id` text PRIMARY KEY NOT NULL,
 	`zone_id` text NOT NULL,
@@ -334,10 +270,22 @@ CREATE TABLE `dns_records` (
 	`port` integer,
 	`proxied` integer DEFAULT false NOT NULL,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	`updated_at` integer,
-	FOREIGN KEY (`zone_id`) REFERENCES `dns_zones`(`id`) ON DELETE CASCADE
+	`updated_at` integer
 );
-
+--> statement-breakpoint
+CREATE TABLE `dns_zones` (
+	`id` text PRIMARY KEY NOT NULL,
+	`project_id` text NOT NULL,
+	`domain_id` text NOT NULL,
+	`name` text NOT NULL,
+	`soa` text,
+	`ns_records` text,
+	`dnssec_enabled` integer DEFAULT false NOT NULL,
+	`dnssec_keys` text,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`updated_at` integer
+);
+--> statement-breakpoint
 CREATE TABLE `ftp_accounts` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
@@ -351,7 +299,17 @@ CREATE TABLE `ftp_accounts` (
 	`last_login_at` integer,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL
 );
-
+--> statement-breakpoint
+CREATE TABLE `cron_history` (
+	`id` text PRIMARY KEY NOT NULL,
+	`job_id` text NOT NULL,
+	`started_at` integer NOT NULL,
+	`completed_at` integer,
+	`exit_code` integer,
+	`output` text,
+	`error` text
+);
+--> statement-breakpoint
 CREATE TABLE `cron_jobs` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
@@ -368,17 +326,17 @@ CREATE TABLE `cron_jobs` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
-CREATE TABLE `cron_history` (
+--> statement-breakpoint
+CREATE TABLE `container_volumes` (
 	`id` text PRIMARY KEY NOT NULL,
-	`job_id` text NOT NULL,
-	`started_at` integer NOT NULL,
-	`completed_at` integer,
-	`exit_code` integer,
-	`output` text,
-	`error` text
+	`project_id` text NOT NULL,
+	`name` text NOT NULL,
+	`size` integer,
+	`mount_point` text,
+	`driver` text DEFAULT 'local',
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL
 );
-
+--> statement-breakpoint
 CREATE TABLE `containers` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
@@ -399,17 +357,7 @@ CREATE TABLE `containers` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
-CREATE TABLE `container_volumes` (
-	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
-	`name` text NOT NULL,
-	`size` integer,
-	`mount_point` text,
-	`driver` text DEFAULT 'local',
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL
-);
-
+--> statement-breakpoint
 CREATE TABLE `registries` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,
@@ -421,7 +369,7 @@ CREATE TABLE `registries` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
+--> statement-breakpoint
 CREATE TABLE `buckets` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
@@ -433,18 +381,29 @@ CREATE TABLE `buckets` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
+--> statement-breakpoint
 CREATE TABLE `storage_access_keys` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
 	`name` text NOT NULL,
-	`access_key_id` text NOT NULL UNIQUE,
+	`access_key_id` text NOT NULL,
 	`secret_key_hash` text NOT NULL,
 	`permissions` text DEFAULT '[]' NOT NULL,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
+--> statement-breakpoint
+CREATE UNIQUE INDEX `storage_access_keys_access_key_id_unique` ON `storage_access_keys` (`access_key_id`);--> statement-breakpoint
+CREATE TABLE `ip_allowlists` (
+	`id` text PRIMARY KEY NOT NULL,
+	`project_id` text NOT NULL,
+	`name` text NOT NULL,
+	`ips` text DEFAULT '[]' NOT NULL,
+	`type` text NOT NULL,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`updated_at` integer
+);
+--> statement-breakpoint
 CREATE TABLE `waf_rules` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
@@ -456,36 +415,10 @@ CREATE TABLE `waf_rules` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
-CREATE TABLE `ip_allowlists` (
-	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
-	`name` text NOT NULL,
-	`ips` text DEFAULT '[]' NOT NULL,
-	`type` text NOT NULL,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	`updated_at` integer
-);
-
-CREATE TABLE `backups` (
-	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
-	`resource_type` text NOT NULL,
-	`resource_id` text NOT NULL,
-	`type` text DEFAULT 'full' NOT NULL,
-	`status` text DEFAULT 'pending' NOT NULL,
-	`size` integer,
-	`path` text,
-	`storage_backend` text DEFAULT 'local' NOT NULL,
-	`storage_path` text,
-	`retention_days` integer DEFAULT 30 NOT NULL,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	`completed_at` integer
-);
-
+--> statement-breakpoint
 CREATE TABLE `backup_schedules` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`project_id` text,
 	`name` text NOT NULL,
 	`resource_type` text NOT NULL,
 	`resource_id` text,
@@ -498,17 +431,23 @@ CREATE TABLE `backup_schedules` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
-CREATE TABLE `usage_records` (
+--> statement-breakpoint
+CREATE TABLE `backups` (
 	`id` text PRIMARY KEY NOT NULL,
-	`org_id` text NOT NULL,
+	`project_id` text,
 	`resource_type` text NOT NULL,
 	`resource_id` text,
-	`quantity` integer NOT NULL,
-	`unit` text NOT NULL,
-	`timestamp` integer DEFAULT (unixepoch()) NOT NULL
+	`type` text DEFAULT 'full' NOT NULL,
+	`status` text DEFAULT 'pending' NOT NULL,
+	`size` integer,
+	`path` text,
+	`storage_backend` text DEFAULT 'local' NOT NULL,
+	`storage_path` text,
+	`retention_days` integer DEFAULT 30 NOT NULL,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`completed_at` integer
 );
-
+--> statement-breakpoint
 CREATE TABLE `invoices` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,
@@ -521,11 +460,11 @@ CREATE TABLE `invoices` (
 	`paid_at` integer,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL
 );
-
+--> statement-breakpoint
 CREATE TABLE `plans` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
-	`slug` text NOT NULL UNIQUE,
+	`slug` text NOT NULL,
 	`price` integer NOT NULL,
 	`currency` text DEFAULT 'USD' NOT NULL,
 	`interval` text DEFAULT 'monthly' NOT NULL,
@@ -535,15 +474,27 @@ CREATE TABLE `plans` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
-CREATE TABLE `metrics` (
+--> statement-breakpoint
+CREATE UNIQUE INDEX `plans_slug_unique` ON `plans` (`slug`);--> statement-breakpoint
+CREATE TABLE `usage_records` (
 	`id` text PRIMARY KEY NOT NULL,
-	`name` text NOT NULL,
-	`labels` text DEFAULT '{}' NOT NULL,
-	`value` integer NOT NULL,
+	`org_id` text NOT NULL,
+	`resource_type` text NOT NULL,
+	`resource_id` text,
+	`quantity` integer NOT NULL,
+	`unit` text NOT NULL,
 	`timestamp` integer DEFAULT (unixepoch()) NOT NULL
 );
-
+--> statement-breakpoint
+CREATE TABLE `alert_history` (
+	`id` text PRIMARY KEY NOT NULL,
+	`rule_id` text NOT NULL,
+	`triggered_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`resolved_at` integer,
+	`value` integer NOT NULL,
+	`message` text
+);
+--> statement-breakpoint
 CREATE TABLE `alert_rules` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,
@@ -559,16 +510,15 @@ CREATE TABLE `alert_rules` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
-CREATE TABLE `alert_history` (
+--> statement-breakpoint
+CREATE TABLE `metrics` (
 	`id` text PRIMARY KEY NOT NULL,
-	`rule_id` text NOT NULL,
-	`triggered_at` integer DEFAULT (unixepoch()) NOT NULL,
-	`resolved_at` integer,
+	`name` text NOT NULL,
+	`labels` text DEFAULT '{}' NOT NULL,
 	`value` integer NOT NULL,
-	`message` text
+	`timestamp` integer DEFAULT (unixepoch()) NOT NULL
 );
-
+--> statement-breakpoint
 CREATE TABLE `plugins` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
@@ -581,20 +531,7 @@ CREATE TABLE `plugins` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
-CREATE TABLE `webhooks` (
-	`id` text PRIMARY KEY NOT NULL,
-	`org_id` text NOT NULL,
-	`name` text NOT NULL,
-	`url` text NOT NULL,
-	`secret` text,
-	`events` text NOT NULL DEFAULT '[]',
-	`enabled` integer DEFAULT true NOT NULL,
-	`headers` text DEFAULT '{}' NOT NULL,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	`updated_at` integer
-);
-
+--> statement-breakpoint
 CREATE TABLE `webhook_deliveries` (
 	`id` text PRIMARY KEY NOT NULL,
 	`webhook_id` text NOT NULL,
@@ -607,7 +544,20 @@ CREATE TABLE `webhook_deliveries` (
 	`delivered_at` integer,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL
 );
-
+--> statement-breakpoint
+CREATE TABLE `webhooks` (
+	`id` text PRIMARY KEY NOT NULL,
+	`org_id` text NOT NULL,
+	`name` text NOT NULL,
+	`url` text NOT NULL,
+	`secret` text,
+	`events` text DEFAULT '[]' NOT NULL,
+	`enabled` integer DEFAULT true NOT NULL,
+	`headers` text DEFAULT '{}' NOT NULL,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`updated_at` integer
+);
+--> statement-breakpoint
 CREATE TABLE `firewall_rules` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
@@ -622,7 +572,7 @@ CREATE TABLE `firewall_rules` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
+--> statement-breakpoint
 CREATE TABLE `mailboxes` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
@@ -636,17 +586,7 @@ CREATE TABLE `mailboxes` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
-CREATE TABLE `cloudflare_tunnels` (
-	`id` text PRIMARY KEY NOT NULL,
-	`org_id` text NOT NULL,
-	`name` text NOT NULL,
-	`tunnel_token` text,
-	`status` text DEFAULT 'inactive' NOT NULL,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	`updated_at` integer
-);
-
+--> statement-breakpoint
 CREATE TABLE `cloudflare_dns` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,
@@ -659,7 +599,17 @@ CREATE TABLE `cloudflare_dns` (
 	`auto_sync` integer DEFAULT true NOT NULL,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL
 );
-
+--> statement-breakpoint
+CREATE TABLE `cloudflare_tunnels` (
+	`id` text PRIMARY KEY NOT NULL,
+	`org_id` text NOT NULL,
+	`name` text NOT NULL,
+	`tunnel_token` text,
+	`status` text DEFAULT 'inactive' NOT NULL,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`updated_at` integer
+);
+--> statement-breakpoint
 CREATE TABLE `tunnels` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
@@ -670,7 +620,16 @@ CREATE TABLE `tunnels` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
+--> statement-breakpoint
+CREATE TABLE `notification_channels` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`type` text NOT NULL,
+	`config` text NOT NULL,
+	`enabled` integer DEFAULT true NOT NULL,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE `notifications` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
@@ -681,16 +640,7 @@ CREATE TABLE `notifications` (
 	`read` integer DEFAULT false NOT NULL,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL
 );
-
-CREATE TABLE `notification_channels` (
-	`id` text PRIMARY KEY NOT NULL,
-	`user_id` text NOT NULL,
-	`type` text NOT NULL,
-	`config` text NOT NULL,
-	`enabled` integer DEFAULT true NOT NULL,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL
-);
-
+--> statement-breakpoint
 CREATE TABLE `audit_logs` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,
@@ -705,7 +655,7 @@ CREATE TABLE `audit_logs` (
 	`user_agent` text,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL
 );
-
+--> statement-breakpoint
 CREATE TABLE `installed_apps` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
@@ -718,7 +668,7 @@ CREATE TABLE `installed_apps` (
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer
 );
-
+--> statement-breakpoint
 CREATE TABLE `background_jobs` (
 	`id` text PRIMARY KEY NOT NULL,
 	`type` text NOT NULL,
@@ -733,7 +683,7 @@ CREATE TABLE `background_jobs` (
 	`completed_at` integer,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL
 );
-
+--> statement-breakpoint
 CREATE TABLE `server_stats` (
 	`id` text PRIMARY KEY NOT NULL,
 	`cpu_percent` integer NOT NULL,
@@ -748,7 +698,7 @@ CREATE TABLE `server_stats` (
 	`network_out` integer DEFAULT 0 NOT NULL,
 	`timestamp` integer DEFAULT (unixepoch()) NOT NULL
 );
-
+--> statement-breakpoint
 CREATE TABLE `activity_logs` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text,

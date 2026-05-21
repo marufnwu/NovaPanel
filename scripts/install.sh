@@ -1008,7 +1008,7 @@ SUDOERS
         fi
 
         local REPO_URL="https://github.com/marufnwu/NovaPanel.git"
-        local REPO_BRANCH="release"
+        local REPO_BRANCH="v5"
         local CLONE_DIR="${PANEL_HOME}-src"
 
         if [ -d "${CLONE_DIR}/.git" ]; then
