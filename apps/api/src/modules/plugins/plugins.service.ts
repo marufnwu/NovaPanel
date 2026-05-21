@@ -2,6 +2,7 @@ import { db } from '../../db/index.js';
 import { plugins, type Plugin, type NewPlugin } from '../../db/schema/plugins.js';
 import { eq, desc } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
+import { VM } from 'vm2';
 
 export class PluginsService {
   async list(): Promise<Plugin[]> {
@@ -49,6 +50,26 @@ export class PluginsService {
 
   async updateConfig(id: string, config: Record<string, unknown>): Promise<Plugin> {
     return this.update(id, { config });
+  }
+
+  async executeHook(pluginId: string, hookName: string, hookData: Record<string, unknown> = {}): Promise<unknown> {
+    const plugin = await this.get(pluginId);
+    if (!plugin) throw new Error('Plugin not found');
+    if (!plugin.enabled) throw new Error('Plugin is disabled');
+
+    const manifest = plugin.manifest as Record<string, { code: string; language: string } | undefined>;
+    const hook = manifest[hookName];
+    if (!hook) return undefined;
+    if (hook.language !== 'javascript') throw new Error(`Unsupported hook language: ${hook.language}`);
+
+    const vm = new VM({
+      timeout: 5000,
+      eval: false,
+      wasm: false,
+      sandbox: { hookData },
+    });
+
+    return vm.run(hook.code);
   }
 }
 
