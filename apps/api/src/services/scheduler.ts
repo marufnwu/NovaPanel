@@ -3,11 +3,13 @@ import { db } from '../db/index.js';
 import { sessions } from '../db/schema/users.js';
 import { notifications } from '../db/schema/notifications.js';
 import { users } from '../db/schema/users.js';
-import { lt } from 'drizzle-orm';
+import { domains, sslCertificates } from '../db/schema/domains.js';
+import { lt, lte, and } from 'drizzle-orm';
 import { logger } from '../config/logger.js';
 import { emitJobRunning, emitJobDone, emitJobFailed } from './job-events.js';
 import { backupService } from '../modules/backup/backup.service.js';
 import { monitoringService } from '../modules/monitoring/monitoring.service.js';
+import { certbotService } from './certbot.service.js';
 
 export class SchedulerService {
   private tasks: ScheduledTask[] = [];
@@ -35,8 +37,10 @@ export class SchedulerService {
       const jobId = `ssl-renewal-${Date.now()}`;
       emitJobRunning(jobId, 'ssl-renewal', 'SSL renewal check started', 0);
       try {
-        emitJobDone(jobId, 'ssl-renewal', 'SSL renewal check completed (stub - SSL service not migrated)');
-        logger.info('SSL renewal check completed (stub)');
+        const { renewed, failed } = await certbotService.renewDueCertificates();
+        const msg = `SSL renewal: ${renewed.length} renewed, ${failed.length} failed`;
+        emitJobDone(jobId, 'ssl-renewal', msg);
+        logger.info({ renewed, failed }, 'SSL renewal check completed');
       } catch (err) {
         emitJobFailed(jobId, 'ssl-renewal', `SSL renewal check failed: ${err instanceof Error ? err.message : String(err)}`);
         logger.error({ err }, 'SSL renewal check failed');

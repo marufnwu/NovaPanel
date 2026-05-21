@@ -2,6 +2,9 @@ import { run } from './executor.js';
 import { logger } from '../config/logger.js';
 import * as sudoFs from './sudo-fs.js';
 import { createSslError } from '../utils/error-messages.js';
+import { db } from '../db/index.js';
+import { domains, sslCertificates } from '../db/schema/domains.js';
+import { eq, lte, and, lt } from 'drizzle-orm';
 
 export class CertbotService {
   /**
@@ -135,13 +138,68 @@ export class CertbotService {
   /**
    * Renew all certificates that are due for renewal
    */
+  async renewDueCertificates(): Promise<{ renewed: string[]; failed: string[] }> {
+    const now = new Date();
+    const warningDate = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+    const dueCerts = await db.select().from(sslCertificates).where(
+      and(
+        lte(sslCertificates.expiresAt, warningDate),
+        lt(sslCertificates.status, 'expired')
+      )
+    );
+
+    const renewed: string[] = [];
+    const failed: string[] = [];
+
+    for (const cert of dueCerts) {
+      try {
+        const [domain] = await db.select().from(domains).where(eq(domains.id, cert.domainId)).limit(1);
+        if (!domain) continue;
+
+        const success = await this.renew(domain.name);
+        if (success) {
+          const newExpiry = await this.getCertExpiry(`/etc/letsencrypt/live/${domain.name}/cert.pem`);
+          await db.update(sslCertificates).set({
+            expiresAt: newExpiry,
+            status: 'active',
+            lastError: null,
+            updatedAt: new Date(),
+          }).where(eq(sslCertificates.id, cert.id));
+          renewed.push(domain.name);
+        } else {
+          await db.update(sslCertificates).set({
+            status: 'error',
+            lastError: 'Renewal command failed',
+            updatedAt: new Date(),
+          }).where(eq(sslCertificates.id, cert.id));
+          failed.push(domain.name);
+        }
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        await db.update(sslCertificates).set({
+          status: 'error',
+          lastError: errorMsg,
+          updatedAt: new Date(),
+        }).where(eq(sslCertificates.id, cert.id));
+        failed.push(cert.id);
+        logger.warn({ certId: cert.id, error: errorMsg }, 'Certificate renewal failed');
+      }
+    }
+
+    logger.info({ renewed, failed }, 'Certificate renewal batch completed');
+    return { renewed, failed };
+  }
+
+  /**
+   * Renew all Let's Encrypt certificates system-wide (legacy)
+   */
   async renewAll(): Promise<{ renewed: string[]; failed: string[] }> {
     const result = await run('certbot', ['renew', '--non-interactive'], { sudo: true, timeout: 300_000 });
 
     const renewed: string[] = [];
     const failed: string[] = [];
 
-    // Parse output for renewed/failed domains
     const lines = result.stdout.split('\n');
     for (const line of lines) {
       if (line.includes('successfully renewed')) {
