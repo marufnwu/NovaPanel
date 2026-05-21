@@ -38,7 +38,7 @@ export default async function dockerRoutes(fastify: FastifyInstance) {
     return { success: true, data: null };
   });
 
-  fastify.get('/sites/:id/dockerfile', async (req) => {
+  fastify.get('/sites/:id/dockerfile-generate', async (req) => {
     const { id } = req.params as { id: string };
     const [site] = await db.select().from(sites).where(eq(sites.id, id)).limit(1);
     if (!site) return { success: false, error: 'Site not found' };
