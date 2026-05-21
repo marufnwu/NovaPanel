@@ -28,6 +28,12 @@ export class PluginsService {
     };
     await db.insert(plugins).values(plugin);
     const [created] = await db.select().from(plugins).where(eq(plugins.id, plugin.id)).limit(1);
+
+    if (created.enabled) {
+      this.executeHook(created.id, 'onEnable').catch(() => {});
+    }
+    this.executeHook(created.id, 'onInstall').catch(() => {});
+
     return created;
   }
 
@@ -39,17 +45,32 @@ export class PluginsService {
   }
 
   async delete(id: string): Promise<void> {
+    const plugin = await this.get(id);
+    if (plugin) {
+      this.executeHook(id, 'onUninstall').catch(() => {});
+    }
     await db.delete(plugins).where(eq(plugins.id, id));
   }
 
   async toggle(id: string): Promise<Plugin> {
     const plugin = await this.get(id);
     if (!plugin) throw new Error('Plugin not found');
-    return this.update(id, { enabled: !plugin.enabled });
+    const wasEnabled = plugin.enabled;
+    const updated = await this.update(id, { enabled: !plugin.enabled });
+
+    if (!wasEnabled && updated.enabled) {
+      this.executeHook(updated.id, 'onEnable').catch(() => {});
+    } else if (wasEnabled && !updated.enabled) {
+      this.executeHook(updated.id, 'onDisable').catch(() => {});
+    }
+
+    return updated;
   }
 
   async updateConfig(id: string, config: Record<string, unknown>): Promise<Plugin> {
-    return this.update(id, { config });
+    const updated = await this.update(id, { config });
+    this.executeHook(id, 'onConfigChange', { config }).catch(() => {});
+    return updated;
   }
 
   async executeHook(pluginId: string, hookName: string, hookData: Record<string, unknown> = {}): Promise<unknown> {
