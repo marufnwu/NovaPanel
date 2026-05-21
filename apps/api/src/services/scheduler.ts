@@ -6,6 +6,8 @@ import { users } from '../db/schema/users.js';
 import { lt } from 'drizzle-orm';
 import { logger } from '../config/logger.js';
 import { emitJobRunning, emitJobDone, emitJobFailed } from './job-events.js';
+import { backupService } from '../modules/backup/backup.service.js';
+import { monitoringService } from '../modules/monitoring/monitoring.service.js';
 
 export class SchedulerService {
   private tasks: ScheduledTask[] = [];
@@ -46,13 +48,27 @@ export class SchedulerService {
       const jobId = `backup-scheduler-${Date.now()}`;
       emitJobRunning(jobId, 'backup-scheduler', 'Checking for due backups...', 0);
       try {
-        emitJobDone(jobId, 'backup-scheduler', 'Backup scheduler check completed (stub)');
+        await backupService.executeDueBackups();
+        emitJobDone(jobId, 'backup-scheduler', 'Backup scheduler check completed');
       } catch (err) {
         emitJobFailed(jobId, 'backup-scheduler', `Backup scheduler failed: ${err instanceof Error ? err.message : String(err)}`);
         logger.error({ err }, 'Backup scheduler failed');
       }
     });
     this.tasks.push(backupTask);
+
+    const alertTask = cron.schedule('*/5 * * * *', async () => {
+      const jobId = `alert-evaluation-${Date.now()}`;
+      emitJobRunning(jobId, 'alert_evaluate', 'Evaluating alert rules...', 0);
+      try {
+        await monitoringService.evaluateAlertRules();
+        emitJobDone(jobId, 'alert_evaluate', 'Alert evaluation completed');
+      } catch (err) {
+        emitJobFailed(jobId, 'alert_evaluate', `Alert evaluation failed: ${err instanceof Error ? err.message : String(err)}`);
+        logger.error({ err }, 'Alert evaluation failed');
+      }
+    });
+    this.tasks.push(alertTask);
 
     const sessionTask = cron.schedule('0 * * * *', async () => {
       const jobId = `session-cleanup-${Date.now()}`;
