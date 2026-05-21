@@ -5,6 +5,8 @@ import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
 import websocket from '@fastify/websocket';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import { logger } from './config/logger.js';
 import { env } from './config/env.js';
 import { AppError } from './errors.js';
@@ -64,6 +66,40 @@ export async function createServer() {
   });
 
   await fastify.register(websocket);
+
+  // Swagger API documentation
+  await fastify.register(swagger, {
+    openapi: {
+      info: {
+        title: 'NovaPanel API',
+        description: 'Self-hosted server control panel API',
+        version: '1.0.0',
+      },
+      servers: [
+        { url: `http://localhost:${env.PORT}`, description: 'Local' },
+        { url: env.PANEL_URL || `http://localhost:${env.PORT}`, description: 'Production' },
+      ],
+      tags: [
+        { name: 'auth', description: 'Authentication' },
+        { name: 'sites', description: 'Sites & Deployments' },
+        { name: 'domains', description: 'Domains & SSL' },
+        { name: 'databases', description: 'Databases' },
+        { name: 'docker', description: 'Docker & Containers' },
+        { name: 'cron', description: 'Cron Jobs' },
+        { name: 'monitoring', description: 'Monitoring & Alerts' },
+        { name: 'backups', description: 'Backups' },
+        { name: 'settings', description: 'Server Settings' },
+      ],
+    },
+  });
+
+  await fastify.register(swaggerUi, {
+    routePrefix: '/api/docs',
+    uiConfig: {
+      docExpansion: 'list',
+      deepLinking: true,
+    },
+  });
 
   // Handle empty JSON bodies (Content-Type: application/json with Content-Length: 0)
   fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
@@ -176,7 +212,7 @@ export async function createServer() {
 
     // SPA fallback
     fastify.setNotFoundHandler(async (req, reply) => {
-      if (!req.url.startsWith('/api/') && !req.url.startsWith('/ws/')) {
+      if (!req.url.startsWith('/api/') && !req.url.startsWith('/ws/') && !req.url.startsWith('/api/docs')) {
         return reply.sendFile('index.html');
       }
       return reply.status(404).send({
