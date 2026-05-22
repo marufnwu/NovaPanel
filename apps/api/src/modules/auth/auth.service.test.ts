@@ -1,6 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock the database module
+const mockUser = {
+  id: 'u1',
+  username: 'admin',
+  email: 'admin@example.com',
+  displayName: 'Admin',
+  role: 'admin',
+  passwordHash: 'hashed-password',
+  twoFactorEnabled: false,
+  twoFactorSecret: null,
+  isActive: true,
+  mustChangePassword: false,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+const mockSession = {
+  id: 'session-123',
+  userId: 'u1',
+  sessionHash: 'hash-123',
+  expiresAt: new Date(Date.now() + 3600000),
+  lastActivityAt: new Date(),
+  rememberMe: false,
+  createdAt: new Date(),
+};
+
 vi.mock('../../db/index', () => ({
   db: {
     select: vi.fn(() => ({
@@ -31,6 +55,8 @@ vi.mock('../../utils/crypto', () => ({
   generateToken: vi.fn(() => 'generated-token'),
   hashToken: vi.fn(() => 'hashed-token'),
   sha256: vi.fn(() => 'hashed-session'),
+  encrypt: vi.fn((v) => `encrypted:${v}`),
+  decrypt: vi.fn((v) => v.replace('encrypted:', '')),
 }));
 
 vi.mock('../../config/logger', () => ({
@@ -43,6 +69,10 @@ vi.mock('../../config/env', () => ({
 
 vi.mock('../audit/audit.service', () => ({
   auditService: { log: vi.fn(() => Promise.resolve()) },
+}));
+
+vi.mock('../../services/redis', () => ({
+  redisClient: { getClient: vi.fn(() => ({ get: vi.fn(), setex: vi.fn(), del: vi.fn(), pipeline: vi.fn(() => ({ incr: vi.fn(), expire: vi.fn(), exec: vi.fn() })) })) },
 }));
 
 describe('Auth Service', () => {
@@ -65,6 +95,22 @@ describe('Auth Service', () => {
       const { generateToken } = await import('../../utils/crypto');
       const token = generateToken('api');
       expect(token).toBe('generated-token');
+    });
+  });
+
+  describe('Session hash', () => {
+    it('should hash session IDs with sha256', async () => {
+      const { sha256 } = await import('../../utils/crypto');
+      const hash = sha256('session-123');
+      expect(hash).toBe('hashed-session');
+    });
+  });
+
+  describe('Token hash', () => {
+    it('should hash tokens with hashToken', async () => {
+      const { hashToken } = await import('../../utils/crypto');
+      const hash = hashToken('token-abc');
+      expect(hash).toBe('hashed-token');
     });
   });
 });

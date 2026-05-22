@@ -24,19 +24,8 @@ vi.mock('../../db/index', () => ({
   },
 }));
 
-vi.mock('../../config/logger', () => ({
-  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
-}));
-
 vi.mock('nanoid', () => ({
   nanoid: () => 'test-nanoid-id',
-}));
-
-vi.mock('crypto', () => ({
-  randomBytes: vi.fn(() => Buffer.from('test-secret')),
-  createHmac: vi.fn(() => ({
-    update: vi.fn(() => ({ digest: vi.fn(() => 'signature') })),
-  })),
 }));
 
 describe('Webhooks Service', () => {

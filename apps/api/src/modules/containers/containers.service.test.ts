@@ -1,5 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const mockContainer = {
+  id: 'c1',
+  projectId: 'p1',
+  name: 'test-container',
+  type: 'image' as const,
+  composeFile: null,
+  dockerfile: null,
+  image: 'nginx:alpine',
+  containerId: null,
+  env: '{}',
+  secrets: '[]',
+  networkMode: 'bridge',
+  exposedPorts: '[]',
+  cpuLimit: null,
+  memoryLimit: null,
+  replicas: 1,
+  status: 'stopped',
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
 vi.mock('../../db/index', () => ({
   db: {
     select: vi.fn(() => ({
@@ -26,6 +47,14 @@ vi.mock('../../db/index', () => ({
 
 vi.mock('../../config/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
+}));
+
+vi.mock('../../services/executor', () => ({
+  run: vi.fn(() => Promise.resolve({ stdout: 'container-id-123', stderr: '', success: true })),
+}));
+
+vi.mock('../audit/audit.service', () => ({
+  auditService: { log: vi.fn(() => Promise.resolve()) },
 }));
 
 vi.mock('nanoid', () => ({
