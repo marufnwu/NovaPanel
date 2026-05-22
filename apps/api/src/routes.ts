@@ -28,18 +28,18 @@ export async function registerRoutes(fastify: FastifyInstance) {
   await fastify.register(import('./modules/sites/sites.routes.js'), { prefix: '/api/v1/sites' });
 
   // Deployments
-  await fastify.register(import('./modules/deployments/deployments.routes.js'), { prefix: '/api/v1' });
+  await fastify.register(import('./modules/deployments/deployments.routes.js'), { prefix: '/api/v1/deployments' });
 
   // Docker runtime + Git + Build pipeline
-  await fastify.register(import('./modules/docker/docker.routes.js'), { prefix: '/api/v1' });
-  await fastify.register(import('./modules/git/git.routes.js'), { prefix: '/api/v1' });
-  await fastify.register(import('./modules/build/build.routes.js'), { prefix: '/api/v1' });
+  await fastify.register(import('./modules/docker/docker.routes.js'), { prefix: '/api/v1/docker' });
+  await fastify.register(import('./modules/git/git.routes.js'), { prefix: '/api/v1/git' });
+  await fastify.register(import('./modules/build/build.routes.js'), { prefix: '/api/v1/build' });
 
   // Containers (v5 Docker runtime)
-  await fastify.register(import('./modules/containers/containers.routes.js'), { prefix: '/api/v1' });
+  await fastify.register(import('./modules/containers/containers.routes.js'), { prefix: '/api/v1/containers' });
 
   // Container Registries
-  await fastify.register(import('./modules/registries/registries.routes.js'), { prefix: '/api/v1' });
+  await fastify.register(import('./modules/registries/registries.routes.js'), { prefix: '/api/v1/registries' });
 
   // Phase 7: Web Server + PHP (routes define their own /webserver/... and /php/... paths)
   await fastify.register(import('./modules/webserver/webserver.routes.js'), { prefix: '/api/v1' });
