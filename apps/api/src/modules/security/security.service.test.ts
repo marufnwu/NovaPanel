@@ -1,43 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { SecurityService } from './security.service.js';
 
-vi.mock('../../db/index', () => ({
-  db: {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => []),
-        orderBy: vi.fn(() => []),
-      })),
-    })),
-    insert: vi.fn(() => ({
-      values: vi.fn(() => ({
-        returning: vi.fn(() => [{ id: 'test-id', name: 'test-rule' }]),
-      })),
-    })),
-    update: vi.fn(() => ({
-      set: vi.fn(() => ({
-        where: vi.fn(() => []),
-      })),
-    })),
-    delete: vi.fn(() => ({
-      where: vi.fn(() => []),
-    })),
-  },
-}));
-
-vi.mock('../../config/logger', () => ({
-  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
-}));
-
-vi.mock('nanoid', () => ({
-  nanoid: () => 'test-nanoid-id',
-}));
+vi.mock('../../db/index', () => ({ db: { select: vi.fn(), insert: vi.fn(), update: vi.fn(), delete: vi.fn() } }));
+vi.mock('../../services/nginx.service', () => ({ nginxService: { applySecurityRules: vi.fn() } }));
+vi.mock('../../config/logger', () => ({ logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } }));
+vi.mock('nanoid', () => ({ nanoid: () => 'test-nanoid-id' }));
 
 describe('Security Service', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('should have a working test setup', () => {
-    expect(true).toBe(true);
-  });
+  let service: SecurityService;
+  beforeEach(() => { vi.clearAllMocks(); service = new SecurityService(); });
+  it('should have a working test setup', () => { expect(true).toBe(true); });
 });
