@@ -30,22 +30,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: (id) => {
-          if (!id.includes('node_modules')) return;
-          if (id.includes('react-dom') || id.includes('react/')) return;
-          if (id.includes('recharts')) return 'vendor-recharts';
-          if (id.includes('xterm')) return 'vendor-xterm';
-          if (id.includes('@tanstack/react-query')) return 'vendor-react-query';
-          if (id.includes('@tanstack/react-router')) return 'vendor-router';
-          if (id.includes('lucide-react')) return 'vendor-icons';
-          if (id.includes('dnd-kit')) return 'vendor-dnd';
-          if (id.includes('zustand')) return 'vendor-state';
-          if (id.includes('clsx') || id.includes('tailwind-merge')) return 'vendor-tailwind';
-          if (id.includes('nanoid')) return 'vendor-utils';
-          if (id.includes('date-fns') || id.includes('dayjs') || id.includes('moment')) return 'vendor-date';
-          if (id.includes('zod')) return 'vendor-zod';
-          if (id.includes('axios') || id.includes('ky') || id.includes('ky-universal')) return 'vendor-http';
-          if (id.includes('@dnd-kit')) return 'vendor-dnd';
-          return 'vendor-misc';
+          if (!id.includes('node_modules')) return undefined;
+          return 'vendor';
         },
       },
     },
