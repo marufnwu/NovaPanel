@@ -331,8 +331,8 @@ phase_preflight() {
         echo "============================================================"
         echo ""
         
-        # Ask if user wants to continue (skip in non-interactive mode)
-        if [ -t 0 ]; then
+        # Ask if user wants to continue (skip in non-interactive mode or with FORCE=1)
+        if [ -t 0 ] && [ "${FORCE:-0}" != "1" ]; then
             read -p "Continue with installation? [Y/n] " -n 1 -r
             echo
             if [[ ! $REPLY =~ ^[Yy]$ ]] && [ -n "$REPLY" ]; then
@@ -401,7 +401,7 @@ phase_system_packages() {
     if ! dpkg -l mariadb-server &>/dev/null | grep -q "^ii"; then
         curl -fsSL "https://r.mariadb.com/downloads/mariadb_repo_setup" | bash -s -- --mariadb-server-version="mariadb-${MARIADB_MAJOR}" --skip-maxscale --skip-tools
         DEBIAN_FRONTEND=noninteractive apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq mariadb-server mariadb-client
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq -o Dpkg::Options::="--force-confnew" mariadb-server mariadb-client
     fi
     verify_cmd "mariadb --version" "MariaDB installed"
 
@@ -442,10 +442,46 @@ phase_system_packages() {
     fi
     apt-get update -qq
 
+    # FIX B: Create PHP-FPM pool configs BEFORE apt-get install
+    # If pools don't exist when dpkg runs post-inst scripts, PHP-FPM fails to start
+    # and causes "error processing package phpN-fpm" with exit code 78
+    for phpver in 8.1 8.2 8.3; do
+        pool_dir="/etc/php/${phpver}/fpm/pool.d"
+        if [ -d "$pool_dir" ]; then
+            rm -f "${pool_dir}/www.conf" "${pool_dir}/www.conf.disabled" "${pool_dir}/www.conf.default" 2>/dev/null || true
+        else
+            mkdir -p "$pool_dir"
+        fi
+        cat > "${pool_dir}/www.conf" << POOL
+[www]
+user = www-data
+group = www-data
+listen = /run/php/php${phpver}-fpm.sock
+listen.owner = www-data
+listen.group = www-data
+listen.mode = 0660
+pm = dynamic
+pm.max_children = 5
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 3
+POOL
+        log "Pre-created PHP ${phpver} FPM pool config"
+    done
+
+    # FIX C: Remove MariaDB conffile that causes interactive dpkg prompts on re-runs
+    # If 50-server.cnf was modified, dpkg prompts "keep or install new" which hangs SSH
+    MARIADB_CNF="/etc/mysql/mariadb.conf.d/50-server.cnf"
+    if [ -f "$MARIADB_CNF" ]; then
+        log "Backing up modified MariaDB config..."
+        cp "$MARIADB_CNF" "${MARIADB_CNF}.bak" 2>/dev/null || true
+        rm -f "$MARIADB_CNF"
+    fi
+
     # Install each PHP version with FPM and common extensions
     for ver in "${PHP_VERSIONS[@]}"; do
         log "Installing PHP ${ver} FPM + extensions..."
-        apt-get install -y -qq \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
             "php${ver}-fpm" \
             "php${ver}-cli" \
             "php${ver}-common" \
@@ -937,8 +973,16 @@ POOL
 phase_panel_deploy() {
     section "Phase 3: Panel Deployment"
 
-    # 3a. Create panel user
-    if ! id "$PANEL_USER" &>/dev/null; then
+    # 3a. Create panel user (FIX D: handle existing user gracefully)
+    if id "$PANEL_USER" &>/dev/null; then
+        log "Panel user ${PANEL_USER} already exists — updating home dir if needed"
+        # If home directory is wrong, update it
+        current_home=$(getent passwd "$PANEL_USER" | cut -d: -f6)
+        if [ "$current_home" != "$PANEL_HOME" ]; then
+            usermod -d "$PANEL_HOME" "$PANEL_USER" 2>/dev/null || warn "Could not update home dir for ${PANEL_USER}"
+            log "Updated ${PANEL_USER} home dir to ${PANEL_HOME}"
+        fi
+    else
         log "Creating panel user: ${PANEL_USER}"
         useradd -r -m -d "$PANEL_HOME" -s /bin/bash "$PANEL_USER"
     fi

@@ -26,7 +26,18 @@ export async function createServer() {
 
   // Security plugins
   await fastify.register(helmet, {
-    contentSecurityPolicy: false, // Will be configured per environment
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: false,
+    referrerPolicy: false,
+    strictTransportSecurity: false,
+    xContentTypeOptions: false,
+    xDnsPrefetchControl: false,
+    xDownloadOptions: false,
+    xFrameOptions: false,
+    xPermittedCrossDomainPolicies: false,
+    xXssProtection: false,
   });
 
   await fastify.register(cors, {

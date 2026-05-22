@@ -30,8 +30,7 @@ export default defineConfig({
       output: {
         manualChunks: (id) => {
           if (!id.includes('node_modules')) return;
-          if (id.includes('react-dom')) return 'vendor-react';
-          if (id.includes('react/')) return 'vendor-react';
+          if (id.includes('react-dom') || id.includes('react/')) return;
           if (id.includes('recharts')) return 'vendor-recharts';
           if (id.includes('xterm')) return 'vendor-xterm';
           if (id.includes('@tanstack/react-query')) return 'vendor-react-query';
