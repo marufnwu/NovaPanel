@@ -1,12 +1,12 @@
 /* NovaPanel Global Styles */
 /* Design system tokens imported from styles/ */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 @import "./styles/variables.css";
 @import "./styles/reset.css";
 @import "./styles/animations.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* Additional global styles */
 body {
