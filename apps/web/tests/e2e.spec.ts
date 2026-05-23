@@ -25,7 +25,7 @@ test.describe('Authentication', () => {
     await page.fill('input[name="username"], input[type="text"]', ADMIN_USER);
     await page.fill('input[type="password"]', ADMIN_PASS);
     await page.click('button[type="submit"]');
-    await page.waitForURL('**/', { timeout: 10000 });
+    await page.waitForURL(/\/dashboard/, { timeout: 15000 });
     await expect(page).not.toHaveURL(/\/login/);
   });
 });
@@ -38,7 +38,7 @@ test.describe('Dashboard Navigation', () => {
     await page.fill('input[name="username"], input[type="text"]', ADMIN_USER);
     await page.fill('input[type="password"]', ADMIN_PASS);
     await page.click('button[type="submit"]');
-    await page.waitForURL('**/', { timeout: 10000 });
+    await page.waitForURL(/\/dashboard/, { timeout: 15000 });
     await expect(page.locator('body')).toBeVisible();
   });
 });
