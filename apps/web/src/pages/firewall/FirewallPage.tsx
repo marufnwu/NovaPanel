@@ -1,862 +1,248 @@
 import { useState } from 'react';
-import {
-  useFirewallStatus,
-  useFirewallRules,
-  useAddFirewallRule,
-  useDeleteFirewallRule,
-  useApplyFirewallPreset,
-  useToggleFirewall,
-  useFail2BanJails,
-  useUnbanIp,
-  useBanIp,
-  useResetFirewallRules,
-  useToggleRule,
-  type UfwRule,
-  type F2BJail,
-} from '../../api/hooks/firewall';
-import { useFail2banLogs } from '../../api/hooks/logs';
-import { useAuditLog, type AuditEntry } from '../../api/hooks/audit';
-import { useSshSettings, useUpdateSshSettings } from '../../api/hooks/settings';
-import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingPage } from '@/components/design-system/LoadingPage';
-import { StatusBadge } from '@/components/design-system/StatusBadge';
-import { EmptyState } from '../../components/ui/EmptyState';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Button } from '../../components/ui/Button';
+import { Card } from '../../components/ui/Card';
+import { DataTable } from '../../components/ui/DataTable';
+import { StatusBadge } from '../../components/ui/StatusBadge';
+import { PageSkeleton } from '../../components/ui/Skeleton';
+import { Modal } from '../../components/ui/Modal';
+import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
-import {
-  Flame,
-  Plus,
-  Trash2,
-  Shield,
-  X,
-  ShieldAlert,
-  Unlock,
-  Ban,
-  RotateCcw,
-  AlertTriangle,
-  FileText,
-  Activity,
-  Key,
-  Terminal,
-  RefreshCw,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-
-const PRESETS = [
-  { key: 'ssh', label: 'SSH (22)', desc: 'Allow SSH access' },
-  { key: 'http', label: 'HTTP (80)', desc: 'Allow web traffic' },
-  { key: 'https', label: 'HTTPS (443)', desc: 'Allow secure web' },
-  { key: 'ftp', label: 'FTP (21)', desc: 'Allow FTP access' },
-  { key: 'smtp', label: 'SMTP (25/465/587)', desc: 'Allow mail sending' },
-  { key: 'imap', label: 'IMAP (143/993)', desc: 'Allow mail retrieval' },
-];
-
-type TabKey = 'rules' | 'fail2ban' | 'logs' | 'activity' | 'ssh';
-
-// ─── Shared toggle switch ──────────────────────────────────────────────────────
-
-function ToggleSwitch({ enabled, onChange }: { enabled: boolean; onChange: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onChange}
-      className={`relative h-6 w-11 rounded-full transition-colors ${enabled ? 'bg-primary' : 'bg-muted'}`}
-    >
-      <span
-        className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-          enabled ? 'translate-x-5' : ''
-        }`}
-      />
-    </button>
-  );
-}
-
-// ─── Add Rule Modal ────────────────────────────────────────────────────────────
-
-function AddRuleModal({ onClose }: { onClose: () => void }) {
-  const addRule = useAddFirewallRule();
-  const [form, setForm] = useState<{
-    action: 'allow' | 'deny';
-    port: string;
-    protocol: string;
-    from: string;
-    to: string;
-  }>({
-    action: 'allow',
-    port: '',
-    protocol: 'tcp',
-    from: '',
-    to: '',
-  });
-
-  const handleSubmit = () => {
-    addRule.mutate(form, { onSuccess: () => onClose() });
-  };
-
-  return (
-    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add Firewall Rule</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="fw-action" className="mb-1">Action</Label>
-            <select
-              id="fw-action"
-              value={form.action}
-              onChange={(e) => setForm({ ...form, action: e.target.value as 'allow' | 'deny' })}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-            >
-              <option value="allow">Allow</option>
-              <option value="deny">Deny</option>
-            </select>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="fw-port" className="mb-1">Port</Label>
-              <Input
-                id="fw-port"
-                value={form.port}
-                onChange={(e) => setForm({ ...form, port: e.target.value })}
-                placeholder="80 or 8000:9000"
-              />
-            </div>
-            <div>
-              <Label htmlFor="fw-protocol" className="mb-1">Protocol</Label>
-              <select
-                id="fw-protocol"
-                value={form.protocol}
-                onChange={(e) => setForm({ ...form, protocol: e.target.value })}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-              >
-                <option value="tcp">TCP</option>
-                <option value="udp">UDP</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="fw-from" className="mb-1">From (IP or range)</Label>
-            <Input
-              id="fw-from"
-              value={form.from}
-              onChange={(e) => setForm({ ...form, from: e.target.value })}
-              placeholder="Any (leave empty)"
-            />
-          </div>
-          <div>
-            <Label htmlFor="fw-to" className="mb-1">To (IP or interface)</Label>
-            <Input
-              id="fw-to"
-              value={form.to}
-              onChange={(e) => setForm({ ...form, to: e.target.value })}
-              placeholder="Any (leave empty)"
-            />
-          </div>
-          {addRule.error && <p className="text-sm text-destructive">{String(addRule.error)}</p>}
-        </div>
-        <DialogFooter className="mt-6">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={addRule.isPending || !form.port}>
-            {addRule.isPending ? 'Adding...' : 'Add Rule'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Unban IP Modal ────────────────────────────────────────────────────────────
-
-function UnbanIpModal({ jail, onClose }: { jail: F2BJail; onClose: () => void }) {
-  const unban = useUnbanIp();
-  const [ip, setIp] = useState('');
-
-  const handleUnban = () => {
-    if (!ip.trim()) return;
-    unban.mutate({ jail: jail.name, ip }, { onSuccess: () => onClose() });
-  };
-
-  return (
-    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Unban IP — {jail.name}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">Currently banned: {jail.bannedCount} IP(s)</p>
-          {jail.bannedIps.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {jail.bannedIps.map((bannedIp) => (
-                <Button
-                  key={bannedIp}
-                  variant="destructive"
-                  size="xs"
-                  onClick={() => setIp(bannedIp)}
-                  className="rounded-full"
-                >
-                  {bannedIp}
-                </Button>
-              ))}
-            </div>
-          )}
-          <div>
-            <Label htmlFor="unban-ip" className="mb-1">IP Address to Unban</Label>
-            <Input
-              id="unban-ip"
-              value={ip}
-              onChange={(e) => setIp(e.target.value)}
-              placeholder="e.g. 192.168.1.100"
-            />
-          </div>
-          {unban.error && <p className="text-sm text-destructive">{String(unban.error)}</p>}
-        </div>
-        <DialogFooter className="mt-6">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleUnban} disabled={unban.isPending || !ip.trim()} className="bg-green-600 hover:bg-green-600/90 text-white">
-            {unban.isPending ? 'Unbanning...' : 'Unban IP'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Ban IP Modal ──────────────────────────────────────────────────────────────
-
-function BanIpModal({ jails, onClose }: { jails: F2BJail[]; onClose: () => void }) {
-  const banIp = useBanIp();
-  const [ip, setIp] = useState('');
-  const [jail, setJail] = useState('');
-
-  const handleBan = () => {
-    if (!ip.trim()) return;
-    banIp.mutate({ jail: jail || undefined, ip }, { onSuccess: () => onClose() });
-  };
-
-  return (
-    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Ban className="h-5 w-5 text-red-500" /> Ban IP Address
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="ban-ip" className="mb-1">IP Address</Label>
-            <Input
-              id="ban-ip"
-              value={ip}
-              onChange={(e) => setIp(e.target.value)}
-              placeholder="e.g. 192.168.1.100"
-            />
-          </div>
-          <div>
-            <Label htmlFor="ban-jail" className="mb-1">Jail (optional)</Label>
-            <select
-              id="ban-jail"
-              value={jail}
-              onChange={(e) => setJail(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-            >
-              <option value="">All jails</option>
-              {jails.map((j) => (
-                <option key={j.name} value={j.name}>
-                  {j.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          {banIp.error && <p className="text-sm text-destructive">{String(banIp.error)}</p>}
-        </div>
-        <DialogFooter className="mt-6">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button variant="destructive" onClick={handleBan} disabled={banIp.isPending || !ip.trim()}>
-            {banIp.isPending ? 'Banning...' : 'Ban IP'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Reset Confirm Modal ───────────────────────────────────────────────────────
-
-function ResetConfirmModal({ onClose }: { onClose: () => void }) {
-  const reset = useResetFirewallRules();
-
-  const handleReset = () => {
-    reset.mutate(undefined, { onSuccess: () => onClose() });
-  };
-
-  return (
-    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Reset to Default Rules</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="flex items-start gap-3 rounded-md border border-yellow-500/30 bg-yellow-500/5 p-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 text-yellow-500" />
-            <div>
-              <p className="text-sm font-medium">This will remove all custom rules</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                All existing firewall rules will be deleted and replaced with the default rules:
-                SSH (22), HTTP (80), and HTTPS (443).
-              </p>
-            </div>
-          </div>
-          {reset.error && <p className="text-sm text-destructive">{String(reset.error)}</p>}
-        </div>
-        <DialogFooter className="mt-6">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button variant="destructive" onClick={handleReset} disabled={reset.isPending}>
-            {reset.isPending ? 'Resetting...' : 'Reset to Defaults'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Confirm Action Modal (generic) ────────────────────────────────────────────
-
-function ConfirmModal({
-  title,
-  message,
-  confirmLabel,
-  onConfirm,
-  onClose,
-  isPending,
-}: {
-  title: string;
-  message: string;
-  confirmLabel: string;
-  onConfirm: () => void;
-  onClose: () => void;
-  isPending?: boolean;
-}) {
-  return (
-    <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-        </DialogHeader>
-        <div className="flex items-start gap-3 rounded-md border border-red-500/30 bg-red-500/5 p-3">
-          <AlertTriangle className="mt-0.5 h-5 w-5 text-red-500" />
-          <p className="text-sm text-muted-foreground">{message}</p>
-        </div>
-        <DialogFooter className="mt-6">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button variant="destructive" onClick={onConfirm} disabled={isPending}>
-            {isPending ? 'Processing...' : confirmLabel}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Main Page ─────────────────────────────────────────────────────────────────
+import { useFirewallStatus, useFirewallRules, useAddFirewallRule, useDeleteFirewallRule, useToggleFirewall, useFail2BanJails, useUnbanIp, type UfwRule, type F2BJail } from '../../api/hooks/firewall';
+import { Icon } from '../../components/icons';
 
 export function FirewallPage() {
-  const { data: status, isLoading: statusLoading, isError: statusError } = useFirewallStatus();
-  const { data: rules, isLoading: rulesLoading, isError: rulesError } = useFirewallRules();
-  const { data: jails, isLoading: jailsLoading, isError: jailsError } = useFail2BanJails();
+  const queryClient = useQueryClient();
+  const { data: status, isLoading: statusLoading } = useFirewallStatus();
+  const { data: rules } = useFirewallRules();
+  const { data: jails } = useFail2BanJails();
   const addRule = useAddFirewallRule();
   const deleteRule = useDeleteFirewallRule();
-  const applyPreset = useApplyFirewallPreset();
   const toggleFirewall = useToggleFirewall();
-  const toggleRule = useToggleRule();
+  const unbanIp = useUnbanIp();
 
-  const [tab, setTab] = useState<TabKey>('rules');
-  const [unbanTarget, setUnbanTarget] = useState<F2BJail | null>(null);
-  const [showBanIp, setShowBanIp] = useState(false);
-  const [showReset, setShowReset] = useState(false);
-  const [deleteRuleTarget, setDeleteRuleTarget] = useState<number | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
+  const [activeTab, setActiveTab] = useState<'rules' | 'fail2ban' | 'logs' | 'ssh'>('rules');
+  const [showAddRule, setShowAddRule] = useState(false);
+  const [ruleAction, setRuleAction] = useState<'allow' | 'deny'>('allow');
+  const [rulePort, setRulePort] = useState('');
+  const [ruleProtocol, setRuleProtocol] = useState('tcp');
+  const [ruleFrom, setRuleFrom] = useState('');
+  const [deleteRuleNum, setDeleteRuleNum] = useState<number | null>(null);
 
-  if (rulesLoading || statusLoading || jailsLoading) return <LoadingPage />;
+  const handleAddRule = async () => {
+    try {
+      await addRule.mutateAsync({ action: ruleAction, port: rulePort, protocol: ruleProtocol, from: ruleFrom });
+      setShowAddRule(false);
+      setRulePort('');
+      queryClient.invalidateQueries({ queryKey: ['firewall'] });
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
-  if (rulesError || statusError || jailsError) {
-    return (
-      <div>
-        <PageHeader title="Firewall" description="Manage UFW rules, Fail2Ban, and SSH settings" icon={Shield} />
-        <div className="flex flex-col items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 py-12">
-          <AlertTriangle className="h-10 w-10 text-red-500" />
-          <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load firewall data</h3>
-          <p className="mt-1 text-sm text-muted-foreground">An error occurred while fetching firewall rules and status.</p>
-          <Button
-            variant="destructive"
-            onClick={() => window.location.reload()}
-          >
-            <RefreshCw className="h-4 w-4" /> Retry
-          </Button>
-        </div>
-      </div>
-    );
+  const handleDeleteRule = async () => {
+    if (deleteRuleNum === null) return;
+    try {
+      await deleteRule.mutateAsync(deleteRuleNum);
+      setDeleteRuleNum(null);
+      queryClient.invalidateQueries({ queryKey: ['firewall'] });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  if (statusLoading) {
+    return <PageSkeleton />;
   }
 
-  const TABS: { key: TabKey; label: string; icon: typeof Shield }[] = [
-    { key: 'rules', label: 'UFW Rules', icon: Shield },
-    { key: 'fail2ban', label: 'Fail2Ban', icon: ShieldAlert },
-    { key: 'logs', label: 'Logs', icon: FileText },
-    { key: 'activity', label: 'Login Activity', icon: Activity },
-    { key: 'ssh', label: 'SSH', icon: Key },
+  const tabs = [
+    { id: 'rules', label: 'Rules' },
+    { id: 'fail2ban', label: 'Fail2Ban' },
+    { id: 'logs', label: 'Logs' },
+    { id: 'ssh', label: 'SSH' },
+  ];
+
+  const ruleColumns = [
+    {
+      key: 'number',
+      label: '#',
+    },
+    {
+      key: 'action',
+      label: 'Action',
+      render: (r: UfwRule) => (
+        <span className={r.action === 'ALLOW' ? 'text-foreground-success' : 'text-foreground-danger'}>
+          {r.action}
+        </span>
+      ),
+    },
+    {
+      key: 'direction',
+      label: 'Dir',
+    },
+    {
+      key: 'from',
+      label: 'From',
+      render: (r: UfwRule) => <span className="font-mono">{r.from || 'Any'}</span>,
+    },
+    {
+      key: 'rule',
+      label: 'Port/Service',
+      render: (r: UfwRule) => <span className="font-mono">{r.rule}</span>,
+    },
+    {
+      key: 'enabled',
+      label: 'Status',
+      render: (r: UfwRule) => <StatusBadge status={r.enabled !== false ? 'active' : 'inactive'} />,
+    },
+    {
+      key: 'actions',
+      label: '',
+      render: (r: UfwRule) => (
+        <Button variant="ghost" size="small" onClick={() => setDeleteRuleNum(r.number)} icon={<Icon name="icon-trash" size={15} />}>
+          Delete
+        </Button>
+      ),
+    },
+  ];
+
+  const presets = [
+    { id: 'ssh', label: 'SSH' },
+    { id: 'http', label: 'HTTP' },
+    { id: 'https', label: 'HTTPS' },
+    { id: 'ftp', label: 'FTP' },
+    { id: 'smtp', label: 'SMTP' },
+    { id: 'imap', label: 'IMAP' },
   ];
 
   return (
-    <div>
-      <PageHeader title="Firewall" description="Manage UFW rules, Fail2Ban, and SSH settings" icon={Shield} />
-
-      {/* Status banner */}
-      {status && (
-        <div
-          className={`mb-6 flex items-center justify-between rounded-lg border p-4 ${
-            status.enabled
-              ? 'border-green-500/30 bg-green-500/5'
-              : 'border-red-500/30 bg-red-500/5'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <Shield className={`h-5 w-5 ${status.enabled ? 'text-green-500' : 'text-red-500'}`} />
-            <div>
-              <div className="font-medium">UFW Firewall is {status.enabled ? 'ACTIVE' : 'INACTIVE'}</div>
-              <div className="text-sm text-muted-foreground">
-                Default input: {status.defaultInput} | Default output: {status.defaultOutput}
-              </div>
-            </div>
-          </div>
-          <Button
-            variant={status.enabled ? "outline" : "default"}
-            onClick={() => toggleFirewall.mutate(status.enabled ? 'disable' : 'enable')}
-            className={status.enabled ? 'border-red-500 text-red-500 hover:bg-red-500/10' : 'bg-green-600 hover:bg-green-600/90 text-white'}
-          >
-            {status.enabled ? 'Disable Firewall' : 'Enable Firewall'}
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-page-title font-medium">Firewall</h1>
+        <div className="flex items-center gap-2">
+          <StatusBadge status={status?.enabled ? 'running' : 'stopped'} />
+          <Button variant={status?.enabled ? 'danger' : 'primary'} size="small" onClick={() => toggleFirewall.mutate(status?.enabled ? 'disable' : 'enable')}>
+            {status?.enabled ? 'Disable' : 'Enable'}
           </Button>
         </div>
-      )}
-
-      {/* Tab bar */}
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex gap-1 rounded-lg border border-border p-1">
-          {TABS.map((t) => (
-            <Button
-              key={t.key}
-              variant={tab === t.key ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setTab(t.key)}
-            >
-              <t.icon className="h-3.5 w-3.5" />
-              {t.label}
-            </Button>
-          ))}
-        </div>
-
-        {tab === 'rules' && (
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setShowReset(true)}>
-              <RotateCcw className="h-4 w-4" /> Reset to Defaults
-            </Button>
-            <Button onClick={() => setShowAdd(true)}>
-              <Plus className="h-4 w-4" /> Add Rule
-            </Button>
-          </div>
-        )}
-        {tab === 'fail2ban' && (
-          <Button variant="destructive" onClick={() => setShowBanIp(true)}>
-            <Ban className="h-4 w-4" /> Ban IP
-          </Button>
-        )}
       </div>
 
-      {/* Modals */}
-      {showAdd && <AddRuleModal onClose={() => setShowAdd(false)} />}
-      {unbanTarget && <UnbanIpModal jail={unbanTarget} onClose={() => setUnbanTarget(null)} />}
-      {showBanIp && jails && (
-        <BanIpModal jails={jails} onClose={() => setShowBanIp(false)} />
-      )}
-      {showReset && <ResetConfirmModal onClose={() => setShowReset(false)} />}
+      <div className="border-b border-border-tertiary">
+        <nav className="flex gap-1">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className="px-4 py-2.5 text-small transition-colors relative"
+              style={{
+                color: activeTab === tab.id ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+                fontWeight: activeTab === tab.id ? 500 : 400,
+              }}
+            >
+              {tab.label}
+              {activeTab === tab.id && (
+                <span className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-foreground-primary" />
+              )}
+            </button>
+          ))}
+        </nav>
+      </div>
 
-      <ConfirmDialog
-        open={deleteRuleTarget !== null}
-        title="Delete Firewall Rule"
-        message={`This will permanently delete firewall rule #${deleteRuleTarget}. This may affect network access to your server.`}
-        variant="danger"
-        onConfirm={() => { if (deleteRuleTarget !== null) deleteRule.mutate(deleteRuleTarget); setDeleteRuleTarget(null); }}
-        onCancel={() => setDeleteRuleTarget(null)}
-      />
-
-      {/* ── Rules Tab ──────────────────────────────────────────────────────── */}
-      {tab === 'rules' && (
-        <div className="space-y-6">
-          {/* Presets */}
-          <div className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-3 text-sm font-medium">Quick Presets</h3>
-            <div className="flex flex-wrap gap-2">
-              {PRESETS.map((p) => (
-                <Button
-                  key={p.key}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => applyPreset.mutate(p.key as Parameters<typeof applyPreset.mutate>[0])}
-                  disabled={applyPreset.isPending}
-                >
-                  {p.label}
-                </Button>
+      {activeTab === 'rules' && (
+        <>
+          <Card action={<Button size="small" onClick={() => setShowAddRule(true)}>Add Rule</Button>}>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {presets.map((p) => (
+                <Button key={p.id} variant="default" size="small">{p.label}</Button>
               ))}
             </div>
-          </div>
-
-          {!rules?.length ? (
-            <EmptyState icon={Flame} title="No firewall rules" description="Add a firewall rule to get started." />
-          ) : (
-            <ResponsiveTable>
-              <table className="w-full text-sm">
-                <thead className="border-b border-border bg-muted/50">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-medium">Enabled</th>
-                    <th className="px-4 py-3 text-left font-medium">#</th>
-                    <th className="px-4 py-3 text-left font-medium">Action</th>
-                    <th className="px-4 py-3 text-left font-medium">Direction</th>
-                    <th className="px-4 py-3 text-left font-medium">From</th>
-                    <th className="px-4 py-3 text-left font-medium">Rule</th>
-                    <th className="px-4 py-3 text-right font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rules.map((r) => (
-                    <tr key={r.number} className="border-b border-border last:border-0 hover:bg-muted/30">
-                      <td className="px-4 py-3">
-                        <ToggleSwitch
-                          enabled={r.enabled !== false}
-                          onChange={() =>
-                            toggleRule.mutate({
-                              ruleNumber: r.number,
-                              enabled: r.enabled === false,
-                            })
-                          }
-                        />
-                      </td>
-                      <td className="px-4 py-3 font-mono text-muted-foreground">{r.number}</td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                            r.action === 'allow'
-                              ? 'bg-green-500/10 text-green-500'
-                              : 'bg-red-500/10 text-red-500'
-                          }`}
-                        >
-                          {r.action}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-xs uppercase text-muted-foreground">{r.direction}</td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">{r.from || 'Any'}</td>
-                      <td className="px-4 py-3 font-mono text-xs">{r.rule}</td>
-                      <td className="px-4 py-3 text-right">
-                        <Button variant="ghost" size="icon-sm" onClick={() => setDeleteRuleTarget(r.number)} className="hover:bg-destructive/10 hover:text-destructive">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </ResponsiveTable>
-          )}
-        </div>
+            {rules && rules.length > 0 ? (
+              <DataTable
+                columns={ruleColumns}
+                data={rules}
+                rowKey={(r) => String(r.number)}
+              />
+            ) : (
+              <p className="text-small text-foreground-tertiary text-center py-8">No firewall rules</p>
+            )}
+          </Card>
+        </>
       )}
 
-      {/* ── Fail2Ban Tab ───────────────────────────────────────────────────── */}
-      {tab === 'fail2ban' &&
-        (jailsLoading ? (
-          <LoadingPage />
-        ) : !jails?.length ? (
-          <EmptyState icon={Shield} title="No Fail2Ban jails" description="Fail2Ban is not configured or has no active jails." />
-        ) : (
-          <div className="space-y-4">
-            {jails.map((j) => (
-              <div key={j.name} className="rounded-lg border border-border bg-card p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="rounded bg-red-500/10 p-2">
-                      <ShieldAlert className="h-5 w-5 text-red-500" />
-                    </div>
-                    <div>
-                      <div className="font-medium">{j.name}</div>
-                      <div className="text-sm text-muted-foreground">{j.bannedCount} banned IP(s)</div>
-                    </div>
+      {activeTab === 'fail2ban' && (
+        <Card title="Fail2Ban Jails">
+          {jails && jails.length > 0 ? (
+            <div className="space-y-4">
+              {jails.map((jail) => (
+                <div key={jail.name} className="border border-border-tertiary rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium">{jail.name}</span>
+                    <span className="text-small text-foreground-secondary">{jail.bannedCount} banned IPs</span>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => setUnbanTarget(j)}>
-                    <Unlock className="h-4 w-4" /> Unban
-                  </Button>
+                  {jail.bannedIps.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {jail.bannedIps.map((ip) => (
+                        <div key={ip} className="flex items-center gap-1 px-2 py-1 bg-background-secondary rounded text-small">
+                          <span className="font-mono">{ip}</span>
+                          <Button variant="ghost" size="small" onClick={() => unbanIp.mutate({ jail: jail.name, ip })}>Unban</Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {j.bannedIps.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {j.bannedIps.map((ip) => (
-                      <span key={ip} className="rounded-full bg-red-500/10 px-3 py-1 font-mono text-xs text-red-500">
-                        {ip}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No banned IPs</p>
-                )}
-              </div>
-            ))}
-          </div>
-        ))}
-
-      {/* ── Logs Tab ───────────────────────────────────────────────────────── */}
-      {tab === 'logs' && <Fail2BanLogViewer />}
-
-      {/* ── Activity Tab ───────────────────────────────────────────────────── */}
-      {tab === 'activity' && <LoginActivityTab />}
-
-      {/* ── SSH Tab ────────────────────────────────────────────────────────── */}
-      {tab === 'ssh' && <SshSettingsTab />}
-    </div>
-  );
-}
-
-// ─── Fail2Ban Log Viewer ───────────────────────────────────────────────────────
-
-function Fail2BanLogViewer() {
-  const { data, isLoading, refetch } = useFail2banLogs(50);
-
-  if (isLoading) return <LoadingPage />;
-
-  const logLines = (data?.log || '').split('\n').filter(Boolean);
-
-  return (
-    <div className="rounded-lg border border-border bg-card">
-      <div className="flex items-center justify-between border-b border-border p-4">
-        <div className="flex items-center gap-2">
-          <FileText className="h-5 w-5 text-primary" />
-          <h3 className="font-semibold">Fail2Ban Logs</h3>
-          <span className="text-xs text-muted-foreground">(last 50 lines)</span>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
-        </Button>
-      </div>
-      <div className="max-h-[500px] overflow-auto bg-background p-4">
-        {logLines.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No log entries available.</p>
-        ) : (
-          <pre className="space-y-1 font-mono text-xs leading-relaxed">
-            {logLines.map((line, i) => (
-              <div
-                key={i}
-                className={`${
-                  line.toLowerCase().includes('error') || line.toLowerCase().includes('fail')
-                    ? 'text-red-400'
-                    : line.toLowerCase().includes('ban')
-                    ? 'text-yellow-400'
-                    : line.toLowerCase().includes('unban')
-                    ? 'text-green-400'
-                    : 'text-muted-foreground'
-                }`}
-              >
-                {line}
-              </div>
-            ))}
-          </pre>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Login Activity Tab ────────────────────────────────────────────────────────
-
-function LoginActivityTab() {
-  const { data: auditData, isLoading } = useAuditLog({ perPage: 100 });
-
-  if (isLoading) return <LoadingPage />;
-
-  const loginEntries = (auditData?.data || []).filter(
-    (e: AuditEntry) =>
-      e.action?.toLowerCase().includes('login') ||
-      e.action?.toLowerCase().includes('logout') ||
-      e.action?.toLowerCase().includes('auth')
-  );
-
-  return (
-    <div className="rounded-lg border border-border bg-card">
-      <div className="flex items-center gap-2 border-b border-border p-4">
-        <Activity className="h-5 w-5 text-primary" />
-        <h3 className="font-semibold">Recent Login Activity</h3>
-        <span className="text-xs text-muted-foreground">({loginEntries.length} entries)</span>
-      </div>
-      {loginEntries.length === 0 ? (
-        <div className="p-6">
-          <EmptyState icon={Activity} title="No login activity" description="No recent login or logout events found." />
-        </div>
-      ) : (
-        <ResponsiveTable>
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-muted/50">
-              <tr>
-                <th className="px-4 py-3 text-left font-medium">Time</th>
-                <th className="px-4 py-3 text-left font-medium">Action</th>
-                <th className="px-4 py-3 text-left font-medium">IP Address</th>
-                <th className="px-4 py-3 text-left font-medium">User</th>
-                <th className="px-4 py-3 text-left font-medium">Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loginEntries.map((entry) => {
-                const isSuccess =
-                  entry.action?.toLowerCase().includes('success') ||
-                  entry.action?.toLowerCase().includes('login');
-                const isFailure =
-                  entry.action?.toLowerCase().includes('fail') ||
-                  entry.action?.toLowerCase().includes('invalid');
-                return (
-                  <tr key={entry.id} className="border-b border-border last:border-0 hover:bg-muted/30">
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '—'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          isFailure
-                            ? 'bg-red-500/10 text-red-500'
-                            : isSuccess
-                            ? 'bg-green-500/10 text-green-500'
-                            : 'bg-blue-500/10 text-blue-500'
-                        }`}
-                      >
-                        {entry.action}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs">{entry.ip || '—'}</td>
-                    <td className="px-4 py-3 text-xs">{entry.userId || '—'}</td>
-                    <td className="max-w-xs truncate px-4 py-3 text-xs text-muted-foreground">
-                      {entry.details || entry.userAgent || '—'}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </ResponsiveTable>
+              ))}
+            </div>
+          ) : (
+            <p className="text-small text-foreground-tertiary text-center py-8">No Fail2Ban jails active</p>
+          )}
+        </Card>
       )}
-    </div>
-  );
-}
 
-// ─── SSH Settings Tab ──────────────────────────────────────────────────────────
+      {activeTab === 'logs' && (
+        <Card title="Firewall Logs">
+          <p className="text-small text-foreground-tertiary text-center py-8">Logs view coming soon</p>
+        </Card>
+      )}
 
-function SshSettingsTab() {
-  const { data, isLoading } = useSshSettings();
-  const updateSsh = useUpdateSshSettings();
-  const [form, setForm] = useState({
-    port: 22,
-    permitRootLogin: false,
-    passwordAuth: true,
-    pubkeyAuth: true,
-  });
-  const [initialized, setInitialized] = useState(false);
-
-  // Sync server data → local form once
-  if (!initialized && data) {
-    setForm({
-      port: data.port ?? 22,
-      permitRootLogin: data.permitRootLogin ?? false,
-      passwordAuth: data.passwordAuth ?? true,
-      pubkeyAuth: data.pubkeyAuth ?? true,
-    });
-    setInitialized(true);
-  }
-
-  if (isLoading) return <LoadingPage />;
-
-  const handleSave = () => {
-    updateSsh.mutate(form);
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="rounded-lg border border-border bg-card">
-        <div className="flex items-center gap-2 border-b border-border p-4">
-          <Terminal className="h-5 w-5 text-primary" />
-          <div>
-            <h3 className="font-semibold">SSH Configuration</h3>
-            <p className="text-xs text-muted-foreground">Manage SSH daemon settings</p>
-          </div>
-        </div>
-        <div className="space-y-5 p-4">
-          {/* Port */}
-          <div>
-            <Label htmlFor="ssh-port" className="mb-1">SSH Port</Label>
-            <Input
-              id="ssh-port"
-              type="number"
-              min={1}
-              max={65535}
-              value={form.port}
-              onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) || 22 })}
-              className="max-w-xs"
-            />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Changing the SSH port will require updating your firewall rules.
-            </p>
-          </div>
-
-          {/* Toggles */}
+      {activeTab === 'ssh' && (
+        <Card title="SSH Settings">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <div>
-                <span className="text-sm font-medium">Root Login</span>
-                <p className="text-xs text-muted-foreground">Allow SSH login as root user</p>
-              </div>
-              <ToggleSwitch
-                enabled={form.permitRootLogin}
-                onChange={() => setForm({ ...form, permitRootLogin: !form.permitRootLogin })}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-sm font-medium">Password Authentication</span>
-                <p className="text-xs text-muted-foreground">Allow SSH login with password</p>
-              </div>
-              <ToggleSwitch
-                enabled={form.passwordAuth}
-                onChange={() => setForm({ ...form, passwordAuth: !form.passwordAuth })}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-sm font-medium">Public Key Authentication</span>
-                <p className="text-xs text-muted-foreground">Allow SSH login with public keys</p>
-              </div>
-              <ToggleSwitch
-                enabled={form.pubkeyAuth}
-                onChange={() => setForm({ ...form, pubkeyAuth: !form.pubkeyAuth })}
-              />
+              <span className="text-small">Current SSH Port</span>
+              <span className="font-mono">22</span>
             </div>
           </div>
+        </Card>
+      )}
 
-          {updateSsh.error && (
-            <p className="text-sm text-destructive">{String(updateSsh.error)}</p>
-          )}
-
-          <Button
-            onClick={handleSave}
-            disabled={updateSsh.isPending}
-          >
-            {updateSsh.isPending ? 'Saving...' : 'Save SSH Settings'}
-          </Button>
+      <Modal isOpen={showAddRule} onClose={() => setShowAddRule(false)} title="Add Firewall Rule"
+        footer={<><Button variant="ghost" onClick={() => setShowAddRule(false)}>Cancel</Button><Button variant="primary" onClick={handleAddRule} loading={addRule.isPending}>Add</Button></>}>
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <Button variant={ruleAction === 'allow' ? 'primary' : 'default'} onClick={() => setRuleAction('allow')}>Allow</Button>
+            <Button variant={ruleAction === 'deny' ? 'danger' : 'default'} onClick={() => setRuleAction('deny')}>Deny</Button>
+          </div>
+          <Input label="Port" value={rulePort} onChange={(e) => setRulePort(e.target.value)} placeholder="80 or 80,443" />
+          <div>
+            <label className="text-meta font-medium mb-1 block">Protocol</label>
+            <div className="flex gap-2">
+              <Button variant={ruleProtocol === 'tcp' ? 'primary' : 'default'} size="small" onClick={() => setRuleProtocol('tcp')}>TCP</Button>
+              <Button variant={ruleProtocol === 'udp' ? 'primary' : 'default'} size="small" onClick={() => setRuleProtocol('udp')}>UDP</Button>
+            </div>
+          </div>
+          <Input label="From (optional)" value={ruleFrom} onChange={(e) => setRuleFrom(e.target.value)} placeholder="Any or IP/CIDR" />
         </div>
-      </div>
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={deleteRuleNum !== null}
+        onClose={() => setDeleteRuleNum(null)}
+        onConfirm={handleDeleteRule}
+        title="Delete Firewall Rule"
+        description="This rule will be removed from the firewall."
+        confirmText="Delete"
+        impact="medium"
+      />
     </div>
   );
 }

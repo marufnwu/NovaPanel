@@ -1,0 +1,118 @@
+/* =============================================
+   NovaPanel Design System — CSS Variables
+   Follow the design document exactly.
+   No hardcoded colors. No arbitrary values.
+   ============================================= */
+
+:root {
+  /* ── Background Colors ── */
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f8f9fa;
+  --color-background-tertiary: #f1f3f4;
+  --color-background-success: #dcfce7;
+  --color-background-warning: #fef9c3;
+  --color-background-danger: #fee2e2;
+  --color-background-info: #dbeafe;
+
+  /* ── Text Colors ── */
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-text-tertiary: #9ca3af;
+  --color-text-success: #15803d;
+  --color-text-warning: #a16207;
+  --color-text-danger: #b91c1c;
+  --color-text-info: #1d4ed8;
+
+  /* ── Border Colors ── */
+  --color-border-primary: #111827;
+  --color-border-secondary: #d1d5db;
+  --color-border-tertiary: #e5e7eb;
+  --color-border-success: #15803d;
+  --color-border-warning: #a16207;
+  --color-border-danger: #b91c1c;
+  --color-border-info: #1d4ed8;
+
+  /* ── Spacing ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-10: 40px;
+
+  /* ── Typography ── */
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+  --text-page-title: 22px;
+  --text-section-title: 18px;
+  --text-card-title: 16px;
+  --text-body: 14px;
+  --text-small: 13px;
+  --text-meta: 12px;
+  --text-section-label: 11px;
+
+  /* ── Border Radius ── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 99px;
+
+  /* ── Layout ── */
+  --sidebar-width: 220px;
+  --sidebar-collapsed-width: 52px;
+  --topbar-height: 48px;
+  --statusbar-height: 36px;
+
+  /* ── Transitions ── */
+  --transition-fast: 150ms ease;
+  --transition-normal: 200ms ease;
+}
+
+/* ── Dark Mode Variables ── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background-primary: #0f1117;
+    --color-background-secondary: #1a1d27;
+    --color-background-tertiary: #252836;
+    --color-background-success: #14532d;
+    --color-background-warning: #713f12;
+    --color-background-danger: #7f1d1d;
+    --color-background-info: #1e3a5f;
+
+    --color-text-primary: #f9fafb;
+    --color-text-secondary: #9ca3af;
+    --color-text-tertiary: #6b7280;
+    --color-text-success: #4ade80;
+    --color-text-warning: #fbbf24;
+    --color-text-danger: #f87171;
+    --color-text-info: #60a5fa;
+
+    --color-border-primary: #f9fafb;
+    --color-border-secondary: #374151;
+    --color-border-tertiary: #1f2937;
+  }
+}
+
+/* Force dark mode */
+.dark {
+  --color-background-primary: #0f1117;
+  --color-background-secondary: #1a1d27;
+  --color-background-tertiary: #252836;
+  --color-background-success: #14532d;
+  --color-background-warning: #713f12;
+  --color-background-danger: #7f1d1d;
+  --color-background-info: #1e3a5f;
+
+  --color-text-primary: #f9fafb;
+  --color-text-secondary: #9ca3af;
+  --color-text-tertiary: #6b7280;
+  --color-text-success: #4ade80;
+  --color-text-warning: #fbbf24;
+  --color-text-danger: #f87171;
+  --color-text-info: #60a5fa;
+
+  --color-border-primary: #f9fafb;
+  --color-border-secondary: #374151;
+  --color-border-tertiary: #1f2937;
+}

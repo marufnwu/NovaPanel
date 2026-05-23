@@ -1,214 +1,196 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import {
-  useDomains, useCreateDomain, useDeleteDomain, useSuspendDomain,
-  useActivateDomain, useMakePrimaryDomain, useBulkSuspendDomains,
-  useBulkActivateDomains, useBulkDeleteDomains, useVerifyDomainDns,
-  type Domain, type CreateDomainInput,
-} from '../../api/hooks/domains';
-import { useSites } from '../../api/hooks/sites';
-import { PageHeader } from '../../components/ui/PageHeader';
+import { Button } from '../../components/ui/Button';
+import { DataTable } from '../../components/ui/DataTable';
+import { StatusBadge } from '../../components/ui/StatusBadge';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { PageSkeleton } from '../../components/ui/Skeleton';
+import { Modal } from '../../components/ui/Modal';
+import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { DataTableV2 } from '@/components/design-system/DataTableV2';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import type { ColumnDef } from '@tanstack/react-table';
-import {
-  Globe, Plus, Trash2, Ban, CheckCircle, ExternalLink, Server,
-  Shield, ArrowUpDown, Search, Loader2,
-} from 'lucide-react';
-import { toast } from '../../lib/toast';
-
-const DOMAIN_TYPES = [
-  { value: 'apex', label: 'Apex' },
-  { value: 'subdomain', label: 'Subdomain' },
-  { value: 'wildcard', label: 'Wildcard' },
-];
-
-function StatusBadge({ status }: { status: Domain['status'] }) {
-  const variant = status === 'active' ? 'default' : status === 'suspended' ? 'destructive' : 'secondary';
-  return <Badge variant={variant}>{status}</Badge>;
-}
-
-function TypeBadge({ type }: { type: Domain['type'] }) {
-  return <Badge variant="outline">{type}</Badge>;
-}
-
-function CreateDomainModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const createDomain = useCreateDomain();
-  const { data: sites } = useSites();
-  const verifyDns = useVerifyDomainDns();
-  const [form, setForm] = useState<CreateDomainInput & { key: number }>({ name: '', type: 'apex', skipDnsVerification: false, key: 0 });
-  const [dnsStatus, setDnsStatus] = useState<{ ok: boolean; msg: string } | null>(null);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.name.trim()) return;
-    createDomain.mutate(
-      { ...form, skipDnsVerification: true },
-      {
-        onSuccess: () => { toast.success(`Domain "${form.name}" created`); onClose(); setForm({ name: '', type: 'apex', skipDnsVerification: false, key: form.key + 1 }); setDnsStatus(null); },
-        onError: (err: any) => toast.error(err?.message || 'Failed to create domain'),
-      }
-    );
-  };
-
-  const checkDns = async () => {
-    if (!form.name) return;
-    setDnsStatus({ ok: false, msg: 'Checking...' });
-    try {
-      const result = await verifyDns.mutateAsync(form.name);
-      setDnsStatus(result.pointsToServer ? { ok: true, msg: 'DNS points to this server ✓' } : { ok: false, msg: `DNS does NOT point to this server (found: ${result.resolvesTo.join(', ') || 'none'}). Use Cloudflare Tunnel instead.` });
-    } catch { setDnsStatus({ ok: false, msg: 'DNS check failed' }); }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader><DialogTitle>Add Domain</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label>Domain Name</Label>
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value.toLowerCase() })} placeholder="example.com" className="mt-1" />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Type</Label>
-              <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v as any })}>
-                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                <SelectContent>{DOMAIN_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Attach to Site</Label>
-              <Select value={form.siteId || ''} onValueChange={(v) => setForm({ ...form, siteId: v || undefined })}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="None" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">None</SelectItem>
-                  {sites?.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={checkDns} disabled={!form.name || verifyDns.isPending}>
-              {verifyDns.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Search className="mr-1 h-3 w-3" />}
-              Check DNS
-            </Button>
-            {dnsStatus && <span className={`text-xs ${dnsStatus.ok ? 'text-green-500' : 'text-amber-500'}`}>{dnsStatus.msg}</span>}
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={createDomain.isPending || !form.name}>
-              {createDomain.isPending ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
-              {createDomain.isPending ? 'Creating...' : 'Add Domain'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
+import { useDomains, useCreateDomain, useDeleteDomain, type Domain } from '../../api/hooks/domains';
+import { Icon } from '../../components/icons';
 
 export function DomainsPage() {
-  const { data: domains, isLoading } = useDomains();
-  const { data: sites } = useSites();
-  const deleteDomain = useDeleteDomain();
-  const suspendDomain = useSuspendDomain();
-  const activateDomain = useActivateDomain();
-  const makePrimary = useMakePrimaryDomain();
-  const bulkSuspend = useBulkSuspendDomains();
-  const bulkActivate = useBulkActivateDomains();
-  const bulkDelete = useBulkDeleteDomains();
   const navigate = useNavigate();
-  const [showCreate, setShowCreate] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
-  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
-  const selectedIds = useMemo(() => Object.keys(rowSelection), [rowSelection]);
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
+  const { data: domains, isLoading } = useDomains(search);
+  const createDomain = useCreateDomain();
+  const deleteDomain = useDeleteDomain();
 
-  const handleDelete = (id: string) => {
-    deleteDomain.mutate(id, {
-      onSuccess: () => { toast.success('Domain deleted'); setDeleteId(null); },
-      onError: () => toast.error('Failed to delete domain'),
-    });
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newDomainName, setNewDomainName] = useState('');
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const handleCreate = async () => {
+    try {
+      await createDomain.mutateAsync({ name: newDomainName, type: 'apex', skipDnsVerification: false });
+      setShowCreateModal(false);
+      setNewDomainName('');
+      queryClient.invalidateQueries({ queryKey: ['domains'] });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const getSiteName = (siteId?: string | null) => sites?.find(s => s.id === siteId)?.name;
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    try {
+      await deleteDomain.mutateAsync(deleteId);
+      setDeleteId(null);
+      queryClient.invalidateQueries({ queryKey: ['domains'] });
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
-  const columns: ColumnDef<Domain>[] = [
-    { id: 'select', header: ({ table }) => (
-      <input type="checkbox" checked={table.getIsAllPageRowsSelected()} onChange={table.getToggleAllPageRowsSelectedHandler()} />
-    ), cell: ({ row }) => (
-      <input type="checkbox" checked={row.getIsSelected()} onChange={row.getToggleSelectedHandler()} />
-    ), enableSorting: false },
-    { accessorKey: 'name', header: 'Domain', cell: ({ row }) => (
-      <div className="flex items-center gap-2">
-        {row.original.sslStatus === 'active' && <Shield className="h-3.5 w-3.5 text-green-500" />}
-        <span className="font-medium">{row.original.name}</span>
-        {row.original.type !== 'apex' && <TypeBadge type={row.original.type} />}
-      </div>
-    )},
-    { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusBadge status={row.original.status} /> },
-    { accessorKey: 'siteId', header: 'Site', cell: ({ row }) => getSiteName(row.original.siteId) ? (
-      <span className="text-sm text-muted-foreground">{getSiteName(row.original.siteId)}</span>
-    ) : <span className="text-sm text-muted-foreground">—</span> },
-    { id: 'actions', header: '', cell: ({ row }) => (
-      <div className="flex justify-end gap-1">
-        {row.original.status === 'active' ? (
-          <Button variant="ghost" size="icon" onClick={() => suspendDomain.mutate(row.original.id, { onSuccess: () => toast.success('Suspended'), onError: () => toast.error('Failed') })}><Ban className="h-3.5 w-3.5" /></Button>
-        ) : (
-          <Button variant="ghost" size="icon" onClick={() => activateDomain.mutate(row.original.id, { onSuccess: () => toast.success('Activated'), onError: () => toast.error('Failed') })}><CheckCircle className="h-3.5 w-3.5 text-green-500" /></Button>
-        )}
-        {row.original.type !== 'apex' && (
-          <Button variant="ghost" size="icon" onClick={() => makePrimary.mutate(row.original.id, { onSuccess: () => toast.success('Promoted to primary'), onError: () => toast.error('Failed') })}><ArrowUpDown className="h-3.5 w-3.5" /></Button>
-        )}
-        <Button variant="ghost" size="icon" onClick={() => setDeleteId(row.original.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
-      </div>
-    ), enableSorting: false },
+  if (isLoading) {
+    return <PageSkeleton />;
+  }
+
+  const getDomainType = (domain: Domain) => {
+    if (domain.type === 'apex') return 'Apex';
+    if (domain.type === 'subdomain') return 'Subdomain';
+    if (domain.type === 'wildcard') return 'Wildcard';
+    return domain.type;
+  };
+
+  const getSslStatus = (domain: Domain) => {
+    if (domain.sslStatus === 'active') return 'active';
+    if (domain.sslStatus === 'expired') return 'expired';
+    return 'inactive';
+  };
+
+  const columns = [
+    {
+      key: 'name',
+      label: 'Domain',
+      render: (domain: Domain) => <span className="font-mono font-medium">{domain.name}</span>,
+    },
+    {
+      key: 'type',
+      label: 'Type',
+      render: (domain: Domain) => (
+        <span className="text-small px-2 py-0.5 bg-background-secondary rounded">
+          {getDomainType(domain)}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (domain: Domain) => <StatusBadge status={domain.status === 'active' ? 'active' : 'inactive'} />,
+    },
+    {
+      key: 'ssl',
+      label: 'SSL',
+      render: (domain: Domain) => <StatusBadge status={getSslStatus(domain)} />,
+    },
+    {
+      key: 'siteId',
+      label: 'Site',
+      render: (domain: Domain) => domain.siteId ? (
+        <Button variant="ghost" size="small" onClick={(e) => { e.stopPropagation(); navigate({ to: '/sites/$siteId', params: { siteId: domain.siteId } }); }}>
+          View Site
+        </Button>
+      ) : '—',
+    },
+    {
+      key: 'actions',
+      label: '',
+      render: (domain: Domain) => (
+        <div className="flex gap-1">
+          <Button
+            variant="ghost"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate({ to: '/domains/$domainId', params: { domainId: domain.id } });
+            }}
+            icon={<Icon name="icon-arrow-right" size={15} />}
+          >
+            View
+          </Button>
+          <Button
+            variant="ghost"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDeleteId(domain.id);
+            }}
+            icon={<Icon name="icon-trash" size={15} />}
+          >
+            Delete
+          </Button>
+        </div>
+      ),
+    },
   ];
 
-  if (isLoading) return <div className="flex h-96 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
-
   return (
-    <div className="mx-6 my-6">
-      <PageHeader
-        title="Domains"
-        description="Manage your domains, subdomains, aliases and redirects"
-        actions={
-          <Button onClick={() => setShowCreate(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Add Domain
-          </Button>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-page-title font-medium">Domains</h1>
+        <Button icon={<Icon name="icon-plus" size={16} />} onClick={() => setShowCreateModal(true)}>
+          Add Domain
+        </Button>
+      </div>
+
+      <div className="max-w-[300px]">
+        <Input
+          placeholder="Search domains..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      <DataTable
+        columns={columns}
+        data={domains || []}
+        rowKey={(domain) => domain.id}
+        onRowClick={(domain) => navigate({ to: '/domains/$domainId', params: { domainId: domain.id } })}
+        emptyState={
+          <EmptyState
+            icon="icon-world"
+            title="No domains yet"
+            description="Add your first domain to get started"
+            action={{ label: 'Add Domain', onClick: () => setShowCreateModal(true) }}
+          />
         }
       />
 
-      {selectedIds.length > 0 && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border bg-muted/50 px-4 py-2">
-          <span className="text-sm font-medium">{selectedIds.length} selected</span>
-          <Button size="sm" variant="outline" onClick={() => { bulkSuspend.mutate(selectedIds, { onSuccess: () => toast.success('Suspended') }); setRowSelection({}); }}><Ban className="mr-1 h-3 w-3" /> Suspend</Button>
-          <Button size="sm" variant="outline" onClick={() => { bulkActivate.mutate(selectedIds, { onSuccess: () => toast.success('Activated') }); setRowSelection({}); }}><CheckCircle className="mr-1 h-3 w-3" /> Activate</Button>
-          <Button size="sm" variant="destructive" onClick={() => setBulkDeleteConfirm(true)}><Trash2 className="mr-1 h-3 w-3" /> Delete</Button>
-        </div>
-      )}
+      <Modal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="Add Domain"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowCreateModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleCreate} loading={createDomain.isPending}>
+              Add
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label="Domain Name"
+          value={newDomainName}
+          onChange={(e) => setNewDomainName(e.target.value)}
+          placeholder="example.com"
+        />
+      </Modal>
 
-      {!domains?.length ? (
-        <DataTableV2 columns={[]} data={[]} emptyIcon={Globe} emptyTitle="No domains yet" emptyDescription="Add your first domain to get started." />
-      ) : (
-        <DataTableV2 columns={columns} data={domains} searchKey="name" searchPlaceholder="Search domains..." emptyIcon={Globe} emptyTitle="No domains yet" emptyDescription="Add your first domain to get started." />
-      )}
-
-      <CreateDomainModal open={showCreate} onClose={() => setShowCreate(false)} />
-      <ConfirmDialog open={!!deleteId} onCancel={() => setDeleteId(null)} onConfirm={() => deleteId && handleDelete(deleteId)} title="Delete Domain" message="This will remove the domain and its nginx configuration. This action cannot be undone." confirmText="Delete" variant="danger" />
-      <ConfirmDialog open={bulkDeleteConfirm} onCancel={() => setBulkDeleteConfirm(false)} onConfirm={() => { bulkDelete.mutate(selectedIds, { onSuccess: () => { toast.success(`Deleted ${selectedIds.length} domains`); setRowSelection({}); } }); setBulkDeleteConfirm(false); }} title={`Delete ${selectedIds.length} Domains`} message={`This will remove all ${selectedIds.length} selected domains and their nginx configurations. This action cannot be undone.`} confirmText="Delete All" variant="danger" requireTyping="DELETE" />
+      <ConfirmDialog
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={handleDelete}
+        title="Delete Domain"
+        description="This action cannot be undone. All associated records will be deleted."
+        confirmText="Delete"
+        impact="high"
+      />
     </div>
   );
 }

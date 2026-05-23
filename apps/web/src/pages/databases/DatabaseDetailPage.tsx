@@ -1,327 +1,182 @@
-import { useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
-import { useDatabaseInfo, useDeleteDbUser, useExportDatabase, useImportDatabase, useRepairDatabase, useOptimizeDatabase, useRunQuery, useCloneDatabase, useChangeDbPassword, useDatabases } from '../../api/hooks/databases';
+import { useParams } from '@tanstack/react-router';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Button } from '../../components/ui/Button';
+import { Card } from '../../components/ui/Card';
+import { StatusBadge } from '../../components/ui/StatusBadge';
+import { DataTable } from '../../components/ui/DataTable';
+import { PageSkeleton } from '../../components/ui/Skeleton';
+import { Modal } from '../../components/ui/Modal';
+import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
-import { ActionDropdown } from '../../components/ui/ActionDropdown';
-import { CopyButton } from '../../components/ui/CopyButton';
-import { Database, Download, Plus, Search, Server, Copy, Trash2, X, ArrowLeft, KeyRound, ShieldOff } from 'lucide-react';
-import { toast } from '../../lib/toast';
+import { useDatabaseInfo, useCreateDbUser, useDeleteDbUser, type DatabaseInfo, type DbUser } from '../../api/hooks/databases';
+import { Icon } from '../../components/icons';
+import { useState } from 'react';
 
-interface DatabaseDetailPageProps {
-  databaseId: string;
-}
+export function DatabaseDetailPage() {
+  const params = useParams({ from: '/databases/$databaseId' });
+  const databaseId = params.databaseId as string;
+  const queryClient = useQueryClient();
 
-function QueryModal({ databaseId, engine }: { databaseId: string; engine: string }) {
-  const [sql, setSql] = useState('');
-  const [result, setResult] = useState<any>(null);
-  const runQuery = useRunQuery();
+  const { data: dbInfo, isLoading } = useDatabaseInfo(databaseId);
+  const createDbUser = useCreateDbUser();
+  const deleteDbUser = useDeleteDbUser();
 
-  const handleRun = () => {
-    if (!sql.trim()) return;
-    runQuery.mutate({ dbId: databaseId, sql }, {
-      onSuccess: (data) => setResult(data),
-    });
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
+
+  const handleCreateUser = async () => {
+    try {
+      await createDbUser.mutateAsync({ databaseId, username: newUsername, password: newPassword });
+      setShowCreateUser(false);
+      setNewUsername('');
+      setNewPassword('');
+      queryClient.invalidateQueries({ queryKey: ['database-info', databaseId] });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  return (
-    <div className="rounded-lg border border-border bg-card p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Run Query</h3>
-        <button onClick={() => setResult(null)} className="rounded p-1 hover:bg-accent"><X className="h-5 w-5" /></button>
-      </div>
-      <textarea value={sql} onChange={(e) => setSql(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm" rows={6} placeholder="SELECT * FROM ..." />
-      <div className="mt-3 flex justify-end gap-2">
-        <button onClick={() => { setSql(''); setResult(null); }} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Clear</button>
-        <button onClick={handleRun} disabled={runQuery.isPending || !sql.trim()} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-          {runQuery.isPending ? 'Running...' : 'Run Query'}
-        </button>
-      </div>
-      {result && (
-        <div className="mt-4 rounded border border-border bg-muted/50 p-4">
-          <pre className="text-xs overflow-auto">{JSON.stringify(result, null, 2)}</pre>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CloneModal({ databaseId, engine, onClose }: { databaseId: string; engine: string; onClose: () => void }) {
-  const clone = useCloneDatabase();
-  const [newName, setNewName] = useState('');
-
-  const handleClone = () => {
-    if (!newName.trim()) return;
-    clone.mutate({ dbId: databaseId, newName }, {
-      onSuccess: () => { toast.success('Database cloned successfully'); onClose(); },
-      onError: (e: Error) => { toast.error(e.message || 'Clone failed'); },
-    });
+  const handleDeleteUser = async () => {
+    if (!deleteUserId) return;
+    try {
+      await deleteDbUser.mutateAsync({ dbId: databaseId, userId: deleteUserId });
+      setDeleteUserId(null);
+      queryClient.invalidateQueries({ queryKey: ['database-info', databaseId] });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  return (
-    <div className="rounded-lg border border-border bg-card p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Clone Database</h3>
-        <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-5 w-5" /></button>
-      </div>
-      <input value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder="New database name" />
-      {clone.error && <p className="mt-2 text-sm text-destructive">{String(clone.error)}</p>}
-      <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-        <button onClick={handleClone} disabled={clone.isPending || !newName.trim()} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-          {clone.isPending ? 'Cloning...' : 'Clone'}
-        </button>
-      </div>
-    </div>
-  );
-}
+  if (isLoading) {
+    return <PageSkeleton />;
+  }
 
-function ChangePasswordModal({ databaseId, userId, username, onClose }: { databaseId: string; userId: string; username: string; onClose: () => void }) {
-  const changePw = useChangeDbPassword();
-  const [password, setPassword] = useState('');
+  if (!dbInfo) {
+    return <div className="text-center py-12">Database not found</div>;
+  }
 
-  const handleChange = () => {
-    if (!password.trim()) return;
-    changePw.mutate({ dbId: databaseId, userId, password }, {
-      onSuccess: () => { toast.success('Password updated'); onClose(); },
-      onError: (e: Error) => { toast.error(e.message || 'Failed to update password'); },
-    });
+  const formatBytes = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
-  return (
-    <div className="rounded-lg border border-border bg-card p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Change Password for {username}</h3>
-        <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-5 w-5" /></button>
-      </div>
-      <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder="New password" />
-      {changePw.error && <p className="mt-2 text-sm text-destructive">{String(changePw.error)}</p>}
-      <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-        <button onClick={handleChange} disabled={changePw.isPending || !password.trim()} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-          {changePw.isPending ? 'Saving...' : 'Save'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-export function DatabaseDetailPage({ databaseId }: DatabaseDetailPageProps) {
-  const navigate = useNavigate();
-  const { data: info, isLoading } = useDatabaseInfo(databaseId);
-  const { data: databases } = useDatabases();
-  const database = databases?.find(d => d.id === databaseId);
-  const databaseName = database?.name ?? info?.name ?? databaseId;
-  const databaseEngine = database?.engine ?? info?.engine ?? 'mariadb';
-  const databaseCharset = database?.charset ?? info?.charset ?? 'utf8mb4';
-  const deleteUser = useDeleteDbUser();
-  const exportDb = useExportDatabase();
-  const importDb = useImportDatabase();
-  const repair = useRepairDatabase();
-  const optimize = useOptimizeDatabase();
-  const [showClone, setShowClone] = useState(false);
-  const [showQuery, setShowQuery] = useState(false);
-  const [importSql, setImportSql] = useState('');
-  const [showImport, setShowImport] = useState(false);
-  const [changePasswordUser, setChangePasswordUser] = useState<{ id: string; username: string } | null>(null);
-  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void; variant: 'danger' | 'warning' }>({ open: false, title: '', message: '', onConfirm: () => {}, variant: 'warning' });
-
-  const handleExport = () => {
-    exportDb.mutate(databaseId, {
-      onSuccess: (data) => {
-        const blob = new Blob([data.sql || ''], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${databaseName}.sql`;
-        a.click();
-        URL.revokeObjectURL(url);
-      },
-    });
-  };
-
-  const handleImport = () => {
-    if (!importSql.trim()) return;
-    importDb.mutate({ dbId: databaseId, sql: importSql }, {
-      onSuccess: () => {
-        setShowImport(false);
-        setImportSql('');
-      },
-    });
-  };
-
-  const handleRepair = () => {
-    setConfirmDialog({
-      open: true,
-      title: 'Repair Database',
-      message: `Run repair on database '${databaseName}'? This may take a while for large databases.`,
-      variant: 'warning',
-      onConfirm: () => repair.mutate(databaseId),
-    });
-  };
-
-  const handleOptimize = () => {
-    setConfirmDialog({
-      open: true,
-      title: 'Optimize Database',
-      message: `Run optimization on database '${databaseName}'? This may take a while for large databases.`,
-      variant: 'warning',
-      onConfirm: () => optimize.mutate(databaseId),
-    });
-  };
-
-  if (isLoading) return <div className="flex h-64 items-center justify-center"><LoadingSpinner /></div>;
+  const columns = [
+    {
+      key: 'username',
+      label: 'Username',
+      render: (user: DbUser) => <span className="font-mono">{user.username}</span>,
+    },
+    {
+      key: 'host',
+      label: 'Host',
+      render: (user: DbUser) => <span className="font-mono text-foreground-secondary">{user.host}</span>,
+    },
+    {
+      key: 'privileges',
+      label: 'Privileges',
+    },
+    {
+      key: 'actions',
+      label: '',
+      render: (user: DbUser) => (
+        <Button
+          variant="ghost"
+          size="small"
+          onClick={() => setDeleteUserId(user.id)}
+          icon={<Icon name="icon-trash" size={15} />}
+        >
+          Delete
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <button onClick={() => navigate({ to: '/databases' })} className="rounded p-1 hover:bg-accent"><ArrowLeft className="h-5 w-5" /></button>
-        <h2 className="text-xl font-semibold">{databaseName}</h2>
-        <span className="rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary uppercase">{databaseEngine}</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h1 className="text-page-title font-medium">{dbInfo.name}</h1>
+          <StatusBadge status="active" />
+        </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-4">
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="text-sm text-muted-foreground">Size</div>
-          <div className="mt-1 text-2xl font-semibold">{info?.sizeMb ? `${info.sizeMb} MB` : '—'}</div>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="text-sm text-muted-foreground">Engine</div>
-          <div className="mt-1 text-lg font-semibold capitalize">{databaseEngine}</div>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="text-sm text-muted-foreground">Charset</div>
-          <div className="mt-1 text-lg font-semibold">{databaseCharset || 'utf8mb4'}</div>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="text-sm text-muted-foreground">Users</div>
-          <div className="mt-1 text-lg font-semibold">{info?.users?.length || 0}</div>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="text-sm text-muted-foreground">Connection String</div>
-          <div className="mt-1 flex items-center gap-2">
-            <code className="text-xs font-mono truncate max-w-[200px]">
-              {databaseEngine === 'mariadb' ? 'mysql' : 'postgresql'}://{info?.users?.[0]?.username || 'user'}:****@host:3306/{databaseName}
-            </code>
-            <CopyButton
-              value={`${databaseEngine === 'mariadb' ? 'mysql' : 'postgresql'}://${info?.users?.[0]?.username || 'user'}:<password>@<host>:${databaseEngine === 'mariadb' ? 3306 : 5432}/${databaseName}`}
-              label="Copy"
+      <div className="grid grid-cols-2 gap-4">
+        <Card title="Connection Info">
+          <div className="space-y-2 text-small">
+            <div className="flex justify-between">
+              <span className="text-foreground-secondary">Engine</span>
+              <span>{dbInfo.engine === 'mariadb' ? 'MariaDB' : 'PostgreSQL'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-foreground-secondary">Charset</span>
+              <span>{dbInfo.charset || 'utf8mb4'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-foreground-secondary">Size</span>
+              <span>{formatBytes(dbInfo.sizeBytes)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-foreground-secondary">Created</span>
+              <span>{new Date(dbInfo.createdAt).toLocaleDateString()}</span>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Users" action={<Button size="small" onClick={() => setShowCreateUser(true)}>Add User</Button>}>
+          {dbInfo.users && dbInfo.users.length > 0 ? (
+            <DataTable
+              columns={columns}
+              data={dbInfo.users as DbUser[]}
+              rowKey={(user) => user.id}
             />
-          </div>
-        </div>
+          ) : (
+            <p className="text-small text-foreground-tertiary text-center py-4">No users yet</p>
+          )}
+        </Card>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <button onClick={() => setShowQuery(true)} className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">
-          <Search className="h-4 w-4" /> Query
-        </button>
-        <button onClick={handleExport} className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">
-          <Download className="h-4 w-4" /> Export
-        </button>
-        <button onClick={() => setShowImport(true)} className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">
-          <Plus className="h-4 w-4" /> Import SQL
-        </button>
-        <button onClick={handleRepair} disabled={repair.isPending || databaseEngine !== 'mariadb'} className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50">
-          <Server className="h-4 w-4" /> Repair
-        </button>
-        <button onClick={handleOptimize} disabled={optimize.isPending} className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50">
-          <Server className="h-4 w-4" /> Optimize
-        </button>
-        <button onClick={() => setShowClone(true)} className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">
-          <Copy className="h-4 w-4" /> Clone
-        </button>
-      </div>
-
-      <div>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-medium">Database Users</h3>
+      <Modal
+        isOpen={showCreateUser}
+        onClose={() => setShowCreateUser(false)}
+        title="Add Database User"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowCreateUser(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleCreateUser} loading={createDbUser.isPending}>
+              Create
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Input
+            label="Username"
+            value={newUsername}
+            onChange={(e) => setNewUsername(e.target.value)}
+            placeholder="db_user"
+          />
+          <Input
+            label="Password"
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="Strong password"
+          />
         </div>
-        {info?.users && info.users.length > 0 ? (
-          <div className="rounded-lg border border-border overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted/50">
-                <tr>
-                  <th className="px-4 py-2 text-left font-medium">Username</th>
-                  <th className="px-4 py-2 text-left font-medium">Host</th>
-                  <th className="px-4 py-2 text-right font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {info.users.map((u) => (
-                  <tr key={u.id} className="border-b border-border last:border-0 hover:bg-muted/30">
-                    <td className="px-4 py-2 font-mono">{u.username}</td>
-                    <td className="px-4 py-2 text-muted-foreground">{u.host}</td>
-                    <td className="px-4 py-2 text-right">
-                      <ActionDropdown
-                        items={[
-                          { label: 'Change Password', icon: <KeyRound className="h-3.5 w-3.5" />, onClick: () => setChangePasswordUser({ id: u.id, username: u.username }) },
-                          { label: 'Revoke Access', icon: <ShieldOff className="h-3.5 w-3.5" />, onClick: () => {
-                            setConfirmDialog({
-                              open: true,
-                              title: 'Revoke User Access',
-                              message: `Revoke access for user "${u.username}" from database "${databaseName}"?`,
-                              variant: 'warning',
-                              onConfirm: () => deleteUser.mutate({ dbId: databaseId, userId: u.id }),
-                            });
-                          }},
-                          { label: 'Delete User', icon: <Trash2 className="h-3.5 w-3.5" />, variant: 'danger', onClick: () => {
-                            setConfirmDialog({
-                              open: true,
-                              title: 'Delete Database User',
-                              message: `Delete user "${u.username}" entirely? This will remove the user from all databases.`,
-                              variant: 'danger',
-                              onConfirm: () => deleteUser.mutate({ dbId: databaseId, userId: u.id }),
-                            });
-                          }},
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-border p-6 text-center text-sm text-muted-foreground">No users yet</div>
-        )}
-      </div>
-
-      {showClone && <CloneModal databaseId={databaseId} engine={databaseEngine} onClose={() => setShowClone(false)} />}
-      {changePasswordUser && (
-        <ChangePasswordModal
-          databaseId={databaseId}
-          userId={changePasswordUser.id}
-          username={changePasswordUser.username}
-          onClose={() => setChangePasswordUser(null)}
-        />
-      )}
-      {showQuery && <QueryModal databaseId={databaseId} engine={databaseEngine} />}
-      {showImport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-lg">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Import SQL</h3>
-              <button onClick={() => setShowImport(false)} className="rounded p-1 hover:bg-accent"><X className="h-5 w-5" /></button>
-            </div>
-            <textarea value={importSql} onChange={(e) => setImportSql(e.target.value)} className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm" rows={8} placeholder="CREATE TABLE..." />
-            {importDb.error && <p className="mt-2 text-sm text-destructive">{String(importDb.error)}</p>}
-            <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => setShowImport(false)} className="rounded-md border border-border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-              <button onClick={handleImport} disabled={importDb.isPending || !importSql.trim()} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                {importDb.isPending ? 'Importing...' : 'Import'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       <ConfirmDialog
-        open={confirmDialog.open}
-        onConfirm={() => { confirmDialog.onConfirm(); setConfirmDialog(prev => ({ ...prev, open: false })); }}
-        onCancel={() => setConfirmDialog(prev => ({ ...prev, open: false }))}
-        title={confirmDialog.title}
-        message={confirmDialog.message}
-        variant={confirmDialog.variant}
+        isOpen={!!deleteUserId}
+        onClose={() => setDeleteUserId(null)}
+        onConfirm={handleDeleteUser}
+        title="Delete Database User"
+        description="This user will no longer be able to access this database."
+        confirmText="Delete"
+        impact="medium"
       />
     </div>
   );

@@ -1,134 +1,185 @@
 import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useDatabases, useCreateDatabase, useDeleteDatabase, type Database } from '../../api/hooks/databases';
-import { PageHeader } from '../../components/ui/PageHeader';
+import { Button } from '../../components/ui/Button';
+import { DataTable } from '../../components/ui/DataTable';
+import { StatusBadge } from '../../components/ui/StatusBadge';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { PageSkeleton } from '../../components/ui/Skeleton';
+import { Modal } from '../../components/ui/Modal';
+import { Input } from '../../components/ui/Input';
+import { Card } from '../../components/ui/Card';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { DataTableV2 } from '@/components/design-system/DataTableV2';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { StatusBadge } from '@/components/design-system/StatusBadge';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
-import type { ColumnDef } from '@tanstack/react-table';
-import {
-  Database as DatabaseIcon, Plus, Trash2, Server, Loader2, HardDrive
-} from 'lucide-react';
-import { toast } from '../../lib/toast';
-
-function CreateDbModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const createDb = useCreateDatabase();
-  const [form, setForm] = useState({ name: '', engine: 'mariadb' as const, charset: 'utf8mb4' });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.name.trim()) return;
-    createDb.mutate(form, { onSuccess: () => { toast.success(`Database "${form.name}" created`); onClose(); }, onError: (err: any) => toast.error(err?.message || 'Failed to create database') });
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Create Database</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Database Name</Label>
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="my_database" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Engine</Label>
-            <select
-              value={form.engine}
-              onChange={(e) => setForm({ ...form, engine: e.target.value as any })}
-              className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm"
-            >
-              <option value="mariadb">MariaDB</option>
-              <option value="postgresql">PostgreSQL</option>
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Charset</Label>
-            <select
-              value={form.charset}
-              onChange={(e) => setForm({ ...form, charset: e.target.value })}
-              className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm"
-            >
-              <option value="utf8mb4">utf8mb4 (Recommended)</option>
-              <option value="latin1">latin1</option>
-              <option value="utf8">utf8</option>
-            </select>
-          </div>
-          {createDb.error && <p className="text-sm text-destructive">{String(createDb.error)}</p>}
-          <DialogFooter className="flex gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={createDb.isPending}>
-              {createDb.isPending && <Loader2 className="size-4 mr-1.5 animate-spin" />}
-              {createDb.isPending ? 'Creating...' : 'Create'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
+import { api } from '../../api/client';
+import { useDatabases, useCreateDatabase, useDeleteDatabase, type Database } from '../../api/hooks/databases';
+import { Icon } from '../../components/icons';
 
 export function DatabasesPage() {
-  const { data: result, isLoading } = useDatabases();
-  const databases = (result as any)?.items || result || [];
-  const deleteDb = useDeleteDatabase();
   const navigate = useNavigate();
-  const [showCreate, setShowCreate] = useState(false);
+  const queryClient = useQueryClient();
+  const { data: databases, isLoading } = useDatabases();
+  const createDatabase = useCreateDatabase();
+  const deleteDatabase = useDeleteDatabase();
+
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newDbName, setNewDbName] = useState('');
+  const [newDbEngine, setNewDbEngine] = useState<'mariadb' | 'postgresql'>('mariadb');
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const handleDelete = (id: string) => {
-    deleteDb.mutate(id, { onSuccess: () => { toast.success('Database deleted'); setDeleteId(null); }, onError: () => toast.error('Failed') });
+  const handleCreate = async () => {
+    try {
+      await createDatabase.mutateAsync({ name: newDbName, engine: newDbEngine });
+      setShowCreateModal(false);
+      setNewDbName('');
+      queryClient.invalidateQueries({ queryKey: ['databases'] });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  const columns: ColumnDef<Database>[] = [
-    { accessorKey: 'name', header: 'Name', cell: ({ row }) => (
-      <span className="flex items-center gap-2 font-medium"><DatabaseIcon className="h-4 w-4 text-muted-foreground" />{row.original.name}</span>
-    )},
-    { accessorKey: 'engine', header: 'Engine', cell: ({ row }) => <StatusBadge variant="info">{row.original.engine || 'mariadb'}</StatusBadge> },
-    { accessorKey: 'charset', header: 'Charset', cell: ({ row }) => <span className="text-sm text-muted-foreground">{row.original.charset || 'utf8mb4'}</span> },
-    { id: 'actions', header: '', cell: ({ row }) => (
-      <div className="flex justify-end gap-1">
-        <Button variant="ghost" size="icon" onClick={() => navigate({ to: `/protected/databases/${row.original.id}` } as any)}><Server className="h-3.5 w-3.5" /></Button>
-        <Button variant="ghost" size="icon" onClick={() => setDeleteId(row.original.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button>
-      </div>
-    ), enableSorting: false },
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    try {
+      await deleteDatabase.mutateAsync(deleteId);
+      setDeleteId(null);
+      queryClient.invalidateQueries({ queryKey: ['databases'] });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  if (isLoading) {
+    return <PageSkeleton />;
+  }
+
+  const columns = [
+    {
+      key: 'name',
+      label: 'Name',
+      render: (db: Database) => <span className="font-medium">{db.name}</span>,
+    },
+    {
+      key: 'engine',
+      label: 'Engine',
+      render: (db: Database) => (
+        <span className="text-small px-2 py-0.5 bg-background-secondary rounded">
+          {db.engine === 'mariadb' ? 'MariaDB' : 'PostgreSQL'}
+        </span>
+      ),
+    },
+    {
+      key: 'charset',
+      label: 'Charset',
+    },
+    {
+      key: 'createdAt',
+      label: 'Created',
+      render: (db: Database) => new Date(db.createdAt).toLocaleDateString(),
+    },
+    {
+      key: 'actions',
+      label: '',
+      render: (db: Database) => (
+        <div className="flex gap-1">
+          <Button
+            variant="ghost"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate({ to: '/databases/$databaseId', params: { databaseId: db.id } });
+            }}
+            icon={<Icon name="icon-arrow-right" size={15} />}
+          >
+            View
+          </Button>
+          <Button
+            variant="ghost"
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDeleteId(db.id);
+            }}
+            icon={<Icon name="icon-trash" size={15} />}
+          >
+            Delete
+          </Button>
+        </div>
+      ),
+    },
   ];
 
-  if (isLoading) return <div className="flex h-96 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
-
   return (
-    <div>
-      <PageHeader
-        title="Databases"
-        description="Manage MariaDB and PostgreSQL databases"
-        icon={HardDrive}
-        actions={
-          <Button size="sm" onClick={() => setShowCreate(true)}>
-            <Plus className="size-4 mr-1.5" />
-            Create Database
-          </Button>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-page-title font-medium">Databases</h1>
+        <Button icon={<Icon name="icon-plus" size={16} />} onClick={() => setShowCreateModal(true)}>
+          Create Database
+        </Button>
+      </div>
+
+      <DataTable
+        columns={columns}
+        data={databases || []}
+        rowKey={(db) => db.id}
+        onRowClick={(db) => navigate({ to: '/databases/$databaseId', params: { databaseId: db.id } })}
+        emptyState={
+          <EmptyState
+            icon="icon-database"
+            title="No databases yet"
+            description="Create your first database to get started"
+            action={{ label: 'Create Database', onClick: () => setShowCreateModal(true) }}
+          />
         }
       />
-      {!databases?.length ? (
-        <DataTableV2 columns={[]} data={[]} emptyIcon={DatabaseIcon} emptyTitle="No databases yet" emptyDescription="Create your first database to get started." />
-      ) : (
-        <DataTableV2 columns={columns} data={databases} searchKey="name" searchPlaceholder="Search databases..." emptyIcon={DatabaseIcon} emptyTitle="No databases yet" emptyDescription="Create your first database to get started." />
-      )}
-      <CreateDbModal open={showCreate} onClose={() => setShowCreate(false)} />
+
+      <Modal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="Create Database"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowCreateModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleCreate} loading={createDatabase.isPending}>
+              Create
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Input
+            label="Database Name"
+            value={newDbName}
+            onChange={(e) => setNewDbName(e.target.value)}
+            placeholder="my_database"
+          />
+          <div>
+            <label className="text-meta font-medium mb-1 block">Engine</label>
+            <div className="flex gap-2">
+              <Button
+                variant={newDbEngine === 'mariadb' ? 'primary' : 'default'}
+                onClick={() => setNewDbEngine('mariadb')}
+              >
+                MariaDB
+              </Button>
+              <Button
+                variant={newDbEngine === 'postgresql' ? 'primary' : 'default'}
+                onClick={() => setNewDbEngine('postgresql')}
+              >
+                PostgreSQL
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
       <ConfirmDialog
-        open={!!deleteId}
-        onCancel={() => setDeleteId(null)}
-        onConfirm={() => deleteId && handleDelete(deleteId)}
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={handleDelete}
         title="Delete Database"
-        message="All data will be permanently lost. This cannot be undone."
+        description="This action cannot be undone. All data will be permanently deleted."
         confirmText="Delete"
-        variant="danger"
-        requireTyping="DELETE"
+        impact="high"
       />
     </div>
   );

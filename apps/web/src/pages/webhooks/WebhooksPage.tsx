@@ -1,268 +1,156 @@
 import { useState } from 'react';
-import {
-  useWebhooks,
-  useCreateWebhook,
-  useUpdateWebhook,
-  useDeleteWebhook,
-  useRegenerateWebhookSecret,
-  useWebhookDeliveries,
-  type Webhook,
-} from '../../api/hooks/webhooks';
-import { useAuthStore } from '../../store/auth.store';
-import { PageHeader } from '../../components/ui/PageHeader';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Button } from '../../components/ui/Button';
+import { Card } from '../../components/ui/Card';
+import { DataTable } from '../../components/ui/DataTable';
+import { StatusBadge } from '../../components/ui/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { PageSkeleton } from '../../components/ui/Skeleton';
+import { Modal } from '../../components/ui/Modal';
+import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { LoadingPage } from '../../components/design-system/LoadingPage';
-import { StatusBadge } from '../../components/design-system/StatusBadge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Webhook as WebhookIcon,
-  Plus,
-  Trash2,
-  Pencil,
-  Eye,
-  EyeOff,
-  CheckCircle,
-  XCircle,
-  Loader2,
-  Globe,
-  Copy,
-  History,
-  RefreshCw,
-} from 'lucide-react';
-import { toast } from '../../lib/toast';
-
-const AVAILABLE_EVENTS = [
-  'site.deployed', 'site.build_failed', 'domain.created', 'domain.deleted',
-  'database.created', 'backup.completed', 'alert.triggered', 'user.login', 'user.logout',
-];
-
-function ToggleSwitch({ enabled, onChange }: { enabled: boolean; onChange: () => void }) {
-  return (
-    <button type="button" onClick={onChange} className={`relative h-6 w-11 rounded-full transition-colors ${enabled ? 'bg-primary' : 'bg-muted'}`}>
-      <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-5' : ''}`} />
-    </button>
-  );
-}
-
-function WebhookModal({
-  initial, onClose, onSubmit, isPending,
-}: {
-  initial?: Webhook;
-  onClose: () => void;
-  onSubmit: (data: { name: string; url: string; events: string[]; enabled: boolean; headers: Record<string, string> }) => void;
-  isPending: boolean;
-}) {
-  const [form, setForm] = useState({
-    name: initial?.name ?? '',
-    url: initial?.url ?? '',
-    events: initial?.events?.join('\n') ?? '',
-    headers: Object.entries(initial?.headers ?? {}).map(([k, v]) => `${k}: ${v}`).join('\n'),
-  });
-
-  const handleSubmit = () => {
-    const headers: Record<string, string> = {};
-    for (const line of form.headers.split('\n')) {
-      const idx = line.indexOf(':');
-      if (idx > 0) {
-        const key = line.slice(0, idx).trim();
-        const val = line.slice(idx + 1).trim();
-        if (key) headers[key] = val;
-      }
-    }
-    onSubmit({ name: form.name, url: form.url, events: form.events.split('\n').map((e) => e.trim()).filter(Boolean), enabled: true, headers });
-  };
-
-  return (
-    <Dialog open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader><DialogTitle>{initial ? 'Edit Webhook' : 'Create Webhook'}</DialogTitle></DialogHeader>
-        <div className="space-y-4">
-          <div><Label htmlFor="wh-name">Name</Label><Input id="wh-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Production Webhook" /></div>
-          <div><Label htmlFor="wh-url">URL</Label><Input id="wh-url" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="https://api.example.com/webhook" /></div>
-          <div><Label htmlFor="wh-events">Events (one per line)</Label><textarea id="wh-events" value={form.events} onChange={(e) => setForm({ ...form, events: e.target.value })} rows={5} className="mt-1 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm font-mono" placeholder={AVAILABLE_EVENTS.join('\n')} /></div>
-          <div><Label htmlFor="wh-headers">Custom Headers (Key: Value per line)</Label><textarea id="wh-headers" value={form.headers} onChange={(e) => setForm({ ...form, headers: e.target.value })} rows={3} className="mt-1 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm font-mono" placeholder="Authorization: Bearer ..." /></div>
-        </div>
-        <DialogFooter className="mt-6">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={isPending || !form.name.trim() || !form.url.trim()}>{isPending ? 'Saving...' : initial ? 'Update' : 'Create'}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function DeliveriesModal({ webhookId, webhookName, onClose }: { webhookId: string; webhookName: string; onClose: () => void }) {
-  const { data: deliveries, isLoading } = useWebhookDeliveries(webhookId);
-
-  return (
-    <Dialog open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="sm:max-w-4xl max-h-[80vh] flex flex-col">
-        <DialogHeader><DialogTitle>Delivery History — {webhookName}</DialogTitle></DialogHeader>
-        <div className="flex-1 overflow-auto">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-          ) : !deliveries || deliveries.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No deliveries yet.</p>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Event</TableHead><TableHead>Status</TableHead><TableHead>Response</TableHead><TableHead>Delivered</TableHead><TableHead>Error</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {deliveries.map((d) => (
-                    <TableRow key={d.id}>
-                      <TableCell className="font-medium font-mono text-sm">{d.event}</TableCell>
-                      <TableCell>{d.success ? <span className="flex items-center gap-1 text-green-500"><CheckCircle className="h-4 w-4" /> OK</span> : <span className="flex items-center gap-1 text-red-500"><XCircle className="h-4 w-4" /> Failed</span>}</TableCell>
-                      <TableCell className="font-mono text-xs">{d.responseStatus ?? '—'}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{d.deliveredAt ? new Date(d.deliveredAt).toLocaleString() : '—'}</TableCell>
-                      <TableCell className="text-xs text-red-400 max-w-xs truncate">{d.error || '—'}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </div>
-        <DialogFooter className="mt-4"><Button variant="outline" onClick={onClose}>Close</Button></DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function SecretReveal({ secret }: { secret: string }) {
-  const [visible, setVisible] = useState(false);
-  return (
-    <div className="flex items-center gap-2">
-      <code className="text-xs font-mono bg-muted px-2 py-1 rounded flex-1">{visible ? secret : '••••••••••••••••'}</code>
-      <button onClick={() => setVisible(!visible)} className="text-muted-foreground hover:text-foreground">{visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
-      <button onClick={() => { navigator.clipboard.writeText(secret); toast.success('Secret copied'); }} className="text-muted-foreground hover:text-foreground"><Copy className="h-4 w-4" /></button>
-    </div>
-  );
-}
+import { useWebhooks, useCreateWebhook, useDeleteWebhook, useRegenerateWebhookSecret, type Webhook } from '../../api/hooks/webhooks';
+import { Icon } from '../../components/icons';
+import { useAuthStore } from '../../store/auth.store';
 
 export function WebhooksPage() {
+  const queryClient = useQueryClient();
   const activeOrgId = useAuthStore((s) => s.activeOrgId);
   const orgId = activeOrgId || 'default';
   const { data: webhooks, isLoading } = useWebhooks(orgId);
   const createWebhook = useCreateWebhook();
-  const updateWebhook = useUpdateWebhook();
   const deleteWebhook = useDeleteWebhook();
   const regenerateSecret = useRegenerateWebhookSecret();
 
-  const [showModal, setShowModal] = useState(false);
-  const [editWebhook, setEditWebhook] = useState<Webhook | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newUrl, setNewUrl] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [viewDeliveriesId, setViewDeliveriesId] = useState<string | null>(null);
-  const [revealSecretId, setRevealSecretId] = useState<string | null>(null);
 
-  const viewDeliveriesWebhook = webhooks?.find((w) => w.id === viewDeliveriesId);
+  const handleCreate = async () => {
+    try {
+      await createWebhook.mutateAsync({ orgId, data: { name: newName, url: newUrl, events: ['*'] } });
+      setShowCreateModal(false);
+      setNewName('');
+      setNewUrl('');
+      queryClient.invalidateQueries({ queryKey: ['webhooks', orgId] });
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
-  const handleCreate = (data: { name: string; url: string; events: string[]; enabled: boolean; headers: Record<string, string> }) => {
-    createWebhook.mutate({ orgId, data }, { onSuccess: () => { toast.success('Webhook created'); setShowModal(false); }, onError: (e: Error) => toast.error(e.message || 'Failed') });
-  };
-  const handleUpdate = (data: { name: string; url: string; events: string[]; enabled: boolean; headers: Record<string, string> }) => {
-    if (!editWebhook) return;
-    updateWebhook.mutate({ id: editWebhook.id, data }, { onSuccess: () => { toast.success('Webhook updated'); setEditWebhook(null); }, onError: (e: Error) => toast.error(e.message || 'Failed') });
-  };
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteId) return;
-    deleteWebhook.mutate(deleteId, { onSuccess: () => { toast.success('Webhook deleted'); setDeleteId(null); }, onError: (e: Error) => toast.error(e.message || 'Failed') });
-  };
-  const handleRegenerate = (id: string) => {
-    regenerateSecret.mutate(id, { onSuccess: (data) => { toast.success('Secret regenerated'); setRevealSecretId(id); }, onError: (e: Error) => toast.error(e.message || 'Failed') });
-  };
-  const handleToggle = (webhook: Webhook) => {
-    updateWebhook.mutate({ id: webhook.id, data: { enabled: !webhook.enabled } }, { onSuccess: () => toast.success('Webhook updated'), onError: (e: Error) => toast.error(e.message) });
+    try {
+      await deleteWebhook.mutateAsync(deleteId);
+      setDeleteId(null);
+      queryClient.invalidateQueries({ queryKey: ['webhooks', orgId] });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  if (isLoading) return <LoadingPage />;
+  const handleRegenerateSecret = async (id: string) => {
+    try {
+      await regenerateSecret.mutateAsync(id);
+      queryClient.invalidateQueries({ queryKey: ['webhooks', orgId] });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  if (isLoading) {
+    return <PageSkeleton />;
+  }
+
+  const columns = [
+    {
+      key: 'name',
+      label: 'Name',
+      render: (w: Webhook) => <span className="font-medium">{w.name}</span>,
+    },
+    {
+      key: 'url',
+      label: 'URL',
+      render: (w: Webhook) => <span className="font-mono text-small text-foreground-secondary">{w.url}</span>,
+    },
+    {
+      key: 'events',
+      label: 'Events',
+      render: (w: Webhook) => <span className="text-small text-foreground-tertiary">{w.events.join(', ')}</span>,
+    },
+    {
+      key: 'enabled',
+      label: 'Status',
+      render: (w: Webhook) => <StatusBadge status={w.enabled ? 'active' : 'inactive'} />,
+    },
+    {
+      key: 'actions',
+      label: '',
+      render: (w: Webhook) => (
+        <div className="flex gap-1">
+          <Button variant="ghost" size="small" onClick={() => handleRegenerateSecret(w.id)} icon={<Icon name="icon-refresh" size={15} />}>
+            Secret
+          </Button>
+          <Button variant="ghost" size="small" onClick={() => setDeleteId(w.id)} icon={<Icon name="icon-trash" size={15} />}>
+            Delete
+          </Button>
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <div>
-      <PageHeader title="Webhooks" description="Configure outbound webhook subscriptions for system events" icon={WebhookIcon} />
-      <div className="mb-6 flex items-center justify-end">
-        <Button onClick={() => setShowModal(true)}><Plus className="h-4 w-4 mr-2" /> Add Webhook</Button>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-page-title font-medium">Webhooks</h1>
+        <Button icon={<Icon name="icon-plus" size={16} />} onClick={() => setShowCreateModal(true)}>
+          Add Webhook
+        </Button>
       </div>
 
-      {showModal && <WebhookModal onClose={() => setShowModal(false)} onSubmit={handleCreate} isPending={createWebhook.isPending} />}
-      {editWebhook && <WebhookModal initial={editWebhook} onClose={() => setEditWebhook(null)} onSubmit={handleUpdate} isPending={updateWebhook.isPending} />}
-      {viewDeliveriesId && viewDeliveriesWebhook && <DeliveriesModal webhookId={viewDeliveriesId} webhookName={viewDeliveriesWebhook.name} onClose={() => setViewDeliveriesId(null)} />}
-
-      <ConfirmDialog
-        open={!!deleteId}
-        title="Delete Webhook"
-        message="This will permanently delete this webhook. Applications relying on it will stop receiving events."
-        confirmText="Delete"
-        variant="danger"
-        onConfirm={handleDelete}
-        onCancel={() => setDeleteId(null)}
+      <DataTable
+        columns={columns}
+        data={webhooks || []}
+        rowKey={(w) => w.id}
+        emptyState={
+          <EmptyState
+            icon="icon-webhook"
+            title="No webhooks"
+            description="Add a webhook to receive event notifications"
+            action={{ label: 'Add Webhook', onClick: () => setShowCreateModal(true) }}
+          />
+        }
       />
 
-      {!webhooks || webhooks.length === 0 ? (
-        <EmptyState icon={WebhookIcon} title="No webhooks" description="Create your first webhook to receive real-time event notifications." />
-      ) : (
+      <Modal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="Add Webhook"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowCreateModal(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleCreate} loading={createWebhook.isPending}>
+              Add
+            </Button>
+          </>
+        }
+      >
         <div className="space-y-4">
-          {webhooks.map((webhook) => (
-            <div key={webhook.id} className="rounded-lg border border-border bg-card">
-              <div className="flex items-center justify-between p-4 border-b border-border">
-                <div className="flex items-center gap-3">
-                  <div className={`rounded p-2 ${webhook.enabled ? 'bg-primary/10' : 'bg-muted'}`}>
-                    <Globe className={`h-5 w-5 ${webhook.enabled ? 'text-primary' : 'text-muted-foreground'}`} />
-                  </div>
-                  <div>
-                    <div className="font-medium">{webhook.name}</div>
-                    <div className="text-xs text-muted-foreground font-mono">{webhook.url}</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <ToggleSwitch enabled={webhook.enabled} onChange={() => handleToggle(webhook)} />
-                  <Button variant="ghost" size="icon-sm" onClick={() => setViewDeliveriesId(webhook.id)} title="Delivery history"><History className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon-sm" onClick={() => setEditWebhook(webhook)}><Pencil className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon-sm" onClick={() => setDeleteId(webhook.id)} className="hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
-                </div>
-              </div>
-              <div className="p-4 space-y-3">
-                <div>
-                  <div className="text-xs font-medium text-muted-foreground mb-2">Subscribed Events</div>
-                  <div className="flex flex-wrap gap-1">
-                    {webhook.events.map((e) => <StatusBadge key={e} variant="neutral" className="font-mono text-xs">{e}</StatusBadge>)}
-                  </div>
-                </div>
-                {webhook.secret && (
-                  <div>
-                    <div className="text-xs font-medium text-muted-foreground mb-1">Secret</div>
-                    <SecretReveal secret={webhook.secret} />
-                    <Button variant="ghost" size="sm" className="mt-1" onClick={() => handleRegenerate(webhook.id)}>
-                      <RefreshCw className="h-3 w-3 mr-1" /> Regenerate
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
+          <Input label="Name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="My Webhook" />
+          <Input label="URL" value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://example.com/webhook" />
         </div>
-      )}
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={handleDelete}
+        title="Delete Webhook"
+        description="This webhook will be permanently deleted."
+        confirmText="Delete"
+        impact="medium"
+      />
     </div>
   );
 }
