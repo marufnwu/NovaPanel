@@ -21,8 +21,8 @@ export function StatusBar() {
   });
 
   const { data: services } = useQuery<ServiceStatus[]>({
-    queryKey: ['services'],
-    queryFn: () => api.get('/services'),
+    queryKey: ['stats', 'services'],
+    queryFn: () => api.get('/stats/services'),
     refetchInterval: 30000,
   });
 

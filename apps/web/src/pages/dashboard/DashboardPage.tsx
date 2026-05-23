@@ -53,8 +53,8 @@ export function DashboardPage() {
   });
 
   const { data: services } = useQuery<Service[]>({
-    queryKey: ['services'],
-    queryFn: () => api.get('/services'),
+    queryKey: ['stats', 'services'],
+    queryFn: () => api.get('/stats/services'),
   });
 
   const isLoading = statsLoading || sitesLoading || jobsLoading;
