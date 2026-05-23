@@ -27,7 +27,7 @@ export function useJobs(filters?: { status?: JobStatus; type?: string; limit?: n
   const query = params.toString() ? `?${params.toString()}` : '';
   return useQuery({
     queryKey: ['jobs', filters],
-    queryFn: () => api.get<BackgroundJob[]>(`/jobs${query}`),
+    queryFn: () => api.get<{ items: BackgroundJob[]; total: number }>(`/jobs${query}`).then(r => r.items),
   });
 }
 
