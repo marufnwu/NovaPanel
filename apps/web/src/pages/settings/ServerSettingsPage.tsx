@@ -1,8 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { toast } from '../../lib/toast';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { SectionHeader } from '@/components/design-system/SectionHeader';
 import { useServerContext } from '../../api/hooks/settings';
 import {
   useServerIdentity,
@@ -32,6 +36,8 @@ import {
   useUpdateDefaultWebServer,
   useSslEmail,
   useUpdateSslEmail,
+  usePhpVersion,
+  useUpdatePhpVersion,
   useRebootServer,
   useShutdownServer,
   useMaintenanceMode,
@@ -40,6 +46,9 @@ import {
   useImportConfig,
   useDataRetention,
   useUpdateDataRetention,
+  useSmtpSettings,
+  useUpdateSmtpSettings,
+  useSendTestEmail,
 } from '../../api/hooks/settings';
 import { usePhpVersions, DEFAULT_PHP_VERSIONS } from '../../api/hooks/php';
 import {
@@ -149,6 +158,7 @@ function ConfirmModal({
   onConfirm,
   onClose,
   isPending,
+  requireTyping,
 }: {
   title: string;
   message: string;
@@ -157,7 +167,10 @@ function ConfirmModal({
   onConfirm: () => void;
   onClose: () => void;
   isPending?: boolean;
+  requireTyping?: string;
 }) {
+  const [typedValue, setTypedValue] = useState('');
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg">
@@ -171,6 +184,20 @@ function ConfirmModal({
           <AlertTriangle className="mt-0.5 h-5 w-5 text-red-500" />
           <p className="text-sm text-muted-foreground">{message}</p>
         </div>
+        {requireTyping && (
+          <div className="mt-4">
+            <label className="mb-1 block text-sm font-medium">
+              Type <span className="font-mono font-semibold">{requireTyping}</span> to confirm
+            </label>
+            <input
+              type="text"
+              value={typedValue}
+              onChange={(e) => setTypedValue(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              placeholder={requireTyping}
+            />
+          </div>
+        )}
         <div className="mt-6 flex justify-end gap-2">
           <button
             onClick={onClose}
@@ -180,7 +207,7 @@ function ConfirmModal({
           </button>
           <button
             onClick={onConfirm}
-            disabled={isPending}
+            disabled={isPending || !!(requireTyping && typedValue !== requireTyping)}
             className={`rounded-md px-4 py-2 text-sm text-white disabled:opacity-50 ${
               confirmClass || 'bg-red-600 hover:bg-red-600/90'
             }`}
@@ -345,11 +372,19 @@ function PanelSettingsSection() {
 
 function PhpSettingsSection() {
   const { data: phpData, isLoading } = usePhpVersions();
+  const { data: phpVersionData } = usePhpVersion();
+  const updatePhpVersion = useUpdatePhpVersion();
   const [selectedVersion, setSelectedVersion] = useState('');
 
   const versions: string[] = phpData?.versions?.length
     ? phpData.versions.map((v: any) => typeof v === 'string' ? v : v.version)
     : DEFAULT_PHP_VERSIONS;
+
+  useEffect(() => {
+    if (phpVersionData?.version) {
+      setSelectedVersion(phpVersionData.version);
+    }
+  }, [phpVersionData]);
 
   useEffect(() => {
     if (versions.length > 0 && !selectedVersion) {
@@ -407,8 +442,13 @@ function PhpSettingsSection() {
 
         <SaveButton
           onClick={() => {
-            // Would call an API to save the default PHP version
+            if (!selectedVersion) return;
+            updatePhpVersion.mutate(selectedVersion, {
+              onSuccess: () => toast.success('Default PHP version updated'),
+              onError: (err: any) => toast.error(err?.message || 'Failed to update PHP version'),
+            });
           }}
+          isPending={updatePhpVersion.isPending}
           disabled={!selectedVersion}
         />
       </div>
@@ -1478,6 +1518,166 @@ function SslEmailSection() {
   );
 }
 
+// ─── SMTP Settings ─────────────────────────────────────────────────────────────
+
+function SmtpSettingsSection() {
+  const { data, isLoading } = useSmtpSettings();
+  const update = useUpdateSmtpSettings();
+  const sendTest = useSendTestEmail();
+  const [form, setForm] = useState({
+    host: '',
+    port: 587,
+    username: '',
+    password: '',
+    fromAddress: '',
+    encryption: 'tls' as 'none' | 'tls' | 'ssl',
+  });
+  const [testStatus, setTestStatus] = useState<{ sending: boolean; result: 'idle' | 'success' | 'error'; message: string }>({
+    sending: false,
+    result: 'idle',
+    message: '',
+  });
+
+  useEffect(() => {
+    if (data) {
+      setForm({
+        host: data.host ?? '',
+        port: data.port ?? 587,
+        username: data.username ?? '',
+        password: '',
+        fromAddress: data.fromAddress ?? '',
+        encryption: data.encryption ?? 'tls',
+      });
+    }
+  }, [data]);
+
+  if (isLoading) return <LoadingSpinner />;
+
+  const handleSave = () => {
+    update.mutate(form, {
+      onSuccess: () => toast.success('SMTP settings saved'),
+      onError: (err: any) => toast.error(err?.message || 'Failed to save SMTP settings'),
+    });
+  };
+
+  const handleSendTest = async () => {
+    setTestStatus({ sending: true, result: 'idle', message: '' });
+    try {
+      const res = await sendTest.mutateAsync();
+      setTestStatus({ sending: false, result: 'success', message: res.message });
+    } catch (err: any) {
+      setTestStatus({ sending: false, result: 'error', message: err?.message || 'Failed to send test email' });
+    }
+  };
+
+  return (
+    <SettingsSection
+      title="SMTP Settings"
+      description="Configure email sending for notifications and alerts"
+      icon={Mail}
+    >
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1 block text-sm font-medium">SMTP Host</label>
+          <input
+            value={form.host}
+            onChange={(e) => setForm({ ...form, host: e.target.value })}
+            placeholder="smtp.example.com"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Port</label>
+            <input
+              type="number"
+              value={form.port}
+              onChange={(e) => setForm({ ...form, port: parseInt(e.target.value) || 587 })}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">Encryption</label>
+            <select
+              value={form.encryption}
+              onChange={(e) => setForm({ ...form, encryption: e.target.value as 'none' | 'tls' | 'ssl' })}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="tls">TLS</option>
+              <option value="ssl">SSL</option>
+              <option value="none">None</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium">Username</label>
+          <input
+            value={form.username}
+            onChange={(e) => setForm({ ...form, username: e.target.value })}
+            placeholder="smtpuser"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium">Password</label>
+          <input
+            type="password"
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            placeholder={data?.username ? '(unchanged)' : ''}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Leave blank to keep current password
+          </p>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium">From Address</label>
+          <input
+            type="email"
+            value={form.fromAddress}
+            onChange={(e) => setForm({ ...form, fromAddress: e.target.value })}
+            placeholder="noreply@example.com"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+        </div>
+        {update.error && (
+          <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            Failed to save SMTP settings. Please try again.
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <SaveButton
+            onClick={handleSave}
+            isPending={update.isPending}
+            disabled={!form.host || !form.username}
+          />
+          <button
+            onClick={handleSendTest}
+            disabled={sendTest.isPending || !form.host || !form.username}
+            className="flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50"
+          >
+            {testStatus.sending ? 'Sending...' : 'Send Test Email'}
+          </button>
+        </div>
+        {testStatus.result === 'success' && (
+          <div className="flex items-center gap-2 rounded-md border border-green-500/30 bg-green-500/5 px-3 py-2 text-sm text-green-600">
+            <CheckCircle2 className="h-4 w-4" />
+            {testStatus.message}
+          </div>
+        )}
+        {testStatus.result === 'error' && (
+          <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-sm text-red-600">
+            <XCircle className="h-4 w-4" />
+            {testStatus.message}
+          </div>
+        )}
+      </div>
+    </SettingsSection>
+  );
+}
+
 // ─── Server Power Controls ───────────────────────────────────────────────────
 
 function ServerPowerSection() {
@@ -1531,6 +1731,7 @@ function ServerPowerSection() {
           title="Reboot Server"
           message="Are you sure you want to reboot the server? All services will be temporarily unavailable. This action cannot be undone."
           confirmLabel="Reboot Now"
+          requireTyping="REBOOT"
           onConfirm={() => reboot.mutate(undefined, { onSettled: () => setShowReboot(false) })}
           onClose={() => setShowReboot(false)}
           isPending={reboot.isPending}
@@ -1542,6 +1743,7 @@ function ServerPowerSection() {
           title="Shutdown Server"
           message="Are you sure you want to shut down the server? You will need physical or cloud console access to power it back on."
           confirmLabel="Shutdown Now"
+          requireTyping="SHUTDOWN"
           onConfirm={() => shutdown.mutate(undefined, { onSettled: () => setShowShutdown(false) })}
           onClose={() => setShowShutdown(false)}
           isPending={shutdown.isPending}
@@ -1802,6 +2004,7 @@ export function ServerSettingsPage() {
       <PageHeader
         title="Server Settings"
         description="Configure server-wide settings and preferences"
+        icon={Wrench}
       />
 
       <div className="space-y-6">
@@ -1816,6 +2019,9 @@ export function ServerSettingsPage() {
 
         {/* Default SSL Email */}
         <SslEmailSection />
+
+        {/* SMTP */}
+        <SmtpSettingsSection />
 
         {/* PHP Version */}
         <PhpSettingsSection />

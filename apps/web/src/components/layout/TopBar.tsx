@@ -3,9 +3,11 @@ import { Link } from '@tanstack/react-router';
 import { useAuthStore } from '../../store/auth.store';
 import { useLogout } from '../../api/hooks/auth';
 import { useUnreadCount, useNotifications, useMarkAsRead, useMarkAllAsRead, type Notification } from '../../api/hooks/notifications';
-import { useJobNotifications } from '../jobs/JobNotificationProvider';
-import { LogOut, Settings, ShieldCheck, Bell, CheckCheck, X, Shield, AlertTriangle, Server, Clock, Database, HardDrive, Activity } from 'lucide-react';
+import { ActivityFeed } from '../jobs/ActivityFeed';
+import { LogOut, Settings, ShieldCheck, Bell, CheckCheck, X, Shield, AlertTriangle, Server, Clock, Database, HardDrive, Menu } from 'lucide-react';
 import { ThemeToggle } from '../ui/ThemeToggle';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sidebar } from './Sidebar';
 
 const NOTIFICATION_ICONS: Record<string, typeof Bell> = {
   ssl_expiry: Shield,
@@ -74,7 +76,7 @@ function DropdownNotificationItem({ notification, onMarkRead }: {
   );
 }
 
-export function TopBar() {
+export function TopBar({ mobileMenuOpen, onMobileMenuToggle }: { mobileMenuOpen?: boolean; onMobileMenuToggle?: () => void }) {
   const { user } = useAuthStore();
   const logout = useLogout();
   const [showNotifications, setShowNotifications] = useState(false);
@@ -83,7 +85,6 @@ export function TopBar() {
   const { data: notifData } = useNotifications(5, 0, { refetchInterval: 30_000 });
   const markRead = useMarkAsRead();
   const markAllRead = useMarkAllAsRead();
-  const { runningCount } = useJobNotifications();
 
   const unreadCount = unreadData?.count || 0;
   const recentNotifications = notifData?.notifications || [];
@@ -103,21 +104,19 @@ export function TopBar() {
   }, [showNotifications]);
 
   return (
-    <header className="flex h-14 items-center justify-between border-b border-border bg-card px-6">
-      <div />
-      <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-background/80 backdrop-blur-md px-6">
+      {/* Mobile menu button - only visible on small screens */}
+      <div className="flex items-center gap-3 lg:hidden">
+        <span className="text-base font-semibold text-foreground lg:hidden">NovaPanel</span>
+      </div>
+
+      {/* Desktop: empty spacer */}
+      <div className="hidden lg:block" />
+      
+      <div className="flex items-center gap-2">
         <ThemeToggle />
 
-        {/* Active Jobs Badge */}
-        {runningCount > 0 && (
-          <div
-            className="flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
-            title={`${runningCount} active background job(s)`}
-          >
-            <Activity className="h-3.5 w-3.5 animate-pulse" />
-            <span>{runningCount} job{runningCount !== 1 ? 's' : ''}</span>
-          </div>
-        )}
+        <ActivityFeed />
 
         {/* Notification Bell */}
         <div className="relative" ref={dropdownRef}>

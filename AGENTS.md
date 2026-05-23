@@ -8,7 +8,9 @@ This file provides guidance to agents when working with code in this repository.
 - **Build API**: `pnpm --filter api build` (runs tsc + copies migrations)
 - **Build Web**: `pnpm --filter web build` (runs tsc -b && vite build)
 - **Build Schemas**: `pnpm --filter @serverforge/schemas build` (outputs to packages/schemas/dist)
-- **Single test**: `pnpm --filter api test:watch` (runs vitest in watch mode for API tests)
+- **Run tests (local)**: `npx vitest run` in `apps/api/` directory, or `pnpm --filter api test:watch` for watch mode
+- **Run tests (server)**: `cd /opt/novapanel/apps/api && npx vitest run` via SSH
+- **Server test script**: `scripts/test.sh` (runs tests on server)
 - **Database**: `pnpm --filter api db:generate`, `pnpm --filter api db:migrate`, `pnpm --filter api db:seed`
 - **API dev**: `pnpm --filter api dev` (runs tsx watch src/index.ts)
 - **Web dev**: `pnpm --filter web dev` (runs vite)

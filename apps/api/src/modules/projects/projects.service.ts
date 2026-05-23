@@ -30,6 +30,7 @@ export class ProjectsService {
 
   async update(id: string, data: { name?: string; environment?: 'production' | 'staging' | 'development' }) {
     const [updated] = await db.update(projects).set(data).where(eq(projects.id, id)).returning();
+    if (!updated) throw new AppError(404, 'NOT_FOUND', 'Project not found');
     return updated;
   }
 

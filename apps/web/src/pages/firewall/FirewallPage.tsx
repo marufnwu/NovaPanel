@@ -15,10 +15,11 @@ import {
   type F2BJail,
 } from '../../api/hooks/firewall';
 import { useFail2banLogs } from '../../api/hooks/logs';
-import { useAuditLog } from '../../api/hooks/audit';
+import { useAuditLog, type AuditEntry } from '../../api/hooks/audit';
 import { useSshSettings, useUpdateSshSettings } from '../../api/hooks/settings';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
@@ -379,12 +380,12 @@ export function FirewallPage() {
   const [deleteRuleTarget, setDeleteRuleTarget] = useState<number | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
-  if (rulesLoading || statusLoading || jailsLoading) return <LoadingSpinner />;
+  if (rulesLoading || statusLoading || jailsLoading) return <LoadingPage />;
 
   if (rulesError || statusError || jailsError) {
     return (
       <div>
-        <PageHeader title="Firewall" description="Manage UFW rules, Fail2Ban, and SSH settings" />
+        <PageHeader title="Firewall" description="Manage UFW rules, Fail2Ban, and SSH settings" icon={Shield} />
         <div className="flex flex-col items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 py-12">
           <AlertTriangle className="h-10 w-10 text-red-500" />
           <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load firewall data</h3>
@@ -410,7 +411,7 @@ export function FirewallPage() {
 
   return (
     <div>
-      <PageHeader title="Firewall" description="Manage UFW rules, Fail2Ban, and SSH settings" />
+      <PageHeader title="Firewall" description="Manage UFW rules, Fail2Ban, and SSH settings" icon={Shield} />
 
       {/* Status banner */}
       {status && (
@@ -573,7 +574,7 @@ export function FirewallPage() {
       {/* ── Fail2Ban Tab ───────────────────────────────────────────────────── */}
       {tab === 'fail2ban' &&
         (jailsLoading ? (
-          <LoadingSpinner />
+          <LoadingPage />
         ) : !jails?.length ? (
           <EmptyState icon={Shield} title="No Fail2Ban jails" description="Fail2Ban is not configured or has no active jails." />
         ) : (
@@ -627,7 +628,7 @@ export function FirewallPage() {
 function Fail2BanLogViewer() {
   const { data, isLoading, refetch } = useFail2banLogs(50);
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   const logLines = (data?.log || '').split('\n').filter(Boolean);
 
@@ -674,12 +675,12 @@ function Fail2BanLogViewer() {
 // ─── Login Activity Tab ────────────────────────────────────────────────────────
 
 function LoginActivityTab() {
-  const { data, isLoading } = useAuditLog(100);
+  const { data: auditData, isLoading } = useAuditLog({ perPage: 100 });
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
-  const loginEntries = (data || []).filter(
-    (e) =>
+  const loginEntries = (auditData?.data || []).filter(
+    (e: AuditEntry) =>
       e.action?.toLowerCase().includes('login') ||
       e.action?.toLowerCase().includes('logout') ||
       e.action?.toLowerCase().includes('auth')
@@ -774,7 +775,7 @@ function SshSettingsTab() {
     setInitialized(true);
   }
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   const handleSave = () => {
     updateSsh.mutate(form);

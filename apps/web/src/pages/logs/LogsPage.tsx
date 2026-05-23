@@ -1,7 +1,10 @@
 ﻿import { useState } from 'react';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
+import { Button } from '@/components/ui/button';
 import { useSystemLogs } from '../../api/hooks/logs';
-import { RefreshCw, AlertCircle } from 'lucide-react';
+import { RefreshCw, AlertCircle, ScrollText } from 'lucide-react';
 
 export function LogsPage() {
   const [lines, setLines] = useState(100);
@@ -14,6 +17,7 @@ export function LogsPage() {
       <PageHeader
         title="System Logs"
         description="View system and kernel logs from the server"
+        icon={ScrollText}
         actions={
           <div className="flex items-center gap-3">
             <label className="text-sm text-muted-foreground">
@@ -29,14 +33,10 @@ export function LogsPage() {
                 <option value={500}>500</option>
               </select>
             </label>
-            <button
-              onClick={handleRefresh}
-              disabled={isFetching}
-              className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
-            >
+            <Button size="sm" variant="outline" onClick={handleRefresh} disabled={isFetching}>
               <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
               Refresh
-            </button>
+            </Button>
           </div>
         }
       />

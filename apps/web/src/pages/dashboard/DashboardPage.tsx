@@ -350,7 +350,8 @@ export function DashboardPage() {
   const { data: network } = useNetworkStats();
   const { data: expiringCerts } = useExpiringSslCerts();
   const { data: diskDetails } = useDiskDetails();
-  const { data: auditEntries } = useAuditLog(1, 50);
+  const { data: auditData } = useAuditLog({ page: 1, perPage: 50 });
+  const auditEntries: any[] = Array.isArray(auditData?.data) ? auditData.data : [];
   const { data: tunnelStatus } = useTunnelStatus();
   const { data: serverContext, isLoading: serverContextLoading } = useServerContext();
   const restartService = useRestartService();
@@ -415,7 +416,7 @@ export function DashboardPage() {
     return <LoadingSpinner />;
   }
 
-  const stoppedServices = services?.filter((s) => s.status !== 'running') || [];
+  const stoppedServices = services?.filter((s) => s.status !== 'running') ?? [];
   const diskWarning = stats && stats.disk.usagePercent > 80;
 
   // RAM breakdown values

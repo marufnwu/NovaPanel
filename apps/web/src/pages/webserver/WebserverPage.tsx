@@ -15,7 +15,8 @@ import {
   type RateLimitConfig,
 } from '../../api/hooks/webserver';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import {
   Server, RefreshCw, CheckCircle, X, Eye, Save, Globe,
@@ -97,7 +98,7 @@ function CustomErrorPagesSection({ domain }: { domain: string }) {
     );
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   return (
     <div className="rounded-lg border border-border bg-card p-5">
@@ -198,7 +199,7 @@ function RateLimitingSection({ domain }: { domain: string }) {
     );
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   return (
     <div className="rounded-lg border border-border bg-card p-5">
@@ -335,11 +336,11 @@ export function WebserverPage() {
     });
   };
 
-  if (statusLoading) return <LoadingSpinner />;
+  if (statusLoading) return <LoadingPage />;
 
   if (statusError) return (
     <div className="space-y-6">
-      <PageHeader title="Web Server" description="Nginx and Apache configuration" />
+      <PageHeader title="Web Server" description="Nginx and Apache configuration" icon={Server} />
       <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-500/30 dark:bg-red-500/10">
         <AlertTriangle className="mx-auto h-10 w-10 text-red-500" />
         <p className="mt-3 text-red-600 dark:text-red-400">Failed to load webserver status. Please try again.</p>
@@ -355,7 +356,7 @@ export function WebserverPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Web Server" description="Nginx and Apache configuration" />
+      <PageHeader title="Web Server" description="Nginx and Apache configuration" icon={Server} />
 
       {/* Server Status */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -413,7 +414,7 @@ export function WebserverPage() {
       </div>
 
       {/* Domain Config Panels */}
-      {selectedDomain && configLoading && <LoadingSpinner />}
+      {selectedDomain && configLoading && <LoadingPage />}
 
       {selectedDomain && configError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-500/30 dark:bg-red-500/10">

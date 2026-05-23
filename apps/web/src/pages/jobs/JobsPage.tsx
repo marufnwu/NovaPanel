@@ -7,9 +7,10 @@ import {
   type BackgroundJob,
 } from '../../api/hooks/jobs';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -150,13 +151,13 @@ export function JobsPage() {
     });
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   return (
     <div>
       <PageHeader
         title="Background Jobs"
-        description="View and manage queued background tasks"
+        icon={BarChart3}
       />
 
       <div className="mb-6 flex items-center justify-end">

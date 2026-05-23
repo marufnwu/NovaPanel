@@ -24,10 +24,12 @@ export class MonitoringService {
     const conditions = [];
     if (filters.name) conditions.push(eq(metrics.name, filters.name));
     if (filters.from || filters.to) {
-      conditions.push(and(
-        filters.from ? eq(metrics.timestamp, filters.from) : undefined,
-        filters.to ? eq(metrics.timestamp, filters.to) : undefined,
-      ) as any);
+      const timeConditions = [];
+      if (filters.from) timeConditions.push(eq(metrics.timestamp, filters.from));
+      if (filters.to) timeConditions.push(eq(metrics.timestamp, filters.to));
+      if (timeConditions.length > 0) {
+        conditions.push(and(...timeConditions));
+      }
     }
     const where = conditions.length > 0 ? and(...conditions) : undefined;
     const items = await db.select().from(metrics).where(where).orderBy(desc(metrics.timestamp)).limit(filters.limit ?? 100);

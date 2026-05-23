@@ -38,6 +38,7 @@ export class SitesService {
 
   async update(id: string, data: Partial<typeof sites.$inferInsert>, _userId?: string, _ipAddress?: string) {
     const [updated] = await db.update(sites).set({ ...data, updatedAt: new Date() }).where(eq(sites.id, id)).returning();
+    if (!updated) throw new Error('Site not found');
     return updated;
   }
 

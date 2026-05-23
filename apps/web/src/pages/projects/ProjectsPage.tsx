@@ -8,9 +8,10 @@ import {
 } from '../../api/hooks/projects';
 import { useAuthStore } from '../../store/auth.store';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -165,13 +166,13 @@ export function ProjectsPage() {
     });
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   return (
     <div>
       <PageHeader
         title="Projects"
-        description="Organize your sites and services into projects"
+        icon={Folder}
       />
 
       <div className="mb-6 flex items-center justify-end">

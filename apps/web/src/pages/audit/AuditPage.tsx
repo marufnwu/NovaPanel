@@ -1,8 +1,10 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useAuditLog, AuditEntry } from '../../api/hooks/audit';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Button } from '@/components/ui/button';
 import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
 import {
   ScrollText, Search, Download, Filter, ChevronLeft, ChevronRight,
@@ -12,7 +14,7 @@ import {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 20;
-const FETCH_LIMIT = 500; // Fetch a large batch for client-side filtering
+
 
 const ACTION_CATEGORIES: { key: string; label: string; pattern: string }[] = [
   { key: 'all', label: 'All', pattern: '' },
@@ -150,8 +152,8 @@ function EntryDetailModal({ entry, onClose }: { entry: AuditEntry; onClose: () =
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export function AuditPage() {
-  // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
+  const [perPage] = useState(20);
 
   // Filter state
   const [actionFilter, setActionFilter] = useState('all');
@@ -164,79 +166,30 @@ export function AuditPage() {
   // Detail modal
   const [selectedEntry, setSelectedEntry] = useState<AuditEntry | null>(null);
 
-  // Fetch data with a large batch for client-side filtering
-  const offset = (currentPage - 1) * PAGE_SIZE;
-  const { data: entries, isLoading, isError, refetch, isRefetching } = useAuditLog(FETCH_LIMIT, 0);
+  // Build server-side filters
+  const filters = useMemo(() => ({
+    search: searchQuery || undefined,
+    category: actionFilter !== 'all' ? actionFilter : undefined,
+    user: userFilter !== 'all' ? userFilter : undefined,
+    from: dateFrom || undefined,
+    to: dateTo || undefined,
+    page: currentPage,
+    perPage,
+  }), [searchQuery, actionFilter, userFilter, dateFrom, dateTo, currentPage, perPage]);
 
-  // Extract unique users from entries
+  const { data, isLoading, isError, refetch, isRefetching } = useAuditLog(filters);
+
+  const entries = data?.data ?? [];
+  const totalFiltered = data?.meta?.total ?? 0;
+  const totalPages = Math.max(1, data?.meta?.totalPages ?? 1);
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  // Extract unique users from current page entries for the user filter dropdown
   const uniqueUsers = useMemo(() => {
-    if (!entries) return [];
     const userIds = new Set<string>();
-    entries.forEach((e) => {
-      if (e.userId) userIds.add(e.userId);
-    });
+    entries.forEach((e) => { if (e.userId) userIds.add(e.userId); });
     return Array.from(userIds).sort();
   }, [entries]);
-
-  // Apply all filters client-side
-  const filteredEntries = useMemo(() => {
-    if (!entries) return [];
-
-    let result = [...entries];
-
-    // Filter by action category
-    if (actionFilter !== 'all') {
-      if (actionFilter === 'other') {
-        const knownCategories = ['create', 'update', 'delete', 'login', 'logout'];
-        result = result.filter((e) => !knownCategories.includes(getActionCategory(e.action)));
-      } else {
-        result = result.filter((e) => getActionCategory(e.action) === actionFilter);
-      }
-    }
-
-    // Filter by user
-    if (userFilter !== 'all') {
-      result = result.filter((e) => e.userId === userFilter);
-    }
-
-    // Filter by date range
-    if (dateFrom) {
-      const fromDate = new Date(dateFrom);
-      fromDate.setHours(0, 0, 0, 0);
-      result = result.filter((e) => new Date(e.timestamp) >= fromDate);
-    }
-    if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      result = result.filter((e) => new Date(e.timestamp) <= toDate);
-    }
-
-    // Search across action, resource, IP, user ID, and details
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      result = result.filter((e) => {
-        const actionMatch = e.action.toLowerCase().includes(q);
-        const resourceMatch = (e.resource || '').toLowerCase().includes(q);
-        const ipMatch = (e.ip || '').toLowerCase().includes(q);
-        const userMatch = (e.userId || '').toLowerCase().includes(q);
-        const detailsMatch = e.details
-          ? JSON.stringify(e.details).toLowerCase().includes(q)
-          : false;
-        return actionMatch || resourceMatch || ipMatch || userMatch || detailsMatch;
-      });
-    }
-
-    return result;
-  }, [entries, actionFilter, userFilter, dateFrom, dateTo, searchQuery]);
-
-  // Paginate the filtered results
-  const totalFiltered = filteredEntries.length;
-  const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedEntries = filteredEntries.slice(
-    (safeCurrentPage - 1) * PAGE_SIZE,
-    safeCurrentPage * PAGE_SIZE
-  );
 
   // Reset to page 1 when filters change
   const resetPage = useCallback(() => setCurrentPage(1), []);
@@ -284,11 +237,11 @@ export function AuditPage() {
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   if (isError) return (
     <div>
-      <PageHeader title="Audit Log" description="Track all system activities and changes" />
+      <PageHeader title="Audit Log" description="Track all system activities and changes" icon={ScrollText} />
       <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-500/30 dark:bg-red-500/10">
         <AlertTriangle className="mx-auto h-10 w-10 text-red-500" />
         <p className="mt-3 text-red-600 dark:text-red-400">Failed to load audit log. Please try again.</p>
@@ -307,24 +260,17 @@ export function AuditPage() {
       <PageHeader
         title="Audit Log"
         description="Track all system activities and changes"
+        icon={ScrollText}
         actions={
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => refetch()}
-              disabled={isRefetching}
-              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50 transition-colors"
-            >
+            <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isRefetching}>
               <RefreshCw className={`h-3.5 w-3.5 ${isRefetching ? 'animate-spin' : ''}`} />
               Refresh
-            </button>
-            <button
-              onClick={() => exportToCSV(filteredEntries)}
-              disabled={filteredEntries.length === 0}
-              className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-            >
+            </Button>
+            <Button size="sm" onClick={() => exportToCSV(entries)} disabled={entries.length === 0}>
               <Download className="h-3.5 w-3.5" />
               Export CSV
-            </button>
+            </Button>
           </div>
         }
       />
@@ -464,10 +410,7 @@ export function AuditPage() {
       {/* Results summary */}
       <div className="mb-3 flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Showing {paginatedEntries.length} of {totalFiltered} entries
-          {totalFiltered !== (entries?.length || 0) && (
-            <span className="ml-1">(filtered from {entries?.length || 0} total)</span>
-          )}
+          Showing {entries.length} of {totalFiltered} entries
         </p>
       </div>
 
@@ -478,7 +421,7 @@ export function AuditPage() {
           title="No actions logged yet"
           description="Audit entries will appear here as system activities occur."
         />
-      ) : filteredEntries.length === 0 ? (
+      ) : entries.length === 0 ? (
         <EmptyState
           icon={Search}
           title="No matching entries"
@@ -506,7 +449,7 @@ export function AuditPage() {
                 </tr>
               </thead>
               <tbody>
-                {paginatedEntries.map((entry) => {
+                {entries.map((entry: AuditEntry) => {
                   const category = getActionCategory(entry.action);
                   const badgeColor = ACTION_BADGE_COLORS[category] || ACTION_BADGE_COLORS.other;
                   return (
@@ -564,7 +507,7 @@ export function AuditPage() {
       )}
 
       {/* Pagination */}
-      {filteredEntries.length > 0 && (
+      {entries.length > 0 && (
         <div className="mt-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">

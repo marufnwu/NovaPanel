@@ -9,7 +9,8 @@ import {
 } from '../../api/hooks/tunnel';
 import { useDomains } from '../../api/hooks/domains';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { toast } from '../../lib/toast';
 import {
@@ -45,7 +46,7 @@ export function CloudflarePage() {
       <div>
         <PageHeader 
           title="Cloudflare" 
-          description="Manage Cloudflare tunnel connections for private network access" 
+          icon={Cloud} 
         />
         <CloudflareSetupCard onSetup={() => setShowSetup(true)} />
         {showSetup && <CloudflareSetupModal onClose={() => setShowSetup(false)} />}
@@ -57,7 +58,7 @@ export function CloudflarePage() {
     <div>
       <PageHeader 
         title="Cloudflare" 
-        description="Manage Cloudflare tunnel connections for private network access" 
+        icon={Cloud} 
       />
       <TopTabs activeTab={activeTab} onTabChange={setActiveTab} isConnected={isConnected} />
       <div className="mt-4">
@@ -217,7 +218,7 @@ function CloudflareSetupModal({ onClose }: { onClose: () => void }) {
 
         {step === 'saving' && (
           <div className="flex flex-col items-center py-8">
-            <LoadingSpinner />
+            <LoadingPage />
             <p className="mt-4 text-sm text-muted-foreground">Connecting your Cloudflare account...</p>
           </div>
         )}
@@ -277,7 +278,7 @@ function OverviewSection() {
   const { data: tunnelRoutes } = useTunnelRoutes();
   const { data: domains } = useDomains();
 
-  if (tunnelLoading) return <LoadingSpinner />;
+  if (tunnelLoading) return <LoadingPage />;
 
   const tunnels = tunnelStatus?.tunnels || [];
   const activeTunnel = tunnels.find(t => t.status === 'active');
@@ -502,7 +503,7 @@ function TunnelsSection({ onSetupTunnel }: { onSetupTunnel?: () => void }) {
   const [showDeleteTunnel, setShowDeleteTunnel] = useState<CloudflareTunnel | null>(null);
   const [showExposePanel, setShowExposePanel] = useState<CloudflareTunnel | null>(null);
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   if (isError) return (
     <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center dark:border-red-500/30 dark:bg-red-500/10">
@@ -926,7 +927,7 @@ function ConfigPreviewModal({ tunnel, onClose }: { tunnel: CloudflareTunnel; onC
           <h2 className="text-lg font-semibold">Tunnel Configuration</h2>
           <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-4 w-4" /></button>
         </div>
-        {isLoading ? <LoadingSpinner /> : (
+        {isLoading ? <LoadingPage /> : (
           <div className="rounded-lg bg-muted p-4">
             <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{config || 'No configuration available'}</pre>
           </div>

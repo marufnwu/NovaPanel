@@ -293,7 +293,9 @@ export class SslService {
     if (cert) {
       try {
         if (cert.type === 'letsencrypt') await certbotService.deleteCertificate(domain.name);
-      } catch {}
+      } catch (err) {
+        logger.warn({ err, domainId }, 'Failed to delete certificate from certbot');
+      }
       await db.delete(sslCertificates).where(eq(sslCertificates.id, cert.id));
     }
 
@@ -419,7 +421,7 @@ export class SslService {
     const [cert] = await db.select().from(sslCertificates).where(eq(sslCertificates.id, id)).limit(1);
     if (!cert) throw new AppError(404, 'CERT_NOT_FOUND', 'Certificate not found');
     if (cert.type === 'letsencrypt') {
-      try { await certbotService.deleteCertificate(''); } catch {}
+      try { await certbotService.deleteCertificate(''); } catch (err) { logger.warn({ err }, 'Failed to delete certificate'); }
     }
     await db.delete(sslCertificates).where(eq(sslCertificates.id, id));
   }

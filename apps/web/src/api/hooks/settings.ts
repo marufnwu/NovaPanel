@@ -329,6 +329,24 @@ export function useUpdateSslEmail() {
   });
 }
 
+// ─── PHP Version ───────────────────────────────────────────────────────────────
+
+export function usePhpVersion() {
+  return useQuery({
+    queryKey: ['settings', 'php-version'],
+    queryFn: () => api.get<{ version: string }>('/settings/php-version'),
+  });
+}
+
+export function useUpdatePhpVersion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (version: string) =>
+      api.put<{ success: boolean; version: string }>('/settings/php-version', { version }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['settings', 'php-version'] }),
+  });
+}
+
 // ─── Server Power ─────────────────────────────────────────────────────────────
 
 export function useRebootServer() {
@@ -401,6 +419,38 @@ export function useUpdateDataRetention() {
     mutationFn: (data: Partial<DataRetentionSettings>) =>
       api.put('/settings/data-retention', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['settings', 'data-retention'] }),
+  });
+}
+
+// ─── SMTP Settings ─────────────────────────────────────────────────────────────
+
+export interface SmtpConfig {
+  host: string;
+  port: number;
+  username: string;
+  fromAddress: string;
+  encryption: 'none' | 'tls' | 'ssl';
+}
+
+export function useSmtpSettings() {
+  return useQuery({
+    queryKey: ['settings', 'smtp'],
+    queryFn: () => api.get<SmtpConfig>('/settings/smtp'),
+  });
+}
+
+export function useUpdateSmtpSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: SmtpConfig & { password?: string }) =>
+      api.put('/settings/smtp', data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['settings', 'smtp'] }),
+  });
+}
+
+export function useSendTestEmail() {
+  return useMutation({
+    mutationFn: () => api.post<{ success: boolean; message: string }>('/settings/smtp/test'),
   });
 }
 

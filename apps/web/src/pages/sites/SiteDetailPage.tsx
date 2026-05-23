@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from '@tanstack/react-router';
 import {
   useSite,
@@ -9,8 +9,13 @@ import {
   useSiteStatus,
   useSiteStop,
   useSiteDockerfile,
+  useSiteCronJobs,
+  useSiteDomains,
   type Site,
 } from '../../api/hooks/sites';
+import { usePhpVersion } from '../../api/hooks/settings';
+import { useBreadcrumbOverride } from '../../lib/breadcrumb-store';
+import { useVhostConfig } from '../../api/hooks/webserver';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { toast } from '../../lib/toast';
@@ -28,9 +33,17 @@ import {
   Terminal,
   FileCode,
   RefreshCw,
+  Database,
+  ShieldCheck,
+  Network,
+  Code2,
+  FileText,
+  HardDrive,
+  Trash2,
+  Plus,
 } from 'lucide-react';
 
-type Tab = 'runtime' | 'deployments' | 'settings';
+type Tab = 'runtime' | 'deployments' | 'database' | 'ssl' | 'dns' | 'php' | 'webserver' | 'logs' | 'cron' | 'settings';
 
 function StatusBadge({ status }: { status: Site['status'] }) {
   const styles: Record<string, string> = {
@@ -385,6 +398,478 @@ function SettingsTab({ site }: { site: Site }) {
   );
 }
 
+function PlaceholderTab({ title, icon: Icon, description }: { title: string; icon: typeof Database; description: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="mb-4 rounded-full bg-muted p-4">
+        <Icon className="h-8 w-8 text-muted-foreground" />
+      </div>
+      <h3 className="mb-1 font-medium text-lg">{title}</h3>
+      <p className="mb-4 text-sm text-muted-foreground max-w-sm">{description}</p>
+      <div className="rounded-md bg-muted/50 px-4 py-2 text-xs text-muted-foreground">
+        This feature uses existing API endpoints. Content loads here via scoped tabs.
+      </div>
+    </div>
+  );
+}
+
+function DatabaseTab({ site }: { site: Site }) {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Database</h3>
+          <p className="text-sm text-muted-foreground">Database configuration for this site</p>
+        </div>
+      </div>
+      <div className="flex flex-col items-center justify-center py-12 text-center rounded-lg border border-dashed">
+        <Database className="h-8 w-8 text-muted-foreground mb-3" />
+        <p className="text-sm text-muted-foreground">Database management is per-project</p>
+        <p className="text-xs text-muted-foreground mt-1">Databases are shared across all sites in a project</p>
+      </div>
+    </div>
+  );
+}
+
+function DNSTab({ site }: { site: Site }) {
+  const { data: domains, isLoading } = useSiteDomains(site.id);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const siteDomains = (domains || []).filter((d: any) => d.siteId === site.id);
+
+  if (siteDomains.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">DNS Records</h3>
+            <p className="text-sm text-muted-foreground">Domains and DNS configuration for this site</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 text-center rounded-lg border border-dashed">
+          <Network className="h-8 w-8 text-muted-foreground mb-3" />
+          <p className="text-sm text-muted-foreground">No domains attached to this site</p>
+          <p className="text-xs text-muted-foreground mt-1">Attach a domain from the Domains page</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">DNS Records</h3>
+          <p className="text-sm text-muted-foreground">{siteDomains.length} domain{siteDomains.length !== 1 ? 's' : ''} linked to this site</p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {siteDomains.map((domain: any) => (
+          <div key={domain.id} className="flex items-center justify-between rounded-md border p-3">
+            <div className="flex items-center gap-3">
+              <Network className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">{domain.name}</p>
+                <p className="text-xs text-muted-foreground capitalize">{domain.type} {domain.status === 'active' ? '' : `· ${domain.status}`}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {domain.proxyEnabled && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600">
+                  Proxy
+                </span>
+              )}
+              {domain.forceHttps && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600">
+                  HTTPS
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SSLTab({ site }: { site: Site }) {
+  const { data: domains, isLoading } = useSiteDomains(site.id);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const siteDomains = (domains || []).filter((d: any) => d.siteId === site.id);
+
+  if (siteDomains.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">SSL Certificates</h3>
+            <p className="text-sm text-muted-foreground">SSL configuration for domains on this site</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 text-center rounded-lg border border-dashed">
+          <ShieldCheck className="h-8 w-8 text-muted-foreground mb-3" />
+          <p className="text-sm text-muted-foreground">No domains attached to this site</p>
+          <p className="text-xs text-muted-foreground mt-1">SSL certificates are managed per-domain</p>
+        </div>
+      </div>
+    );
+  }
+
+  const activeCerts = siteDomains.filter((d: any) => d.sslStatus === 'active').length;
+  const pendingCerts = siteDomains.filter((d: any) => d.sslStatus === 'pending').length;
+  const expiredCerts = siteDomains.filter((d: any) => d.sslStatus === 'expired').length;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">SSL Certificates</h3>
+          <p className="text-sm text-muted-foreground">SSL status for domains on this site</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        <div className="rounded-md border border-green-500/30 bg-green-500/5 p-4 text-center">
+          <p className="text-2xl font-bold text-green-600">{activeCerts}</p>
+          <p className="text-xs text-muted-foreground">Active</p>
+        </div>
+        <div className="rounded-md border border-yellow-500/30 bg-yellow-500/5 p-4 text-center">
+          <p className="text-2xl font-bold text-yellow-600">{pendingCerts}</p>
+          <p className="text-xs text-muted-foreground">Pending</p>
+        </div>
+        <div className="rounded-md border border-red-500/30 bg-red-500/5 p-4 text-center">
+          <p className="text-2xl font-bold text-red-600">{expiredCerts}</p>
+          <p className="text-xs text-muted-foreground">Expired</p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {siteDomains.map((domain: any) => (
+          <div key={domain.id} className="flex items-center justify-between rounded-md border p-3">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className={`h-4 w-4 ${domain.sslStatus === 'active' ? 'text-green-500' : domain.sslStatus === 'expired' ? 'text-red-500' : 'text-yellow-500'}`} />
+              <div>
+                <p className="text-sm font-medium">{domain.name}</p>
+                <p className="text-xs text-muted-foreground">SSL {domain.sslStatus}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {domain.forceHttps && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-600">
+                  Enforced
+                </span>
+              )}
+              {domain.hstsEnabled && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600">
+                  HSTS
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PhpTab({ site }: { site: Site }) {
+  useBreadcrumbOverride(`/sites/${site.id}`, site.name);
+  const { data: domains, isLoading } = useSiteDomains(site.id);
+  const { data: phpVersionData } = usePhpVersion();
+
+  if (isLoading) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const siteDomains = (domains || []).filter((d: any) => d.siteId === site.id);
+  const globalPhpVersion = phpVersionData?.version || 'default';
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">PHP Configuration</h3>
+          <p className="text-sm text-muted-foreground">PHP version and settings for this site</p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Code2 className="h-4 w-4" />
+              PHP Version
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Global Default</span>
+              <span className="text-sm font-medium">{globalPhpVersion === 'default' ? 'System Default' : `PHP ${globalPhpVersion}`}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Site Runtime</span>
+              <span className="text-sm font-medium">{site.runtimeVersion || `PHP (via ${site.runtime})`}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Container Runtime</span>
+              <span className="text-sm font-medium capitalize">{site.runtime}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Server className="h-4 w-4" />
+              PHP Settings
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Status</span>
+              <span className="inline-flex items-center rounded-full bg-green-500/10 px-2.5 py-0.5 text-xs font-medium text-green-600">
+                Active
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Per-Domain Config</span>
+              <span className="text-xs text-muted-foreground">Available via domain settings</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {siteDomains.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Domains Using This Site</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {siteDomains.map((domain: any) => (
+                <div key={domain.id} className="flex items-center justify-between rounded-md border p-2">
+                  <span className="text-sm font-medium">{domain.name}</span>
+                  <span className="text-xs text-muted-foreground">PHP {globalPhpVersion === 'default' ? 'global' : globalPhpVersion}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function WebserverTab({ site }: { site: Site }) {
+  const { data: domains, isLoading } = useSiteDomains(site.id);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const siteDomains = (domains || []).filter((d: any) => d.siteId === site.id);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Web Server Configuration</h3>
+          <p className="text-sm text-muted-foreground">Nginx/Apache settings for domains on this site</p>
+        </div>
+      </div>
+
+      {siteDomains.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center rounded-lg border border-dashed">
+          <HardDrive className="h-8 w-8 text-muted-foreground mb-3" />
+          <p className="text-sm text-muted-foreground">No domains attached to this site</p>
+          <p className="text-xs text-muted-foreground mt-1">Attach a domain to configure web server settings</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {siteDomains.slice(0, 3).map((domain: any) => (
+            <Card key={domain.id}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <HardDrive className="h-4 w-4" />
+                  {domain.name}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Force HTTPS</span>
+                  <span className={domain.forceHttps ? 'text-green-600' : 'text-muted-foreground'}>{domain.forceHttps ? 'Enabled' : 'Disabled'}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">HSTS</span>
+                  <span className={domain.hstsEnabled ? 'text-green-600' : 'text-muted-foreground'}>{domain.hstsEnabled ? 'Enabled' : 'Disabled'}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Proxy</span>
+                  <span className={domain.proxyEnabled ? 'text-blue-600' : 'text-muted-foreground'}>{domain.proxyEnabled ? 'Enabled' : 'Disabled'}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Custom Nginx</span>
+                  <span className="text-muted-foreground">{domain.customNginxConfig ? 'Yes' : 'No'}</span>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {siteDomains.length > 3 && (
+            <p className="text-sm text-muted-foreground text-center">And {siteDomains.length - 3} more domain{siteDomains.length - 3 !== 1 ? 's' : ''}...</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LogsTab({ site }: { site: Site }) {
+  const { data: domains, isLoading } = useSiteDomains(site.id);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const siteDomains = (domains || []).filter((d: any) => d.siteId === site.id);
+
+  if (siteDomains.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">Application Logs</h3>
+            <p className="text-sm text-muted-foreground">Access, error, and application logs</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 text-center rounded-lg border border-dashed">
+          <FileText className="h-8 w-8 text-muted-foreground mb-3" />
+          <p className="text-sm text-muted-foreground">No domains attached to this site</p>
+          <p className="text-xs text-muted-foreground mt-1">Attach a domain to view logs</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Application Logs</h3>
+          <p className="text-sm text-muted-foreground">Access, error, and application logs</p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {siteDomains.map((domain: any) => (
+          <div key={domain.id} className="flex items-center justify-between rounded-md border p-3">
+            <div className="flex items-center gap-3">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">{domain.name}</p>
+                <p className="text-xs text-muted-foreground">Web server logs</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                Access · Error logs per domain
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CronTab({ site }: { site: Site }) {
+  const { data: jobs, isLoading } = useSiteCronJobs(site.id);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const siteJobs = (jobs || []).filter((j: any) => j.siteId === site.id);
+
+  if (siteJobs.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">Scheduled Jobs</h3>
+            <p className="text-sm text-muted-foreground">Cron jobs configured for this site</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center py-12 text-center rounded-lg border border-dashed">
+          <Clock className="h-8 w-8 text-muted-foreground mb-3" />
+          <p className="text-sm text-muted-foreground">No cron jobs configured for this site</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Scheduled Jobs</h3>
+          <p className="text-sm text-muted-foreground">{siteJobs.length} cron job{siteJobs.length !== 1 ? 's' : ''} for this site</p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {siteJobs.map((job: any) => (
+          <div key={job.id} className="flex items-center justify-between rounded-md border p-3">
+            <div className="flex items-center gap-3">
+              <div className={`h-2 w-2 rounded-full ${job.isActive !== false ? 'bg-green-500' : 'bg-gray-400'}`} />
+              <div>
+                <p className="text-sm font-medium">{job.name || 'Unnamed Job'}</p>
+                <p className="text-xs text-muted-foreground font-mono">{job.schedule} — {job.command}</p>
+              </div>
+            </div>
+            <div className="text-right">
+              {job.lastRun && (
+                <p className="text-xs text-muted-foreground">Last: {new Date(job.lastRun).toLocaleString()}</p>
+              )}
+              {job.lastStatus && (
+                <p className={`text-xs font-medium ${job.lastStatus === 'success' ? 'text-green-600' : job.lastStatus === 'failed' ? 'text-red-600' : 'text-muted-foreground'}`}>
+                  {job.lastStatus}
+                </p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function SiteDetailPage() {
   const siteId = useParams({ from: '/protected/sites/$id' });
   const { data: site, isLoading, error } = useSite(siteId.id);
@@ -409,10 +894,17 @@ export function SiteDetailPage() {
     );
   }
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: 'runtime', label: 'Runtime' },
-    { key: 'deployments', label: 'Deployments' },
-    { key: 'settings', label: 'Settings' },
+  const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
+    { key: 'runtime', label: 'Runtime', icon: Server },
+    { key: 'deployments', label: 'Deployments', icon: GitBranch },
+    { key: 'database', label: 'Database', icon: Database },
+    { key: 'ssl', label: 'SSL', icon: ShieldCheck },
+    { key: 'dns', label: 'DNS', icon: Network },
+    { key: 'php', label: 'PHP', icon: Code2 },
+    { key: 'webserver', label: 'Webserver', icon: HardDrive },
+    { key: 'logs', label: 'Logs', icon: FileText },
+    { key: 'cron', label: 'Cron', icon: Clock },
+    { key: 'settings', label: 'Settings', icon: FileCode },
   ];
 
   return (
@@ -422,17 +914,18 @@ export function SiteDetailPage() {
         actions={<StatusBadge status={site.status} />}
       />
 
-      <div className="flex gap-1 border-b">
+      <div className="flex gap-1 border-b overflow-x-auto">
         {tabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
               activeTab === tab.key
                 ? 'border-b-2 border-primary text-primary'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
+            <tab.icon className="h-3.5 w-3.5" />
             {tab.label}
           </button>
         ))}
@@ -440,6 +933,13 @@ export function SiteDetailPage() {
 
       {activeTab === 'runtime' && <RuntimeTab site={site} />}
       {activeTab === 'deployments' && <DeploymentsTab site={site} />}
+      {activeTab === 'database' && <DatabaseTab site={site} />}
+      {activeTab === 'ssl' && <SSLTab site={site} />}
+      {activeTab === 'dns' && <DNSTab site={site} />}
+      {activeTab === 'php' && <PhpTab site={site} />}
+      {activeTab === 'webserver' && <WebserverTab site={site} />}
+      {activeTab === 'logs' && <LogsTab site={site} />}
+      {activeTab === 'cron' && <CronTab site={site} />}
       {activeTab === 'settings' && <SettingsTab site={site} />}
     </div>
   );

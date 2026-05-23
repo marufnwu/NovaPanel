@@ -21,7 +21,6 @@ import { useDomains } from '../../api/hooks/domains';
 import { useMetrics, useAlertRules, useCreateAlertRule, useUpdateAlertRule, useDeleteAlertRule, useAlertHistory, useCollectMetrics, type Metric, type AlertRule, type AlertHistory } from '../../api/hooks/monitoring';
 import { useAuthStore } from '../../store/auth.store';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { toast } from '../../lib/toast';
@@ -48,11 +47,13 @@ import {
   BarChart3,
   Bell,
   History,
+  Monitor,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
 import {
   Dialog,
   DialogContent,
@@ -122,59 +123,12 @@ function saveThresholds(t: AlertThresholds) {
 }
 
 // ─── Historical Data Generator ──────────────────────────────────────────────
-
-function generateHistoricalData(
-  currentValue: number,
-  range: TimeRange,
-  count: number = 60,
-  variance: number = 0.3,
-): HistoricalDataPoint[] {
-  const now = Date.now();
-  const rangeMs: Record<TimeRange, number> = {
-    '1h': 3600_000,
-    '6h': 6 * 3600_000,
-    '24h': 24 * 3600_000,
-    '7d': 7 * 24 * 3600_000,
-    '30d': 30 * 24 * 3600_000,
-  };
-  const interval = rangeMs[range] / count;
-  const points: HistoricalDataPoint[] = [];
-
-  for (let i = 0; i < count; i++) {
-    const ts = now - (count - i) * interval;
-    const noise = (Math.random() - 0.5) * 2 * variance * currentValue;
-    const trend = Math.sin((i / count) * Math.PI * 2) * currentValue * 0.1;
-    const value = Math.max(0, Math.min(100, currentValue + noise + trend));
-    points.push({ timestamp: ts, value: Math.round(value * 10) / 10 });
-  }
-  return points;
-}
-
-function generateBytesHistoricalData(
-  currentBytesPerSec: number,
-  range: TimeRange,
-  count: number = 60,
-): HistoricalDataPoint[] {
-  const now = Date.now();
-  const rangeMs: Record<TimeRange, number> = {
-    '1h': 3600_000,
-    '6h': 6 * 3600_000,
-    '24h': 24 * 3600_000,
-    '7d': 7 * 24 * 3600_000,
-    '30d': 30 * 24 * 3600_000,
-  };
-  const interval = rangeMs[range] / count;
-  const points: HistoricalDataPoint[] = [];
-
-  for (let i = 0; i < count; i++) {
-    const ts = now - (count - i) * interval;
-    const noise = (Math.random() - 0.5) * currentBytesPerSec * 0.6;
-    const trend = Math.sin((i / count) * Math.PI * 3) * currentBytesPerSec * 0.15;
-    const value = Math.max(0, currentBytesPerSec + noise + trend);
-    points.push({ timestamp: ts, value: Math.round(value) });
-  }
-  return points;
-}
+// TODO: Real historical network/disk data requires a new API endpoint:
+// GET /stats/network-history?from=<timestamp>&to=<timestamp>
+// GET /stats/disk-history?from=<timestamp>&to=<timestamp>
+// These would query the serverStats table which stores networkIn/networkOut values.
+// Until then, charts show "No data yet" when useMetrics() returns no data.
+// remove generateHistoricalData and generateBytesHistoricalData after implementing those endpoints
 
 // ─── SVG Area Chart Component ───────────────────────────────────────────────
 
@@ -725,47 +679,90 @@ export function MonitoringPage() {
 
   const MONITORING_TABS = [
     { key: 'overview' as const, label: 'Overview', icon: Activity },
-    { key: 'metrics' as const, label: 'Metrics History', icon: BarChart3 },
-    { key: 'alerts' as const, label: 'Alert Rules', icon: Bell },
-    { key: 'history' as const, label: 'Alert History', icon: History },
+    { key: 'alerts' as const, label: 'Alerts', icon: Bell },
+    { key: 'metrics' as const, label: 'Metrics', icon: BarChart3 },
+    { key: 'history' as const, label: 'History', icon: History },
   ];
 
-  // Generate historical data from current stats
-  const cpuHistory = useMemo(
-    () => generateHistoricalData(stats?.cpu.usage ?? 30, timeRange, 60, 0.25),
-    [stats?.cpu.usage, timeRange],
-  );
-  const memHistory = useMemo(
-    () => generateHistoricalData(stats?.memory.usagePercent ?? 50, timeRange, 60, 0.2),
-    [stats?.memory.usagePercent, timeRange],
-  );
-  const netRxHistory = useMemo(
-    () => generateBytesHistoricalData(network?.rxSec ?? 1024 * 512, timeRange, 60),
-    [network?.rxSec, timeRange],
-  );
-  const netTxHistory = useMemo(
-    () => generateBytesHistoricalData(network?.txSec ?? 1024 * 256, timeRange, 60),
-    [network?.txSec, timeRange],
-  );
-  const diskReadHistory = useMemo(
-    () => generateBytesHistoricalData(diskIO?.readBytesSec ?? 1024 * 1024 * 5, timeRange, 60),
-    [diskIO?.readBytesSec, timeRange],
-  );
-  const diskWriteHistory = useMemo(
-    () => generateBytesHistoricalData(diskIO?.writeBytesSec ?? 1024 * 1024 * 3, timeRange, 60),
-    [diskIO?.writeBytesSec, timeRange],
-  );
+  // Generate historical data from current stats (real API data when available)
+  const { data: metricsData } = useMetrics({ limit: 100 });
+
+  const cpuHistory = useMemo(() => {
+    if (!metricsData?.length) return [];
+    const now = Date.now();
+    const rangeMs: Record<TimeRange, number> = {
+      '1h': 3600_000, '6h': 6 * 3600_000, '24h': 24 * 3600_000,
+      '7d': 7 * 24 * 3600_000, '30d': 30 * 24 * 3600_000,
+    };
+    const cutoff = now - rangeMs[timeRange];
+    const filtered = metricsData.filter(
+      (m: any) => m.name === 'cpu_usage_percent' && new Date(m.timestamp).getTime() >= cutoff
+    );
+    return filtered.map((m: any) => ({ timestamp: new Date(m.timestamp).getTime(), value: m.value }));
+  }, [metricsData, timeRange]);
+
+  const memHistory = useMemo(() => {
+    if (!metricsData?.length) return [];
+    const now = Date.now();
+    const rangeMs: Record<TimeRange, number> = {
+      '1h': 3600_000, '6h': 6 * 3600_000, '24h': 24 * 3600_000,
+      '7d': 7 * 24 * 3600_000, '30d': 30 * 24 * 3600_000,
+    };
+    const cutoff = now - rangeMs[timeRange];
+    const filtered = metricsData.filter(
+      (m: any) => m.name === 'memory_usage_percent' && new Date(m.timestamp).getTime() >= cutoff
+    );
+    return filtered.map((m: any) => ({ timestamp: new Date(m.timestamp).getTime(), value: m.value }));
+  }, [metricsData, timeRange]);
+
+  const netRxHistory = useMemo(() => {
+    if (!metricsData?.length) return [];
+    const now = Date.now();
+    const rangeMs: Record<TimeRange, number> = {
+      '1h': 3600_000, '6h': 6 * 3600_000, '24h': 24 * 3600_000,
+      '7d': 7 * 24 * 3600_000, '30d': 30 * 24 * 3600_000,
+    };
+    const cutoff = now - rangeMs[timeRange];
+    const filtered = metricsData.filter(
+      (m: any) => m.name === 'network_rx_sec' && new Date(m.timestamp).getTime() >= cutoff
+    );
+    return filtered.map((m: any) => ({ timestamp: new Date(m.timestamp).getTime(), value: m.value }));
+  }, [metricsData, timeRange]);
+
+  const netTxHistory = useMemo(() => {
+    if (!metricsData?.length) return [];
+    const now = Date.now();
+    const rangeMs: Record<TimeRange, number> = {
+      '1h': 3600_000, '6h': 6 * 3600_000, '24h': 24 * 3600_000,
+      '7d': 7 * 24 * 3600_000, '30d': 30 * 24 * 3600_000,
+    };
+    const cutoff = now - rangeMs[timeRange];
+    const filtered = metricsData.filter(
+      (m: any) => m.name === 'network_tx_sec' && new Date(m.timestamp).getTime() >= cutoff
+    );
+    return filtered.map((m: any) => ({ timestamp: new Date(m.timestamp).getTime(), value: m.value }));
+  }, [metricsData, timeRange]);
+
+  const diskReadHistory = useMemo(() => {
+    if (!metricsData?.length) return [];
+    return [];
+  }, [metricsData]);
+
+  const diskWriteHistory = useMemo(() => {
+    if (!metricsData?.length) return [];
+    return [];
+  }, [metricsData]);
 
   // Alert checks
   const cpuAlert = thresholds.enabled && stats && stats.cpu.usage >= thresholds.cpuCritical;
   const ramAlert = thresholds.enabled && stats && stats.memory.usagePercent >= thresholds.ramCritical;
   const diskAlert = thresholds.enabled && stats && stats.disk.usagePercent >= thresholds.diskCritical;
 
-  if (statsLoading || servicesLoading) return <LoadingSpinner />;
+  if (statsLoading || servicesLoading) return <LoadingPage title="Loading server stats..." />;
 
   if (statsError) return (
     <div>
-      <PageHeader title="Server Monitoring" description="Real-time server resource monitoring and service management" />
+      <PageHeader title="Server Monitoring" description="Real-time server resource monitoring and service management" icon={Monitor} />
       <div className="flex flex-col items-center justify-center rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-500/30 dark:bg-red-500/10">
         <AlertTriangle className="h-10 w-10 text-red-500" />
         <h3 className="mt-4 text-lg font-medium text-red-600 dark:text-red-400">Failed to load server stats</h3>
@@ -1129,37 +1126,7 @@ export function MonitoringPage() {
             </div>
           </div>
 
-          {/* Services Health Checks */}
-          <div className="rounded-lg border border-border bg-card mb-6">
-            <SectionHeader icon={Shield} title="Service Health Checks">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-green-500" />
-                  {services?.filter((s) => s.status === 'running').length ?? 0} running
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-red-500" />
-                  {services?.filter((s) => s.status !== 'running').length ?? 0} stopped
-                </span>
-              </div>
-            </SectionHeader>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b border-border bg-muted/50">
-                  <tr>
-                    <th className="px-4 py-2 text-left font-medium text-muted-foreground">Service</th>
-                    <th className="px-4 py-2 text-left font-medium text-muted-foreground">Name</th>
-                    <th className="px-4 py-2 text-left font-medium text-muted-foreground">Status</th>
-                    <th className="px-4 py-2 text-right font-medium text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {services?.map((s) => <ServiceRow key={s.name} service={s} onRestart={handleRestartService} />)}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
+          {/* Services Health Checks moved to /services page — see ServicesPage */}
           {/* Top Processes */}
           <div className="rounded-lg border border-border bg-card mb-6">
             <SectionHeader icon={Activity} title="Top Processes">
@@ -1351,7 +1318,7 @@ export function MonitoringPage() {
                       <TableCell className="font-medium">{rule.name}</TableCell>
                       <TableCell className="font-mono text-sm">{rule.metric}</TableCell>
                       <TableCell>
-                        <Badge variant="secondary">{rule.condition} {rule.threshold}</Badge>
+                        <StatusBadge variant="neutral">{rule.condition} {rule.threshold}</StatusBadge>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{rule.duration}s</TableCell>
                       <TableCell className="text-right">

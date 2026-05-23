@@ -64,35 +64,26 @@ interface NavGroupDef {
 
 const navGroups: NavGroupDef[] = [
   {
-    title: 'Overview',
+    title: 'Apps',
     items: [
-      { label: 'Dashboard', path: '/', icon: LayoutDashboard },
       { label: 'Projects', path: '/projects', icon: FolderOpen },
+      { label: 'Installer', path: '/installer', icon: Package },
     ],
   },
   {
-    title: 'Web',
+    title: 'Server',
+    items: [
+      { label: 'Dashboard', path: '/', icon: LayoutDashboard },
+      { label: 'Services', path: '/services', icon: Server },
+      { label: 'Monitoring', path: '/monitoring', icon: Activity },
+    ],
+  },
+  {
+    title: 'Domains',
     items: [
       { label: 'Domains', path: '/domains', icon: Globe },
       { label: 'Sites', path: '/sites', icon: Layers },
-      { label: 'Web Server', path: '/webserver', icon: Server, feature: 'nginx' },
-      { label: 'PHP', path: '/php', icon: Code2 },
       { label: 'SSL', path: '/ssl', icon: ShieldCheck },
-    ],
-  },
-  {
-    title: 'Services',
-    items: [
-      { label: 'DNS', path: '/dns', icon: Network },
-      { label: 'Mail', path: '/mail', icon: Mail, feature: 'postfix' },
-      { label: 'Databases', path: '/databases', icon: Database, feature: 'mysql' },
-      { label: 'FTP', path: '/ftp', icon: FolderUp, feature: 'ftp' },
-    ],
-  },
-  {
-    title: 'Network',
-    items: [
-      { label: 'Cloudflare', path: '/cloudflare', icon: Cloud },
     ],
   },
   {
@@ -101,34 +92,25 @@ const navGroups: NavGroupDef[] = [
       { label: 'Files', path: '/files', icon: FolderOpen },
       { label: 'Terminal', path: '/terminal', icon: Terminal },
       { label: 'Cron', path: '/cron', icon: Clock },
+      { label: 'Backups', path: '/backups', icon: Archive },
       { label: 'Firewall', path: '/firewall', icon: Flame },
       { label: 'Security', path: '/security', icon: ShieldAlert },
       { label: 'Storage', path: '/storage', icon: HardDrive },
       { label: 'Containers', path: '/containers', icon: Box },
-      { label: 'Registries', path: '/registries', icon: Container },
-      { label: 'Monitoring', path: '/monitoring', icon: Activity },
     ],
   },
   {
-    title: 'Tools',
-    items: [
-      { label: 'Backups', path: '/backups', icon: Archive },
-      { label: 'Installer', path: '/installer', icon: Package },
-      { label: 'Notifications', path: '/notifications', icon: Bell },
-      { label: 'Audit Log', path: '/audit', icon: ScrollText },
-      { label: 'Billing', path: '/billing', icon: CreditCard },
-      { label: 'Webhooks', path: '/webhooks', icon: Webhook },
-      { label: 'Plugins', path: '/plugins', icon: Package },
-      { label: 'Jobs', path: '/jobs', icon: BarChart3 },
-    ],
-  },
-  {
-    title: 'Account',
+    title: 'Settings',
     items: [
       { label: 'Profile', path: '/settings', icon: Settings },
       { label: 'API Tokens', path: '/settings/api-tokens', icon: Key },
-      { label: 'Organizations', path: '/organizations', icon: Building2 },
       { label: 'Server Settings', path: '/settings/server', icon: Wrench },
+      { label: 'Audit Log', path: '/audit', icon: ScrollText },
+      { label: 'Notifications', path: '/notifications', icon: Bell },
+      { label: 'Jobs', path: '/jobs', icon: BarChart3 },
+      { label: 'Webhooks', path: '/webhooks', icon: Webhook },
+      { label: 'Plugins', path: '/plugins', icon: Package },
+      { label: 'Billing', path: '/billing', icon: CreditCard },
     ],
   },
 ];

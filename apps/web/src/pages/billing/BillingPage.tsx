@@ -14,11 +14,11 @@ import { useAuthStore } from '../../store/auth.store';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '../../components/design-system/LoadingPage';
+import { StatusBadge } from '../../components/design-system/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -50,16 +50,7 @@ import { toast } from '../../lib/toast';
 
 type TabKey = 'overview' | 'invoices' | 'plans';
 
-function StatusBadge({ status }: { status: Invoice['status'] }) {
-  const variants: Record<Invoice['status'], string> = {
-    draft: 'bg-gray-500/10 text-gray-400',
-    open: 'bg-blue-500/10 text-blue-500',
-    paid: 'bg-green-500/10 text-green-500',
-    overdue: 'bg-red-500/10 text-red-500',
-    cancelled: 'bg-gray-500/10 text-gray-400',
-  };
-  return <Badge className={variants[status]}>{status}</Badge>;
-}
+
 
 function PlanModal({
   initial,
@@ -173,7 +164,7 @@ export function BillingPage() {
     );
   };
 
-  if (usageLoading) return <LoadingSpinner />;
+  if (usageLoading) return <LoadingPage />;
 
   const TABS: { key: TabKey; label: string; icon: typeof CreditCard }[] = [
     { key: 'overview', label: 'Usage Overview', icon: BarChart3 },
@@ -183,7 +174,7 @@ export function BillingPage() {
 
   return (
     <div>
-      <PageHeader title="Billing" description="Manage usage, invoices, and subscription plans" />
+      <PageHeader title="Billing" description="Manage usage, invoices, and subscription plans" icon={CreditCard} />
 
       <div className="mb-6 flex items-center gap-1 rounded-lg border border-border p-1 w-fit">
         {TABS.map((t) => (
@@ -247,7 +238,7 @@ export function BillingPage() {
 
       {/* Invoices Tab */}
       {tab === 'invoices' && (
-        invoicesLoading ? <LoadingSpinner /> :
+        invoicesLoading ? <LoadingPage /> :
         (!invoices || invoices.length === 0) ? (
           <EmptyState icon={Receipt} title="No invoices" description="Invoices will appear here when generated." />
         ) : (
@@ -267,7 +258,7 @@ export function BillingPage() {
               <TableBody>
                 {invoices.map((inv) => (
                   <TableRow key={inv.id}>
-                    <TableCell><StatusBadge status={inv.status} /></TableCell>
+                    <TableCell><StatusBadge variant={inv.status === 'paid' ? 'success' : inv.status === 'overdue' ? 'destructive' : inv.status === 'open' ? 'info' : 'neutral'}>{inv.status}</StatusBadge></TableCell>
                     <TableCell className="font-medium">{(inv.amount / 100).toFixed(2)}</TableCell>
                     <TableCell>{inv.currency}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
@@ -308,7 +299,7 @@ export function BillingPage() {
             <Button onClick={() => setShowPlanModal(true)}><Plus className="h-4 w-4 mr-2" /> Add Plan</Button>
           </div>
 
-          {plansLoading ? <LoadingSpinner /> :
+          {plansLoading ? <LoadingPage /> :
           (!plans || plans.length === 0) ? (
             <EmptyState icon={CreditCard} title="No plans" description="Create your first subscription plan." />
           ) : (
@@ -317,7 +308,7 @@ export function BillingPage() {
                 <div key={plan.id} className="rounded-lg border border-border bg-card p-5">
                   <div className="flex items-center justify-between mb-3">
                     <div className="font-semibold text-lg">{plan.name}</div>
-                    <Badge variant="secondary">{plan.interval}</Badge>
+                    <StatusBadge variant="neutral">{plan.interval}</StatusBadge>
                   </div>
                   <div className="text-3xl font-bold mb-1">
                     ${(plan.price / 100).toFixed(2)}

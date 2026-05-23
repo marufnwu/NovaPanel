@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Loader2, LogIn, Mail, ArrowLeft, X, Eye, EyeOff } from 'lucide-react';
+import { Loader2, LogIn, Mail, ArrowLeft, X, Eye, EyeOff, Server } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ApiError } from '../../api/client';
 import { useForgotPassword } from '../../api/hooks/auth';
 
@@ -27,83 +32,73 @@ function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-sm rounded-lg border border-border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Forgot Password</h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Forgot Password</DialogTitle>
+          <DialogDescription>
+            Enter your email address and we&apos;ll send you a link to reset your password.
+          </DialogDescription>
+        </DialogHeader>
 
         {sent ? (
           <div className="space-y-4">
-            <div className="rounded-md bg-green-500/10 p-4 text-sm text-green-600">
-              <div className="flex items-center gap-2">
-                <Mail className="h-4 w-4" />
-                <span className="font-medium">Check your email</span>
+            <div className="rounded-lg bg-success/10 p-4 text-sm text-success">
+              <div className="flex items-center gap-2 font-medium">
+                <Mail className="size-4" />
+                Check your email
               </div>
-              <p className="mt-2">
+              <p className="mt-2 text-muted-foreground">
                 If an account with that email exists, a reset link has been sent.
               </p>
             </div>
-            <button
-              onClick={onClose}
-              className="flex w-full items-center justify-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent"
-            >
-              <ArrowLeft className="h-4 w-4" /> Back to Login
-            </button>
+            <Button variant="outline" onClick={onClose} className="w-full">
+              <ArrowLeft className="size-4 mr-2" />
+              Back to Login
+            </Button>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Enter your email address and we'll send you a link to reset your password.
-            </p>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <label htmlFor="forgot-email" className="text-sm font-medium">
                 Email Address
               </label>
-              <input
+              <Input
                 id="forgot-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 placeholder="admin@example.com"
                 required
                 autoFocus
               />
             </div>
-            {(forgotPassword.error as any) && (
-              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                {(forgotPassword.error as any).message}
+            {forgotPassword.error && (
+              <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                {(forgotPassword.error as ApiError).message}
               </div>
             )}
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex items-center justify-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-accent"
-              >
+              <Button type="button" variant="outline" onClick={onClose} className="flex-1">
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
                 type="submit"
                 disabled={forgotPassword.isPending || !email.trim()}
-                className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                className="flex-1"
               >
                 {forgotPassword.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <Mail className="h-4 w-4" />
+                  <Mail className="size-4" />
                 )}
                 Send Reset Link
-              </button>
+              </Button>
             </div>
           </form>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -121,7 +116,6 @@ export function LoginForm({
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  // Handle lockout countdown
   useEffect(() => {
     if (!lockedUntilProp) {
       setLockCountdown(null);
@@ -154,113 +148,129 @@ export function LoginForm({
 
   return (
     <>
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="w-full max-w-sm space-y-6 p-8">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold tracking-tight">ServerForge</h1>
+      <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="absolute -top-1/2 -left-1/2 w-full h-full rounded-full bg-primary/5 dark:bg-primary/10" />
+          <div className="absolute -bottom-1/2 -right-1/2 w-full h-full rounded-full bg-primary/5 dark:bg-primary/10" />
+        </div>
+
+        <div className="relative w-full max-w-sm">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center size-14 rounded-2xl bg-primary/10 mb-4">
+              <Server className="size-7 text-primary" />
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">NovaPanel</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Sign in to your control panel
+              Sign in to your server control panel
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && !lockCountdown && (
-              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                {error.message}
-                {remainingAttempts !== undefined && remainingAttempts > 0 && (
-                  <span className="mt-1 block text-xs opacity-80">
-                    {remainingAttempts} attempt{remainingAttempts !== 1 ? 's' : ''} remaining before lockout
-                  </span>
+          <Card className="shadow-lg">
+            <CardContent className="pt-6">
+              <form onSubmit={handleSubmit} className="space-y-5">
+                {error && !lockCountdown && (
+                  <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                    {error.message}
+                    {remainingAttempts !== undefined && remainingAttempts > 0 && (
+                      <span className="mt-1 block text-xs opacity-80">
+                        {remainingAttempts} attempt{remainingAttempts !== 1 ? 's' : ''} remaining before lockout
+                      </span>
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
 
-            {lockCountdown !== null && (
-              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                Account temporarily locked due to too many failed attempts.
-                <span className="mt-1 block font-medium">
-                  Try again in {Math.floor(lockCountdown / 60)}:{(lockCountdown % 60).toString().padStart(2, '0')}
-                </span>
-              </div>
-            )}
+                {lockCountdown !== null && (
+                  <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                    Account temporarily locked due to too many failed attempts.
+                    <span className="mt-1 block font-medium">
+                      Try again in {Math.floor(lockCountdown / 60)}:{(lockCountdown % 60).toString().padStart(2, '0')}
+                    </span>
+                  </div>
+                )}
 
-            <div className="space-y-2">
-              <label htmlFor="username" className="text-sm font-medium">
-                Username
-              </label>
-              <input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                placeholder="admin"
-                required
-                autoFocus
-                disabled={lockCountdown !== null}
-              />
-            </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="username" className="text-sm font-medium">
+                    Username
+                  </label>
+                  <Input
+                    id="username"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="admin"
+                    required
+                    autoFocus
+                    disabled={lockCountdown !== null}
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary pr-10"
-                  placeholder="••••••••"
-                  required
-                  disabled={lockCountdown !== null}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                <div className="space-y-1.5">
+                  <label htmlFor="password" className="text-sm font-medium">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      required
+                      disabled={lockCountdown !== null}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="size-4" />
+                      ) : (
+                        <Eye className="size-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="rounded border-input text-primary focus:ring-primary"
+                    />
+                    Remember me
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPassword(true)}
+                    className="text-sm font-medium text-primary hover:underline"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isLoading || lockCountdown !== null}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
+                  {isLoading ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <LogIn className="size-4" />
+                  )}
+                  Sign In
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
 
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <input
-                  id="remember"
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
-                />
-                <label htmlFor="remember" className="text-sm text-muted-foreground">
-                  Remember me
-                </label>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowForgotPassword(true)}
-                className="text-sm font-medium text-primary hover:underline"
-              >
-                Forgot password?
-              </button>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading || lockCountdown !== null}
-              className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <LogIn className="h-4 w-4" />
-              )}
-              Sign In
-            </button>
-          </form>
+          <p className="mt-6 text-center text-xs text-muted-foreground">
+            NovaPanel Server Management Platform
+          </p>
         </div>
       </div>
 

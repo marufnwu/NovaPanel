@@ -61,4 +61,10 @@ export default async function cronRoutes(fastify: FastifyInstance) {
     const { id } = req.params as { id: string };
     return { success: true, data: await service.getJobHistory(id) };
   });
+
+  // GET /sites/:siteId/cron — Get cron jobs for a specific site
+  fastify.get('/sites/:siteId/cron', async (req) => {
+    const { siteId } = req.params as { siteId: string };
+    return { success: true, data: await service.listBySite(siteId) };
+  });
 }

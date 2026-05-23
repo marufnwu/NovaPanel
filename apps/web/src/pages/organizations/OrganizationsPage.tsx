@@ -12,9 +12,10 @@ import {
 } from '../../api/hooks/organizations';
 import { useAuthStore } from '../../store/auth.store';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -196,7 +197,7 @@ function MembersTab({ orgId }: { orgId: string }) {
     });
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   return (
     <div>
@@ -312,13 +313,13 @@ export function OrganizationsPage() {
     );
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   return (
     <div>
       <PageHeader
         title="Organizations"
-        description="Manage organizations and team members"
+        icon={Building2}
       />
 
       <div className="mb-6 flex items-center justify-end gap-2">

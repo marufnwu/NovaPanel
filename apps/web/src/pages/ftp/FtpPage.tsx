@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useDomains } from '../../api/hooks/domains';
 import { useFtpAccounts, useCreateFtpAccount, useUpdateFtpAccount, useChangeFtpPassword, useDeleteFtpAccount, useFtpSettings, useUpdateFtpSettings, type FtpAccount } from '../../api/hooks/ftp';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { FolderUp, Plus, Trash2, Key, Edit2, Copy, Check, X, Server, Settings, Clock, MapPin, Save, Eye, EyeOff, AlertTriangle } from 'lucide-react';
@@ -257,7 +258,7 @@ function FtpGlobalSettings() {
     updateSettings.mutate(form);
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   return (
     <div className="rounded-lg border border-border bg-card p-5">
@@ -345,7 +346,7 @@ export function FtpPage() {
   if (isError) {
     return (
       <div>
-        <PageHeader title="FTP Accounts" description="Manage FTP access accounts per domain" />
+        <PageHeader title="FTP Accounts" icon={FolderUp} />
         <div className="flex flex-col items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 py-12">
           <AlertTriangle className="h-10 w-10 text-red-500" />
           <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load FTP accounts</h3>
@@ -362,7 +363,7 @@ export function FtpPage() {
 
   return (
     <div>
-      <PageHeader title="FTP Accounts" description="Manage FTP access accounts per domain" />
+      <PageHeader title="FTP Accounts" icon={FolderUp} />
 
       <div className="mb-6 rounded-lg border border-border bg-card p-4">
         <div className="flex gap-3">
@@ -398,7 +399,7 @@ export function FtpPage() {
       {!domainId ? (
         <div className="rounded-lg border border-border p-12 text-center text-muted-foreground">Select a domain to manage FTP accounts</div>
       ) : isLoading ? (
-        <LoadingSpinner />
+        <LoadingPage />
       ) : !accounts?.length ? (
         <EmptyState icon={FolderUp} title="No FTP accounts" description="Create your first FTP account for this domain." />
       ) : (

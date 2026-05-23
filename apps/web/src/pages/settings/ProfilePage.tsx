@@ -14,6 +14,7 @@ import {
   QrCode,
   Eye,
   EyeOff,
+  Settings,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/auth.store';
 import {
@@ -29,6 +30,13 @@ import {
 } from '../../api/hooks/auth';
 import { useCreateToken } from '../../api/hooks/tokens';
 import { PageHeader } from '../../components/ui/PageHeader';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { SectionHeader } from '@/components/design-system/SectionHeader';
+import { cn } from '@/lib/utils';
 
 // --- Initials Avatar ---
 function InitialsAvatar({ name, size = 'lg' }: { name: string; size?: 'sm' | 'lg' | 'xl' }) {
@@ -683,7 +691,11 @@ export function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Profile & Security" description="Manage your account settings and security" />
+      <PageHeader
+        title="Profile & Security"
+        description="Manage your account settings and security"
+        icon={User}
+      />
 
       {/* Forced Password Change Notice */}
       {user?.mustChangePassword && (

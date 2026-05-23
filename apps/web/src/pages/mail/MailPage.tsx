@@ -19,7 +19,8 @@ import {
   useSetSpamAssassin,
 } from '../../api/hooks/mail';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
@@ -462,11 +463,11 @@ export function MailPage() {
     syncFromServer();
   }
 
-  if (domainsLoading) return <LoadingSpinner />;
+  if (domainsLoading) return <LoadingPage />;
 
   if (domainsError) return (
     <div>
-      <PageHeader title="Mail Management" description="Manage email mailboxes, aliases, and security settings" />
+      <PageHeader title="Mail Management" icon={Mail} />
       <div className="flex flex-col items-center justify-center rounded-lg border border-red-500/30 bg-red-500/10 py-12">
         <AlertTriangle className="h-10 w-10 text-red-500" />
         <h3 className="mt-4 text-lg font-medium text-red-400">Failed to load domains</h3>
@@ -484,7 +485,7 @@ export function MailPage() {
   if (!domainId) {
     return (
       <div>
-        <PageHeader title="Mail Management" description="Manage email mailboxes, aliases, and security settings" />
+        <PageHeader title="Mail Management" icon={Mail} />
         <div className="rounded-lg border border-border bg-card p-6">
           <Label htmlFor="mail-domain" className="mb-2">Select Domain</Label>
           <select
@@ -501,11 +502,11 @@ export function MailPage() {
     );
   }
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   if (isError) return (
     <div>
-      <PageHeader title="Mail Management" description="Manage email mailboxes, aliases, and security settings" />
+      <PageHeader title="Mail Management" icon={Mail} />
       <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-500/30 dark:bg-red-500/10">
         <AlertTriangle className="mx-auto h-10 w-10 text-red-500" />
         <p className="mt-3 text-red-600 dark:text-red-400">Failed to load mail settings. Please try again.</p>

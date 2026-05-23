@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useCronJobs, useCreateCronJob, useUpdateCronJob, useDeleteCronJob, useToggleCronJob, useRunCronJob, useCronHistory, type CronJob } from '../../api/hooks/cron';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
@@ -116,7 +117,7 @@ function formatNextRun(schedule: string): string {
 function CronJobHistory({ jobId }: { jobId: string }) {
   const { data: history, isLoading } = useCronHistory(jobId);
 
-  if (isLoading) return <div className="px-4 py-3"><LoadingSpinner /></div>;
+  if (isLoading) return <div className="px-4 py-3"><LoadingPage /></div>;
 
   if (!history || history.length === 0) {
     return <div className="px-4 py-3 text-sm text-muted-foreground">No run history available.</div>;
@@ -395,7 +396,7 @@ export function CronPage() {
     });
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   if (isError) {
     return (
@@ -418,7 +419,7 @@ export function CronPage() {
 
   return (
     <div>
-      <PageHeader title="Cron Jobs" description="Manage scheduled tasks" actions={
+      <PageHeader title="Cron Jobs" description="Manage scheduled tasks" icon={Clock} actions={
         <Button onClick={() => setShowCreate(true)}>
           <Plus className="h-4 w-4" /> Add Job
         </Button>

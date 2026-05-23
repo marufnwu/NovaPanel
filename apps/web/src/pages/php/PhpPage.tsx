@@ -16,7 +16,8 @@ import {
   useFpmStatus,
 } from '../../api/hooks/php';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Code2, Download, RefreshCw, Save, CheckCircle, Info, Activity, Plus, Trash2, X, Eye, AlertTriangle } from 'lucide-react';
 
@@ -66,7 +67,7 @@ function PhpIniEditor({ domainId }: { domainId: string }) {
     setDirectives(directives.map((d, i) => (i === index ? { ...d, [field]: val } : d)));
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   return (
     <div className="rounded-lg border border-border bg-card p-5">
@@ -187,7 +188,7 @@ function PhpInfoModal({ domainId, onClose }: { domainId: string; onClose: () => 
         </div>
         <div className="flex-1 overflow-auto p-6">
           {isLoading ? (
-            <LoadingSpinner />
+            <LoadingPage />
           ) : data?.html ? (
             <div dangerouslySetInnerHTML={{ __html: data.html }} className="phpinfo-output" />
           ) : (
@@ -206,7 +207,7 @@ function PhpInfoModal({ domainId, onClose }: { domainId: string; onClose: () => 
 function FpmPoolStatusDisplay({ domainId }: { domainId: string }) {
   const { data: status, isLoading } = useFpmStatus(domainId);
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
   if (!status) return null;
 
   return (
@@ -303,11 +304,11 @@ export function PhpPage() {
     setSaved(false);
   };
 
-  if (versionsLoading) return <LoadingSpinner />;
+  if (versionsLoading) return <LoadingPage />;
 
   if (versionsError) return (
     <div className="space-y-6">
-      <PageHeader title="PHP Settings" description="Manage PHP versions and per-domain PHP configuration" />
+      <PageHeader title="PHP Settings" description="Manage PHP versions and per-domain PHP configuration" icon={Code2} />
       <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-500/30 dark:bg-red-500/10">
         <AlertTriangle className="mx-auto h-10 w-10 text-red-500" />
         <p className="mt-3 text-red-600 dark:text-red-400">Failed to load PHP settings. Please try again.</p>
@@ -323,7 +324,7 @@ export function PhpPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="PHP Settings" description="Manage PHP versions and per-domain PHP configuration" />
+      <PageHeader title="PHP Settings" description="Manage PHP versions and per-domain PHP configuration" icon={Code2} />
 
       {/* Installed PHP Versions */}
       <div className="rounded-lg border border-border bg-card p-5">
@@ -363,7 +364,7 @@ export function PhpPage() {
       </div>
 
       {/* Domain Config */}
-      {selectedDomain && configLoading && <LoadingSpinner />}
+      {selectedDomain && configLoading && <LoadingPage />}
 
       {selectedDomain && configError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-500/30 dark:bg-red-500/10">

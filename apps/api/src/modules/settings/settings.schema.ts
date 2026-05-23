@@ -87,3 +87,18 @@ export const updateDataRetentionSchema = z.object({
   logRetentionDays: z.number().int().min(1).max(3650).optional(),
   backupRetentionCount: z.number().int().min(1).max(365).optional(),
 });
+
+// PUT /settings/php-version
+export const updatePhpVersionSchema = z.object({
+  version: z.enum(['default', 'php8.1', 'php8.2', 'php8.3', 'php8.4']),
+});
+
+// PUT /settings/smtp
+export const updateSmtpSchema = z.object({
+  host: z.string().min(1).max(253),
+  port: z.number().int().min(1).max(65535),
+  username: z.string().max(100),
+  password: z.string().max(100).optional(),
+  fromAddress: z.string().email().or(z.string().min(0).max(0)),
+  encryption: z.enum(['none', 'tls', 'ssl']),
+});

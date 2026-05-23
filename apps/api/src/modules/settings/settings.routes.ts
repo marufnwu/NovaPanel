@@ -17,6 +17,8 @@ import {
   updateMaintenanceSchema,
   importConfigSchema,
   updateDataRetentionSchema,
+  updatePhpVersionSchema,
+  updateSmtpSchema,
 } from './settings.schema.js';
 import { verifyDomainPointsToIp } from '../../utils/network.js';
 import { detectNetworkInfo } from '../../utils/network.js';
@@ -231,6 +233,23 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
     },
   });
 
+  // GET /settings/php-version
+  fastify.get('/settings/php-version', {
+    preHandler: [requireRole('admin')],
+    handler: async () => {
+      return { success: true, data: await settingsService.getPhpVersion() };
+    },
+  });
+
+  // PUT /settings/php-version
+  fastify.put('/settings/php-version', {
+    preHandler: [requireRole('admin')],
+    handler: async (req) => {
+      const { version } = updatePhpVersionSchema.parse(req.body);
+      return { success: true, data: await settingsService.updatePhpVersion(version, req.user.id, req.ip) };
+    },
+  });
+
   // GET /settings/ssl-email
   fastify.get('/settings/ssl-email', async () => {
     return { success: true, data: await settingsService.getSslEmail() };
@@ -324,5 +343,27 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
   fastify.get('/settings/features', async () => {
     const { detectServerFeatures } = await import('./features.service.js');
     return { success: true, data: await detectServerFeatures() };
+  });
+
+  // GET /settings/smtp
+  fastify.get('/settings/smtp', async () => {
+    return { success: true, data: await settingsService.getSmtpConfig() };
+  });
+
+  // PUT /settings/smtp
+  fastify.put('/settings/smtp', {
+    preHandler: [requireRole('admin')],
+    handler: async (req) => {
+      const data = updateSmtpSchema.parse(req.body);
+      return { success: true, data: await settingsService.updateSmtpConfig(data, req.user.id, req.ip) };
+    },
+  });
+
+  // POST /settings/smtp/test
+  fastify.post('/settings/smtp/test', {
+    preHandler: [requireRole('admin')],
+    handler: async (req) => {
+      return { success: true, data: await settingsService.sendTestEmail(req.user.id, req.ip) };
+    },
   });
 }

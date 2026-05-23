@@ -12,11 +12,11 @@ import { useAuthStore } from '../../store/auth.store';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '../../components/design-system/LoadingPage';
+import { StatusBadge } from '../../components/design-system/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -147,7 +147,7 @@ export function StoragePage() {
     deleteKey.mutate(deleteKeyId, { onSuccess: () => { toast.success('Access key deleted'); setDeleteKeyId(null); }, onError: (e: Error) => toast.error(e.message) });
   };
 
-  if (bucketsLoading || keysLoading) return <LoadingSpinner />;
+  if (bucketsLoading || keysLoading) return <LoadingPage />;
 
   const TABS: { key: TabKey; label: string; icon: typeof HardDrive }[] = [
     { key: 'buckets', label: 'Buckets', icon: HardDrive },
@@ -156,7 +156,7 @@ export function StoragePage() {
 
   return (
     <div>
-      <PageHeader title="Storage" description="Manage object storage buckets and access keys" />
+      <PageHeader title="Storage" description="Manage object storage buckets and access keys" icon={HardDrive} />
 
       <div className="mb-6 flex items-center justify-between">
         <div className="flex gap-1 rounded-lg border border-border p-1">
@@ -216,14 +216,14 @@ export function StoragePage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">{bucket.region || '—'}</TableCell>
                     <TableCell>
-                      <Badge variant={bucket.publicAccess ? 'default' : 'secondary'}>
+                      <StatusBadge variant={bucket.publicAccess ? 'success' : 'neutral'}>
                         {bucket.publicAccess ? 'Public' : 'Private'}
-                      </Badge>
+                      </StatusBadge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={bucket.versioning ? 'default' : 'secondary'}>
+                      <StatusBadge variant={bucket.versioning ? 'success' : 'neutral'}>
                         {bucket.versioning ? 'Enabled' : 'Disabled'}
-                      </Badge>
+                      </StatusBadge>
                     </TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="icon-sm" onClick={() => setDeleteBucketId(bucket.id)} className="hover:bg-destructive/10 hover:text-destructive">

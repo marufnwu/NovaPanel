@@ -11,11 +11,10 @@ import { RuntimeConfigSchema } from '@serverforge/schemas/sites';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import {
   Dialog,
   DialogContent,
@@ -31,9 +30,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { 
-  Globe, Plus, Trash2, Ban, CheckCircle, 
-  Server, MoreVertical, HardDrive, Loader2 
+import { cn } from '@/lib/utils';
+import {
+  Globe, Plus, Trash2, Ban, CheckCircle,
+  Server, MoreVertical, HardDrive, Loader2, Layers
 } from 'lucide-react';
 import { toast } from '../../lib/toast';
 
@@ -54,9 +54,9 @@ const PHP_VERSIONS = ['8.1', '8.2', '8.3'];
 const NODE_VERSIONS = ['18', '20', '22'];
 const PYTHON_VERSIONS = ['3.10', '3.11', '3.12'];
 
-function StatusBadge({ status }: { status: Site['status'] }) {
-  const variant = status === 'active' ? 'default' : 'destructive';
-  return <Badge variant={variant}>{status}</Badge>;
+function SiteStatusBadge({ status }: { status: Site['status'] }) {
+  const variant = status === 'active' ? 'success' : status === 'suspended' ? 'warning' : 'error';
+  return <StatusBadge variant={variant} dot>{status}</StatusBadge>;
 }
 
 function CreateSiteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -229,9 +229,10 @@ export function SitesPage() {
       <PageHeader
         title="Sites"
         description="Manage your sites and applications"
+        icon={Layers}
         actions={
-          <Button onClick={() => setShowCreate(true)}>
-            <Plus className="mr-2 h-4 w-4" />
+          <Button size="sm" onClick={() => setShowCreate(true)}>
+            <Plus className="size-4 mr-1.5" />
             Create Site
           </Button>
         }
@@ -241,19 +242,19 @@ export function SitesPage() {
         <EmptyState
           icon={Server}
           title="No sites yet"
-          description="Create your first site to get started."
+          description="Create your first site to get started managing your web applications."
           action={
-            <Button onClick={() => setShowCreate(true)}>
-              <Plus className="mr-2 h-4 w-4" />
+            <Button size="sm" onClick={() => setShowCreate(true)}>
+              <Plus className="size-4 mr-1.5" />
               Create Site
             </Button>
           }
         />
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
           <Table>
             <TableHeader>
-              <TableRow>
+              <TableRow className="bg-muted/50 hover:bg-muted/50">
                 <TableHead>Name</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Runtime</TableHead>
@@ -262,17 +263,23 @@ export function SitesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(sites || []).map((site) => (
-                <TableRow key={site.id}>
+              {(sites || []).map((site, i) => (
+                <TableRow
+                  key={site.id}
+                  className={cn(
+                    "hover:bg-muted/30 transition-colors",
+                    i % 2 === 0 ? "bg-background" : "bg-muted/5"
+                  )}
+                >
                   <TableCell className="font-medium">
                     <span className="flex items-center gap-2">
                       <Globe className="h-4 w-4 text-muted-foreground" />
                       {site.name}
                     </span>
                   </TableCell>
-                  <TableCell><StatusBadge status={site.status} /></TableCell>
+                  <TableCell><SiteStatusBadge status={site.status} /></TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{site.runtime?.toUpperCase() || 'Unknown'}</Badge>
+                    <StatusBadge variant="neutral">{site.runtime?.toUpperCase() || 'Unknown'}</StatusBadge>
                   </TableCell>
                   <TableCell>
                     <span className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -312,6 +319,7 @@ export function SitesPage() {
         message="This will permanently delete the site and all associated data. This action cannot be undone."
         confirmText="Delete"
         variant="danger"
+        requireTyping="DELETE"
       />
     </div>
   );

@@ -15,11 +15,11 @@ import { useAuthStore } from '../../store/auth.store';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '../../components/design-system/LoadingPage';
+import { StatusBadge } from '../../components/design-system/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -304,7 +304,7 @@ export function SecurityPage() {
     });
   };
 
-  if (wafLoading || ipLoading) return <LoadingSpinner />;
+  if (wafLoading || ipLoading) return <LoadingPage />;
 
   const TABS: { key: TabKey; label: string; icon: typeof Shield }[] = [
     { key: 'waf', label: 'WAF Rules', icon: ShieldAlert },
@@ -316,6 +316,7 @@ export function SecurityPage() {
       <PageHeader
         title="Security"
         description="Manage WAF rules and IP access control"
+        icon={Shield}
       />
 
       <div className="mb-6 flex items-center justify-between">
@@ -419,7 +420,7 @@ export function SecurityPage() {
                     </TableCell>
                     <TableCell className="font-medium">{rule.name}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{rule.type.replace('_', ' ')}</Badge>
+                      <StatusBadge variant="neutral">{rule.type.replace('_', ' ')}</StatusBadge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{rule.priority}</TableCell>
                     <TableCell className="text-xs text-muted-foreground font-mono">

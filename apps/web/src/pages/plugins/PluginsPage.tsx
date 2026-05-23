@@ -10,11 +10,11 @@ import {
 import { PageHeader } from '../../components/ui/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '../../components/design-system/LoadingPage';
+import { StatusBadge } from '../../components/design-system/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -119,11 +119,11 @@ export function PluginsPage() {
     togglePlugin.mutate(plugin.id, { onSuccess: () => toast.success(plugin.enabled ? 'Plugin disabled' : 'Plugin enabled'), onError: (e: Error) => toast.error(e.message || 'Failed') });
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   return (
     <div>
-      <PageHeader title="Plugins" description="Install and manage system plugins" />
+      <PageHeader title="Plugins" description="Install and manage system plugins" icon={Package} />
       <div className="mb-6 flex items-center justify-end">
         <Button onClick={() => setShowModal(true)}><Plus className="h-4 w-4 mr-2" /> Install Plugin</Button>
       </div>

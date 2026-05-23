@@ -64,6 +64,7 @@ export class DatabasesService {
     if (data.status !== undefined) updateData.status = data.status;
 
     const [updated] = await db.update(databases).set(updateData).where(eq(databases.id, id)).returning();
+    if (!updated) throw new AppError(404, 'NOT_FOUND', 'Database not found');
     return updated;
   }
 

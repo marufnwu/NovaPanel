@@ -1,5 +1,9 @@
 import { useState, useRef } from 'react';
-import { Loader2, Shield, Key } from 'lucide-react';
+import { Loader2, Shield, Key, Server } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { ApiError } from '../../api/client';
 
 interface TwoFactorFormProps {
@@ -20,12 +24,10 @@ export function TwoFactorForm({ onSubmit, isLoading, error }: TwoFactorFormProps
     newCode[index] = value.slice(-1);
     setCode(newCode);
 
-    // Auto-focus next input
     if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
 
-    // Auto-submit when all 6 digits entered
     if (newCode.every((d) => d !== '')) {
       onSubmit(newCode.join(''), false);
     }
@@ -47,15 +49,22 @@ export function TwoFactorForm({ onSubmit, isLoading, error }: TwoFactorFormProps
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="w-full max-w-sm space-y-6 p-8">
-        <div className="text-center">
-          {useBackupCode ? (
-            <Key className="mx-auto h-10 w-10 text-primary" />
-          ) : (
-            <Shield className="mx-auto h-10 w-10 text-primary" />
-          )}
-          <h1 className="mt-4 text-2xl font-bold tracking-tight">Two-Factor Authentication</h1>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-1/2 -left-1/2 w-full h-full rounded-full bg-primary/5 dark:bg-primary/10" />
+        <div className="absolute -bottom-1/2 -right-1/2 w-full h-full rounded-full bg-primary/5 dark:bg-primary/10" />
+      </div>
+
+      <div className="relative w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center size-14 rounded-2xl bg-primary/10 mb-4">
+            {useBackupCode ? (
+              <Key className="size-7 text-primary" />
+            ) : (
+              <Shield className="size-7 text-primary" />
+            )}
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Two-Factor Authentication</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             {useBackupCode
               ? 'Enter one of your backup recovery codes'
@@ -63,69 +72,77 @@ export function TwoFactorForm({ onSubmit, isLoading, error }: TwoFactorFormProps
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              {error.message}
-            </div>
-          )}
+        <Card className="shadow-lg">
+          <CardContent className="pt-6">
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {error && (
+                <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                  {error.message}
+                </div>
+              )}
 
-          {useBackupCode ? (
-            <div className="space-y-2">
-              <label htmlFor="backupCode" className="text-sm font-medium">
-                Backup Code
-              </label>
-              <input
-                id="backupCode"
-                type="text"
-                value={backupCode}
-                onChange={(e) => setBackupCode(e.target.value.toUpperCase())}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-center text-lg font-mono tracking-widest placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                placeholder="AB12CD34EF"
-                autoFocus
-                required
-              />
-            </div>
-          ) : (
-            <div className="flex justify-center gap-2">
-              {code.map((digit, i) => (
-                <input
-                  key={i}
-                  ref={(el) => { inputRefs.current[i] = el; }}
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={1}
-                  value={digit}
-                  onChange={(e) => handleChange(i, e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(i, e)}
-                  className="h-12 w-12 rounded-md border border-input bg-background text-center text-lg font-semibold focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                  autoFocus={i === 0}
-                />
-              ))}
-            </div>
-          )}
+              {useBackupCode ? (
+                <div className="space-y-1.5">
+                  <label htmlFor="backupCode" className="text-sm font-medium">
+                    Backup Code
+                  </label>
+                  <Input
+                    id="backupCode"
+                    type="text"
+                    value={backupCode}
+                    onChange={(e) => setBackupCode(e.target.value.toUpperCase())}
+                    placeholder="AB12CD34EF"
+                    autoFocus
+                    required
+                    className="text-center font-mono text-base tracking-widest"
+                  />
+                </div>
+              ) : (
+                <div className="flex justify-center gap-2">
+                  {code.map((digit, i) => (
+                    <input
+                      key={i}
+                      ref={(el) => { inputRefs.current[i] = el; }}
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={1}
+                      value={digit}
+                      onChange={(e) => handleChange(i, e.target.value)}
+                      onKeyDown={(e) => handleKeyDown(i, e)}
+                      className="h-12 w-12 rounded-lg border border-input bg-background text-center text-lg font-semibold focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/50"
+                      autoFocus={i === 0}
+                    />
+                  ))}
+                </div>
+              )}
 
-          <button
-            type="submit"
-            disabled={isLoading || (!useBackupCode && code.some((d) => !d)) || (useBackupCode && !backupCode.trim())}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-            Verify
-          </button>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={
+                  isLoading ||
+                  (!useBackupCode && code.some((d) => !d)) ||
+                  (useBackupCode && !backupCode.trim())
+                }
+              >
+                {isLoading && <Loader2 className="size-4 animate-spin" />}
+                Verify
+              </Button>
 
-          <div className="text-center">
-            <button
-              type="button"
-              onClick={() => setUseBackupCode(!useBackupCode)}
-              className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
-            >
-              {useBackupCode
-                ? 'Use authenticator code instead'
-                : 'Use a backup code instead'}
-            </button>
-          </div>
-        </form>
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => setUseBackupCode(!useBackupCode)}
+                  className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+                >
+                  {useBackupCode
+                    ? 'Use authenticator code instead'
+                    : 'Use a backup code instead'}
+                </button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

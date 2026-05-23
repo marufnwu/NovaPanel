@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { Button } from '@/components/ui/button';
 import {
   useTokens,
   useCreateToken,
@@ -578,14 +580,12 @@ export function ApiTokensPage() {
       <PageHeader
         title="API Tokens"
         description="Manage API tokens for programmatic access to the panel"
+        icon={Key}
         actions={
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
+          <Button size="sm" onClick={() => setShowCreateModal(true)}>
+            <Plus className="size-4 mr-1.5" />
             Generate Token
-          </button>
+          </Button>
         }
       />
 

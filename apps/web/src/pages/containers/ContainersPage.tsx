@@ -13,11 +13,11 @@ import { useAuthStore } from '../../store/auth.store';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '../../components/design-system/LoadingPage';
+import { StatusBadge } from '../../components/design-system/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -137,10 +137,7 @@ function ContainerLogsModal({ containerId, containerName, onClose }: { container
   );
 }
 
-function StatusBadge({ status }: { status: Container['status'] }) {
-  const variant = status === 'running' ? 'default' : status === 'stopped' || status === 'exited' ? 'secondary' : 'destructive';
-  return <Badge variant={variant}>{status}</Badge>;
-}
+
 
 export function ContainersPage() {
   const activeOrgId = useAuthStore((s) => s.activeOrgId);
@@ -180,7 +177,7 @@ export function ContainersPage() {
     restartContainer.mutate(id, { onSuccess: () => toast.success('Container restarted'), onError: (e: Error) => toast.error(e.message) });
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   const TABS: { key: TabKey; label: string; icon: typeof Box }[] = [
     { key: 'containers', label: 'Containers', icon: Box },
@@ -189,7 +186,7 @@ export function ContainersPage() {
 
   return (
     <div>
-      <PageHeader title="Containers" description="Manage Docker containers and compose stacks" />
+      <PageHeader title="Containers" description="Manage Docker containers and compose stacks" icon={Box} />
 
       <div className="mb-6 flex items-center justify-between">
         <div className="flex gap-1 rounded-lg border border-border p-1">
@@ -241,8 +238,8 @@ export function ContainersPage() {
                     <TableCell className="font-medium flex items-center gap-2">
                       <Box className="h-4 w-4 text-muted-foreground" /> {container.name}
                     </TableCell>
-                    <TableCell><Badge variant="secondary">{container.type}</Badge></TableCell>
-                    <TableCell><StatusBadge status={container.status} /></TableCell>
+                    <TableCell><StatusBadge variant="neutral">{container.type}</StatusBadge></TableCell>
+                    <TableCell><StatusBadge variant={container.status === 'running' ? 'success' : container.status === 'stopped' || container.status === 'exited' ? 'neutral' : 'destructive'}>{container.status}</StatusBadge></TableCell>
                     <TableCell className="text-muted-foreground text-sm font-mono">{container.image || '—'}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">

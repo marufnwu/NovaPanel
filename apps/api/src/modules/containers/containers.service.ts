@@ -84,6 +84,7 @@ export class ContainersService {
     updateData.updatedAt = new Date();
 
     const [updated] = await db.update(containers).set(updateData).where(eq(containers.id, id)).returning();
+    if (!updated) throw new AppError(404, 'NOT_FOUND', 'Container not found');
     return updated;
   }
 
@@ -92,7 +93,9 @@ export class ContainersService {
     if (container?.containerId) {
       try {
         await run('docker', ['rm', '-f', container.containerId], { sudo: true });
-      } catch {}
+      } catch (err) {
+        logger.warn({ err, containerId: container.containerId }, 'Failed to remove container');
+      }
     }
     await db.delete(containers).where(eq(containers.id, id));
     return { success: true };
@@ -143,7 +146,7 @@ export class ContainersService {
     if (!container) throw new AppError(404, 'NOT_FOUND', 'Container not found');
 
     if (container.containerId) {
-      await run('docker', ['stop', container.containerId], { sudo: true }).catch(() => {});
+      await run('docker', ['stop', container.containerId], { sudo: true }).catch((err) => logger.warn({ err, containerId: container.containerId }, 'Failed to stop container'));
     }
 
     await db.update(containers).set({ status: 'stopped', updatedAt: new Date() }).where(eq(containers.id, id));

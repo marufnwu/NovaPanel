@@ -15,7 +15,8 @@ import {
 } from '../../api/hooks/installer';
 import { useDatabases } from '../../api/hooks/databases';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import {
   Download,
   Trash2,
@@ -520,7 +521,7 @@ function LogsModal({ appId, onClose }: { appId: string; onClose: () => void }) {
         </div>
         <div className="flex-1 overflow-auto rounded-md bg-black p-3 font-mono text-xs text-green-400">
           {isLoading ? (
-            <LoadingSpinner />
+            <LoadingPage />
           ) : !logs || logs.length === 0 ? (
             <p className="text-gray-500">No logs available</p>
           ) : (
@@ -557,7 +558,7 @@ function ConfigModal({ appId, onClose }: { appId: string; onClose: () => void })
           <h3 className="text-lg font-semibold">Configuration</h3>
           <button onClick={onClose}><X className="h-5 w-5" /></button>
         </div>
-        {isLoading ? <LoadingSpinner /> : (
+        {isLoading ? <LoadingPage /> : (
           <div className="space-y-2">
             {configs && configs.map((cfg: any) => (
               <div key={cfg.id} className="flex items-center gap-2 rounded-md border border-border p-2 text-sm">
@@ -677,7 +678,7 @@ export function InstallerPage() {
 
       {/* Installed Apps */}
       <h2 className="mb-3 text-lg font-semibold">Installed Apps</h2>
-      {installedLoading ? <LoadingSpinner /> : !installed || installed.length === 0 ? (
+      {installedLoading ? <LoadingPage /> : !installed || installed.length === 0 ? (
         <p className="mb-6 text-sm text-muted-foreground">No apps installed yet.</p>
       ) : (
         <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -748,7 +749,7 @@ export function InstallerPage() {
 
       {/* Available Apps */}
       <h2 className="mb-3 text-lg font-semibold">Available Applications</h2>
-      {appsLoading ? <LoadingSpinner /> : filteredApps.length === 0 ? (
+      {appsLoading ? <LoadingPage /> : filteredApps.length === 0 ? (
         <p className="text-sm text-muted-foreground">No applications found.</p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

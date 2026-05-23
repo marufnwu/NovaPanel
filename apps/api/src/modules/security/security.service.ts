@@ -3,6 +3,7 @@ import { wafRules, ipAllowlists, type WafRule, type NewWafRule, type IpAllowlist
 import { eq, and } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { nginxService } from '../../services/nginx.service.js';
+import { logger } from '../../config/logger.js';
 
 export class SecurityService {
   async listWafRules(projectId: string): Promise<WafRule[]> {
@@ -22,7 +23,7 @@ export class SecurityService {
     };
     await db.insert(wafRules).values(rule);
     const [created] = await db.select().from(wafRules).where(eq(wafRules.id, rule.id)).limit(1);
-    await nginxService.applySecurityRules(projectId).catch(() => {});
+    await nginxService.applySecurityRules(projectId).catch((err) => logger.warn({ err, projectId }, 'Failed to apply nginx security rules'));
     return created;
   }
 
@@ -55,7 +56,7 @@ export class SecurityService {
     };
     await db.insert(ipAllowlists).values(allowlist);
     const [created] = await db.select().from(ipAllowlists).where(eq(ipAllowlists.id, allowlist.id)).limit(1);
-    await nginxService.applySecurityRules(projectId).catch(() => {});
+    await nginxService.applySecurityRules(projectId).catch((err) => logger.warn({ err, projectId }, 'Failed to apply nginx security rules'));
     return created;
   }
 

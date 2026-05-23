@@ -3,6 +3,7 @@ import { sitesService } from './sites.service.js';
 import { createSiteSchema, updateSiteSchema, attachDomainToSiteSchema, detachDomainFromSiteSchema, type CreateSiteInput } from './sites.schema.js';
 import { requireAuth } from '../auth/auth.middleware.js';
 import { AppError } from '../../errors.js';
+import { domainsService } from '../domains/domains.service.js';
 
 export default async function siteRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
@@ -66,5 +67,11 @@ export default async function siteRoutes(fastify: FastifyInstance) {
     const { domainId } = detachDomainFromSiteSchema.parse(req.body);
     const result = await sitesService.detachDomain(id, domainId, req.user.id, req.ip);
     return { success: true, data: result };
+  });
+
+  fastify.get('/:id/domains', async (req) => {
+    const { id } = req.params as { id: string };
+    const domains = await domainsService.listBySite(id);
+    return { success: true, data: domains };
   });
 }

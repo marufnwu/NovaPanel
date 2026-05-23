@@ -18,7 +18,9 @@ import {
   type RemoteStorageConfig,
 } from '../../api/hooks/backup';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import {
@@ -26,7 +28,6 @@ import {
   X, Download, Shield, CheckCircle2, XCircle, RefreshCw, HardDrive,
   Cloud, Server, AlertTriangle, Eye, EyeOff,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -48,71 +49,86 @@ const BACKUP_STEPS = [
   'Finalizing...',
 ];
 
-function BackupProgressModal({ onClose }: { onClose: () => void }) {
+function BackupProgressModal({ backupId, onClose }: { backupId: string; onClose: () => void }) {
   const [currentStep, setCurrentStep] = useState(0);
-  const [complete, setComplete] = useState(false);
 
-  // Simulate progress steps with proper cleanup
+  const { data: backup, isLoading } = useBackups(undefined, { refetchInterval: 2000 });
+  const latestBackup = backup?.find(b => b.id === backupId);
+
   useEffect(() => {
-    let step = 0;
-    const interval = setInterval(() => {
-      step++;
-      if (step < BACKUP_STEPS.length) {
-        setCurrentStep(step);
-      } else {
-        setComplete(true);
-        clearInterval(interval);
-      }
-    }, 1500);
-    return () => clearInterval(interval);
-  }, []);
+    if (!latestBackup || isLoading) return;
+
+    if (latestBackup.status === 'completed') {
+      setCurrentStep(BACKUP_STEPS.length - 1);
+    } else if (latestBackup.status === 'failed') {
+      setCurrentStep(-1);
+    } else {
+      const stepMap: Record<string, number> = {
+        pending: 0,
+        running: 1,
+      };
+      setCurrentStep(stepMap[latestBackup.status] ?? 0);
+    }
+  }, [latestBackup?.status, isLoading]);
+
+  const isComplete = latestBackup?.status === 'completed';
+  const isFailed = latestBackup?.status === 'failed';
 
   return (
-    <Dialog open={true} onOpenChange={(open) => { if (!open && complete) onClose(); }}>
-      <DialogContent className="sm:max-w-md" showCloseButton={complete}>
+    <Dialog open={true} onOpenChange={(open) => { if (!open && (isComplete || isFailed)) onClose(); }}>
+      <DialogContent className="sm:max-w-md" showCloseButton={isComplete || isFailed}>
         <DialogHeader>
-          <DialogTitle>Creating Backup</DialogTitle>
+          <DialogTitle>{isFailed ? 'Backup Failed' : isComplete ? 'Backup Complete' : 'Creating Backup'}</DialogTitle>
         </DialogHeader>
 
-        {/* Progress bar */}
-        <div className="mb-4 h-2 w-full rounded-full bg-muted">
-          <div
-            className={`h-2 rounded-full transition-all duration-500 ${
-              complete ? 'bg-green-500' : 'bg-primary'
-            }`}
-            style={{ width: `${complete ? 100 : ((currentStep + 1) / BACKUP_STEPS.length) * 100}%` }}
-          />
-        </div>
+        {!isFailed && (
+          <>
+            <div className="mb-4 h-2 w-full rounded-full bg-muted">
+              <div
+                className={`h-2 rounded-full transition-all duration-500 ${
+                  isComplete ? 'bg-green-500' : isFailed ? 'bg-red-500' : 'bg-primary'
+                }`}
+                style={{ width: `${isComplete ? 100 : isFailed ? 100 : ((currentStep + 1) / BACKUP_STEPS.length) * 100}%` }}
+              />
+            </div>
 
-        <div className="space-y-3">
-          {BACKUP_STEPS.map((step, idx) => {
-            const isActive = idx === currentStep && !complete;
-            const isDone = idx < currentStep || complete;
-            return (
-              <div key={step} className="flex items-center gap-3">
-                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ${
-                  isDone ? 'bg-green-500 text-white' :
-                  isActive ? 'bg-primary text-primary-foreground animate-pulse' :
-                  'bg-muted text-muted-foreground'
-                }`}>
-                  {isDone ? '\u2713' : idx + 1}
-                </div>
-                <span className={`text-sm ${isDone ? 'text-green-600' : isActive ? 'font-medium' : 'text-muted-foreground'}`}>
-                  {step}
-                </span>
-                {isActive && <RefreshCw className="ml-auto h-4 w-4 animate-spin text-primary" />}
-              </div>
-            );
-          })}
-        </div>
+            <div className="space-y-3">
+              {BACKUP_STEPS.map((step, idx) => {
+                const isActive = idx === currentStep && !isComplete && !isFailed;
+                const isDone = idx < currentStep || isComplete;
+                return (
+                  <div key={step} className="flex items-center gap-3">
+                    <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ${
+                      isDone ? 'bg-green-500 text-white' :
+                      isActive ? 'bg-primary text-primary-foreground animate-pulse' :
+                      'bg-muted text-muted-foreground'
+                    }`}>
+                      {isDone ? '\u2713' : idx + 1}
+                    </div>
+                    <span className={`text-sm ${isDone ? 'text-green-600' : isActive ? 'font-medium' : 'text-muted-foreground'}`}>
+                      {step}
+                    </span>
+                    {isActive && <RefreshCw className="ml-auto h-4 w-4 animate-spin text-primary" />}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
 
-        {complete && (
-          <div className="mt-4 flex items-center gap-2 rounded-md bg-green-500/10 px-3 py-2 text-sm text-green-600">
+        {isFailed && (
+          <div className="flex items-center gap-2 rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-600">
+            <XCircle className="h-4 w-4" /> Backup creation failed. Please try again.
+          </div>
+        )}
+
+        {isComplete && (
+          <div className="flex items-center gap-2 rounded-md bg-green-500/10 px-3 py-2 text-sm text-green-600">
             <CheckCircle2 className="h-4 w-4" /> Backup created successfully!
           </div>
         )}
 
-        {complete && (
+        {(isComplete || isFailed) && (
           <DialogFooter className="mt-4">
             <Button onClick={onClose}>Done</Button>
           </DialogFooter>
@@ -132,12 +148,14 @@ function CreateBackupModal({ onClose }: { onClose: () => void }) {
   const [encryptionPassword, setEncryptionPassword] = useState('');
   const [showEncryptionPassword, setShowEncryptionPassword] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
+  const [createdBackupId, setCreatedBackupId] = useState<string | null>(null);
 
   const handleSubmit = () => {
     create.mutate(
       { type, encrypted, encryptionPassword: encrypted ? encryptionPassword : undefined },
       {
-        onSuccess: () => {
+        onSuccess: (data: any) => {
+          setCreatedBackupId(data?.id || null);
           setShowProgress(true);
         },
       },
@@ -154,7 +172,7 @@ function CreateBackupModal({ onClose }: { onClose: () => void }) {
   ];
 
   if (showProgress) {
-    return <BackupProgressModal onClose={onClose} />;
+    return <BackupProgressModal backupId={createdBackupId!} onClose={onClose} />;
   }
 
   return (
@@ -284,6 +302,7 @@ function RestoreModal({ backup, onClose }: { backup: Backup; onClose: () => void
         message={`This will overwrite current data with the contents of '${backup.filename}'. The selected data (files, databases, DNS) will be replaced. This cannot be undone.`}
         variant="warning"
         confirmText="Restore Now"
+        requireTyping="DELETE"
         onConfirm={handleRestore}
         onCancel={() => setShowConfirm(false)}
       />
@@ -403,7 +422,7 @@ function StorageSettings() {
     updateStorage.mutate(config);
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   return (
     <div className="space-y-5">
@@ -570,7 +589,7 @@ export function BackupsPage() {
     variant?: 'danger' | 'warning' | 'info';
   }>({ open: false, title: '', message: '', onConfirm: () => {}, variant: 'danger' });
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   if (isError) {
     return (
@@ -605,7 +624,7 @@ export function BackupsPage() {
 
   return (
     <div>
-      <PageHeader title="Backups" description="Manage server backups and schedules" actions={
+      <PageHeader title="Backups" description="Manage server backups and schedules" icon={Archive} actions={
         <Button onClick={() => {
           if (tab === 'backups') setShowCreateBackup(true);
           else if (tab === 'schedules') setShowCreateSchedule(true);

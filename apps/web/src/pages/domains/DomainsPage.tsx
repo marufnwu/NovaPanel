@@ -8,14 +8,12 @@ import {
 } from '../../api/hooks/domains';
 import { useSites } from '../../api/hooks/sites';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { DataTable } from '@/components/ui/data-table';
+import { DataTableV2 } from '@/components/design-system/DataTableV2';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -25,7 +23,7 @@ import {
 import type { ColumnDef } from '@tanstack/react-table';
 import {
   Globe, Plus, Trash2, Ban, CheckCircle, ExternalLink, Server,
-  Shield, ArrowUpDown, Search, Loader2, MoreVertical, AlertTriangle,
+  Shield, ArrowUpDown, Search, Loader2,
 } from 'lucide-react';
 import { toast } from '../../lib/toast';
 
@@ -134,6 +132,7 @@ export function DomainsPage() {
   const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
   const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
   const selectedIds = useMemo(() => Object.keys(rowSelection), [rowSelection]);
 
@@ -197,18 +196,19 @@ export function DomainsPage() {
           <span className="text-sm font-medium">{selectedIds.length} selected</span>
           <Button size="sm" variant="outline" onClick={() => { bulkSuspend.mutate(selectedIds, { onSuccess: () => toast.success('Suspended') }); setRowSelection({}); }}><Ban className="mr-1 h-3 w-3" /> Suspend</Button>
           <Button size="sm" variant="outline" onClick={() => { bulkActivate.mutate(selectedIds, { onSuccess: () => toast.success('Activated') }); setRowSelection({}); }}><CheckCircle className="mr-1 h-3 w-3" /> Activate</Button>
-          <Button size="sm" variant="destructive" onClick={() => { bulkDelete.mutate(selectedIds, { onSuccess: () => { toast.success(`Deleted ${selectedIds.length} domains`); setRowSelection({}); } }); }}><Trash2 className="mr-1 h-3 w-3" /> Delete</Button>
+          <Button size="sm" variant="destructive" onClick={() => setBulkDeleteConfirm(true)}><Trash2 className="mr-1 h-3 w-3" /> Delete</Button>
         </div>
       )}
 
       {!domains?.length ? (
-        <EmptyState icon={Globe} title="No domains yet" description="Add your first domain to get started." action={<Button onClick={() => setShowCreate(true)}><Plus className="mr-2 h-4 w-4" /> Add Domain</Button>} />
+        <DataTableV2 columns={[]} data={[]} emptyIcon={Globe} emptyTitle="No domains yet" emptyDescription="Add your first domain to get started." />
       ) : (
-        <DataTable columns={columns} data={domains} searchKey="name" searchPlaceholder="Search domains..." />
+        <DataTableV2 columns={columns} data={domains} searchKey="name" searchPlaceholder="Search domains..." emptyIcon={Globe} emptyTitle="No domains yet" emptyDescription="Add your first domain to get started." />
       )}
 
       <CreateDomainModal open={showCreate} onClose={() => setShowCreate(false)} />
       <ConfirmDialog open={!!deleteId} onCancel={() => setDeleteId(null)} onConfirm={() => deleteId && handleDelete(deleteId)} title="Delete Domain" message="This will remove the domain and its nginx configuration. This action cannot be undone." confirmText="Delete" variant="danger" />
+      <ConfirmDialog open={bulkDeleteConfirm} onCancel={() => setBulkDeleteConfirm(false)} onConfirm={() => { bulkDelete.mutate(selectedIds, { onSuccess: () => { toast.success(`Deleted ${selectedIds.length} domains`); setRowSelection({}); } }); setBulkDeleteConfirm(false); }} title={`Delete ${selectedIds.length} Domains`} message={`This will remove all ${selectedIds.length} selected domains and their nginx configurations. This action cannot be undone.`} confirmText="Delete All" variant="danger" requireTyping="DELETE" />
     </div>
   );
 }

@@ -19,7 +19,8 @@ import {
   type DirectoryTreeNode,
 } from '../../api/hooks/files';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '@/components/design-system/LoadingPage';
+import { StatusBadge } from '@/components/design-system/StatusBadge';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ImagePreviewModal, VideoPreviewModal, PDFPreviewModal, ArchiveBrowserModal } from '../../components/files/FilePreviewModal';
@@ -105,7 +106,7 @@ function FileEditorWrapper({ path, domainId, websiteId, onBack }: { path: string
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <LoadingSpinner />
+        <LoadingPage />
       </div>
     );
   }
@@ -1539,7 +1540,7 @@ export function FilesPage() {
           </div>
 
           {/* File table or grid view */}
-          {isLoading ? <LoadingSpinner /> : !filtered.length ? (
+          {isLoading ? <LoadingPage /> : !filtered.length ? (
             <div className="rounded-lg border border-border p-12 text-center text-muted-foreground flex-1 flex items-center justify-center">
               {search ? 'No files match your search' : 'This folder is empty'}
             </div>

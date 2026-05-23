@@ -20,7 +20,9 @@ import {
   useUpdateOcspStapling,
 } from '../../api/hooks/ssl';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '../../components/design-system/LoadingPage';
+import { StatusBadge } from '../../components/design-system/StatusBadge';
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ActionDropdown } from '../../components/ui/ActionDropdown';
@@ -769,7 +771,7 @@ function CertDetail({ cert, onBack }: { cert: SslCertificate; onBack: () => void
       )}
 
       {detailsLoading ? (
-        <LoadingSpinner />
+        <LoadingPage />
       ) : (
         <div className="grid gap-5 lg:grid-cols-2">
           {/* Certificate info */}
@@ -1094,7 +1096,7 @@ export function SslPage() {
   const [view, setView] = useState<'all' | 'expiring'>('all');
   const [renewTarget, setRenewTarget] = useState<SslCertificate | null>(null);
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <LoadingPage />;
 
   if (isError) return (
     <div>
@@ -1130,13 +1132,11 @@ export function SslPage() {
       <PageHeader
         title="SSL Certificates"
         description="Manage SSL/TLS certificates for your domains"
+        icon={ShieldCheck}
         actions={
-          <button
-            onClick={() => setShowIssue(true)}
-            className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
+          <Button size="sm" onClick={() => setShowIssue(true)}>
             <Plus className="h-4 w-4" /> Issue Certificate
-          </button>
+          </Button>
         }
       />
 

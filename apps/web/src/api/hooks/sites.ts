@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../client';
 import type { Site, CreateSiteInput, Deployment } from '@serverforge/schemas/sites';
+import type { CronJob } from './cron';
 
 export type { Site, CreateSiteInput, Deployment } from '@serverforge/schemas/sites';
 
@@ -169,6 +170,22 @@ export function useSiteDockerfile(siteId: string) {
   return useQuery({
     queryKey: ['sites', siteId, 'dockerfile'],
     queryFn: () => api.get<{ dockerfile: string }>(`/sites/${siteId}/dockerfile`),
+    enabled: !!siteId,
+  });
+}
+
+export function useSiteCronJobs(siteId: string) {
+  return useQuery({
+    queryKey: ['sites', siteId, 'cron'],
+    queryFn: () => api.get<CronJob[]>(`/sites/${siteId}/cron`),
+    enabled: !!siteId,
+  });
+}
+
+export function useSiteDomains(siteId: string) {
+  return useQuery({
+    queryKey: ['sites', siteId, 'domains'],
+    queryFn: () => api.get<any[]>(`/sites/${siteId}/domains`),
     enabled: !!siteId,
   });
 }

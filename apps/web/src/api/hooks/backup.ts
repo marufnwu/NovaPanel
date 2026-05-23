@@ -55,10 +55,11 @@ export interface RemoteStorageConfig {
   };
 }
 
-export function useBackups(domainId?: string) {
+export function useBackups(domainId?: string, options?: { refetchInterval?: number }) {
   return useQuery({
     queryKey: ['backups', domainId],
     queryFn: () => api.get<Backup[]>(domainId ? `/backups?domainId=${domainId}` : '/backups'),
+    refetchInterval: options?.refetchInterval,
   });
 }
 

@@ -45,6 +45,7 @@ import { ProjectsPage } from './pages/projects/ProjectsPage';
 import { RegistriesPage } from './pages/registries/RegistriesPage';
 import { JobsPage } from './pages/jobs/JobsPage';
 import { OrganizationsPage } from './pages/organizations/OrganizationsPage';
+import { ServicesPage } from './pages/services/ServicesPage';
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -103,6 +104,12 @@ const organizationsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: '/organizations',
   component: OrganizationsPage,
+});
+
+const servicesRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: '/services',
+  component: ServicesPage,
 });
 
 const siteDetailRoute = createRoute({
@@ -322,6 +329,7 @@ const routeTree = rootRoute.addChildren([
     registriesRoute,
     jobsRoute,
     organizationsRoute,
+    servicesRoute,
     siteDetailRoute,
     webserverRoute,
     phpRoute,

@@ -17,7 +17,9 @@ import {
   useSyncCloudflareRecords,
 } from '../../api/hooks/dns';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { LoadingPage } from '../../components/design-system/LoadingPage';
+import { StatusBadge } from '../../components/design-system/StatusBadge';
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ResponsiveTable } from '../../components/ui/ResponsiveTable';
@@ -293,7 +295,7 @@ function RawZoneModal({ domainId }: { domainId: string }) {
         </div>
         {data?.content ? (
           <pre className="max-h-96 overflow-auto rounded-md bg-muted p-4 font-mono text-xs">{data.content}</pre>
-        ) : <LoadingSpinner />}
+        ) : <LoadingPage />}
       </div>
     </div>
   );
@@ -342,7 +344,7 @@ function PropagationModal({ domainId, onClose, canServePublicDns, primaryIp }: {
         )}
 
         {isLoading ? (
-          <LoadingSpinner />
+          <LoadingPage />
         ) : results ? (
           <>
             {/* Contextual message for expected failures */}
@@ -749,6 +751,7 @@ export function DnsPage() {
       <PageHeader
         title="DNS Management"
         description="Manage DNS zones and records for your domains"
+        icon={Network}
       />
 
       {/* Domain selector */}
@@ -845,7 +848,7 @@ export function DnsPage() {
       )}
 
       {/* Records */}
-      {selectedDomain && zoneLoading && <LoadingSpinner />}
+      {selectedDomain && zoneLoading && <LoadingPage />}
 
       {selectedDomain && zoneError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center dark:border-red-500/30 dark:bg-red-500/10">
