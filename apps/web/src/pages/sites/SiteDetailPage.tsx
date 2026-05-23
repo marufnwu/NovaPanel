@@ -895,7 +895,7 @@ export function SiteDetailPage() {
   }
 
   const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
-    { key: 'runtime', label: 'Runtime', icon: Server },
+    { key: 'runtime', label: 'Overview', icon: Server },
     { key: 'deployments', label: 'Deployments', icon: GitBranch },
     { key: 'database', label: 'Database', icon: Database },
     { key: 'ssl', label: 'SSL', icon: ShieldCheck },
@@ -908,21 +908,53 @@ export function SiteDetailPage() {
   ];
 
   return (
-    <div className="mx-6 my-6 space-y-6">
-      <PageHeader
-        title={site.name}
-        actions={<StatusBadge status={site.status} />}
-      />
+    <div className="mx-6 my-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">{site.name}</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {site.runtime?.toUpperCase() || 'Unknown'} • {site.gitBranch || 'main'} branch
+            </p>
+          </div>
+          <StatusBadge status={site.status} />
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {/* TODO: Build */}}
+            className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+          >
+            <FileCode className="h-4 w-4" />
+            Build
+          </button>
+          <button
+            onClick={() => {/* TODO: Deploy */}}
+            className="flex items-center gap-1.5 rounded-md border border-primary/50 bg-primary/10 px-3 py-1.5 text-sm hover:bg-primary/20 transition-colors"
+          >
+            <Play className="h-4 w-4" />
+            Deploy
+          </button>
+          {site.status === 'active' && (
+            <button
+              onClick={() => {/* TODO: Stop */}}
+              className="flex items-center gap-1.5 rounded-md border border-destructive/30 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              <Square className="h-4 w-4" />
+              Stop
+            </button>
+          )}
+        </div>
+      </div>
 
-      <div className="flex gap-1 border-b overflow-x-auto">
+      <div className="flex gap-1 border-b overflow-x-auto pb-px">
         {tabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap rounded-t-md ${
               activeTab === tab.key
-                ? 'border-b-2 border-primary text-primary'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'bg-background text-foreground border border-border border-b-0 -mb-px'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
             }`}
           >
             <tab.icon className="h-3.5 w-3.5" />
@@ -931,16 +963,18 @@ export function SiteDetailPage() {
         ))}
       </div>
 
-      {activeTab === 'runtime' && <RuntimeTab site={site} />}
-      {activeTab === 'deployments' && <DeploymentsTab site={site} />}
-      {activeTab === 'database' && <DatabaseTab site={site} />}
-      {activeTab === 'ssl' && <SSLTab site={site} />}
-      {activeTab === 'dns' && <DNSTab site={site} />}
-      {activeTab === 'php' && <PhpTab site={site} />}
-      {activeTab === 'webserver' && <WebserverTab site={site} />}
-      {activeTab === 'logs' && <LogsTab site={site} />}
-      {activeTab === 'cron' && <CronTab site={site} />}
-      {activeTab === 'settings' && <SettingsTab site={site} />}
+      <div className="mt-2">
+        {activeTab === 'runtime' && <RuntimeTab site={site} />}
+        {activeTab === 'deployments' && <DeploymentsTab site={site} />}
+        {activeTab === 'database' && <DatabaseTab site={site} />}
+        {activeTab === 'ssl' && <SSLTab site={site} />}
+        {activeTab === 'dns' && <DNSTab site={site} />}
+        {activeTab === 'php' && <PhpTab site={site} />}
+        {activeTab === 'webserver' && <WebserverTab site={site} />}
+        {activeTab === 'logs' && <LogsTab site={site} />}
+        {activeTab === 'cron' && <CronTab site={site} />}
+        {activeTab === 'settings' && <SettingsTab site={site} />}
+      </div>
     </div>
   );
 }
