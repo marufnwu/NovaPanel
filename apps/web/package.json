@@ -35,6 +35,7 @@
     "@radix-ui/react-toast": "^1.2.0",
     "@radix-ui/react-tooltip": "^1.1.0",
     "@serverforge/schemas": "workspace:*",
+    "@tabler/icons-react": "^3.44.0",
     "@tanstack/react-query": "^5.62.0",
     "@tanstack/react-router": "^1.95.0",
     "@tanstack/react-table": "^8.21.3",
