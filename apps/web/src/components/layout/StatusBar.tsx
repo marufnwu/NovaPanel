@@ -2,9 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 
 interface ServerStats {
-  cpu: number;
-  ram: number;
-  disk: number;
+  cpu: { usage: number; cores: number };
+  memory: { total: number; used: number; available: number; cached?: number; buffered?: number; usagePercent?: number };
+  disk: { total: number; used: number; available: number; usagePercent?: number; mount?: string };
   uptime: number;
 }
 
@@ -45,15 +45,15 @@ export function StatusBar() {
         <>
           <div className="flex items-center gap-2">
             <span className="text-foreground-secondary">CPU</span>
-            <span style={{ color: getColor(stats.cpu) }}>{stats.cpu}%</span>
+            <span style={{ color: getColor(stats.cpu.usage) }}>{stats.cpu.usage}%</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-foreground-secondary">RAM</span>
-            <span style={{ color: getColor(stats.ram) }}>{stats.ram}%</span>
+            <span style={{ color: getColor(stats.memory.usagePercent ?? 0) }}>{stats.memory.usagePercent ?? 0}%</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-foreground-secondary">Disk</span>
-            <span style={{ color: getColor(stats.disk) }}>{stats.disk}%</span>
+            <span style={{ color: getColor(stats.disk.usagePercent ?? 0) }}>{stats.disk.usagePercent ?? 0}%</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-foreground-secondary">Uptime</span>

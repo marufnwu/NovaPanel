@@ -9,9 +9,9 @@ import { api } from '../../api/client';
 import { Icon } from '../../components/icons';
 
 interface ServerStats {
-  cpu: number;
-  ram: number;
-  disk: number;
+  cpu: { usage: number; cores: number };
+  memory: { total: number; used: number; available: number; cached?: number; buffered?: number; usagePercent?: number };
+  disk: { total: number; used: number; available: number; usagePercent?: number; mount?: string };
   uptime: number;
 }
 
@@ -70,9 +70,9 @@ export function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatCard label="CPU" value={stats?.cpu ?? 0} sub="%" />
-        <StatCard label="RAM" value={stats?.ram ?? 0} sub="%" />
-        <StatCard label="Disk" value={stats?.disk ?? 0} sub="%" />
+        <StatCard label="CPU" value={stats?.cpu?.usage ?? 0} sub="%" />
+        <StatCard label="RAM" value={stats?.memory?.usagePercent ?? 0} sub="%" />
+        <StatCard label="Disk" value={stats?.disk?.usagePercent ?? 0} sub="%" />
         <StatCard
           label="Sites"
           value={sites?.length ?? 0}

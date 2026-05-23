@@ -1,15 +1,14 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { StatCard } from '../../components/ui/StatCard';
 import { PageSkeleton } from '../../components/ui/Skeleton';
 import { api } from '../../api/client';
 
 interface ServerStats {
-  cpu: number;
-  ram: number;
-  disk: number;
+  cpu: { usage: number; cores: number };
+  memory: { total: number; used: number; available: number; cached?: number; buffered?: number; usagePercent?: number };
+  disk: { total: number; used: number; available: number; usagePercent?: number; mount?: string };
   uptime: number;
 }
 
@@ -38,6 +37,10 @@ export function MonitoringPage() {
     if (value >= 70) return 'text-foreground-warning';
     return 'text-foreground-success';
   };
+
+  const cpuUsage = stats?.cpu?.usage ?? 0;
+  const ramUsage = stats?.memory?.usagePercent ?? 0;
+  const diskUsage = stats?.disk?.usagePercent ?? 0;
 
   return (
     <div className="space-y-6">
@@ -69,21 +72,21 @@ export function MonitoringPage() {
           <div className="grid grid-cols-4 gap-4">
             <StatCard
               label="CPU"
-              value={stats?.cpu ?? 0}
+              value={cpuUsage}
               sub="%"
-              className={getColor(stats?.cpu ?? 0).replace('text-foreground-', '')}
+              className={getColor(cpuUsage).replace('text-foreground-', '')}
             />
             <StatCard
               label="RAM"
-              value={stats?.ram ?? 0}
+              value={ramUsage}
               sub="%"
-              className={getColor(stats?.ram ?? 0).replace('text-foreground-', '')}
+              className={getColor(ramUsage).replace('text-foreground-', '')}
             />
             <StatCard
               label="Disk"
-              value={stats?.disk ?? 0}
+              value={diskUsage}
               sub="%"
-              className={getColor(stats?.disk ?? 0).replace('text-foreground-', '')}
+              className={getColor(diskUsage).replace('text-foreground-', '')}
             />
             <StatCard
               label="Uptime"
@@ -100,12 +103,12 @@ export function MonitoringPage() {
                     <div
                       className="h-full rounded-full"
                       style={{
-                        width: `${stats?.cpu ?? 0}%`,
-                        backgroundColor: stats && stats.cpu >= 90 ? 'var(--color-text-danger)' : stats && stats.cpu >= 70 ? 'var(--color-text-warning)' : 'var(--color-text-success)',
+                        width: `${cpuUsage}%`,
+                        backgroundColor: cpuUsage >= 90 ? 'var(--color-text-danger)' : cpuUsage >= 70 ? 'var(--color-text-warning)' : 'var(--color-text-success)',
                       }}
                     />
                   </div>
-                  <span className="text-small font-mono">{stats?.cpu ?? 0}%</span>
+                  <span className="text-small font-mono">{cpuUsage}%</span>
                 </div>
               </div>
               <div className="flex items-center justify-between">
@@ -115,12 +118,12 @@ export function MonitoringPage() {
                     <div
                       className="h-full rounded-full"
                       style={{
-                        width: `${stats?.ram ?? 0}%`,
-                        backgroundColor: stats && stats.ram >= 90 ? 'var(--color-text-danger)' : stats && stats.ram >= 70 ? 'var(--color-text-warning)' : 'var(--color-text-success)',
+                        width: `${ramUsage}%`,
+                        backgroundColor: ramUsage >= 90 ? 'var(--color-text-danger)' : ramUsage >= 70 ? 'var(--color-text-warning)' : 'var(--color-text-success)',
                       }}
                     />
                   </div>
-                  <span className="text-small font-mono">{stats?.ram ?? 0}%</span>
+                  <span className="text-small font-mono">{ramUsage}%</span>
                 </div>
               </div>
               <div className="flex items-center justify-between">
@@ -130,12 +133,12 @@ export function MonitoringPage() {
                     <div
                       className="h-full rounded-full"
                       style={{
-                        width: `${stats?.disk ?? 0}%`,
-                        backgroundColor: stats && stats.disk >= 90 ? 'var(--color-text-danger)' : stats && stats.disk >= 70 ? 'var(--color-text-warning)' : 'var(--color-text-success)',
+                        width: `${diskUsage}%`,
+                        backgroundColor: diskUsage >= 90 ? 'var(--color-text-danger)' : diskUsage >= 70 ? 'var(--color-text-warning)' : 'var(--color-text-success)',
                       }}
                     />
                   </div>
-                  <span className="text-small font-mono">{stats?.disk ?? 0}%</span>
+                  <span className="text-small font-mono">{diskUsage}%</span>
                 </div>
               </div>
             </div>
