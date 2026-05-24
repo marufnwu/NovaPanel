@@ -63,8 +63,8 @@ export async function createServer() {
   });
 
   await fastify.register(rateLimit, {
-    global: true,
-    max: 100,
+    global: false,
+    max: 999999,
     timeWindow: '1 minute',
     keyGenerator: (req) => req.ip,
   });
