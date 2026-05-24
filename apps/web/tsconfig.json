@@ -22,5 +22,6 @@
       "@serverforge/schemas": ["../packages/schemas/src"]
     }
   },
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**"],
   "include": ["src"]
 }
