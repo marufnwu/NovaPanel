@@ -13,11 +13,13 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { api } from '../../api/client';
 import { useDatabases, useCreateDatabase, useDeleteDatabase, type Database } from '../../api/hooks/databases';
 import { Icon } from '../../components/icons';
+import { toast } from '../../lib/toast';
+import { ErrorState } from '../../components/ui/ErrorState';
 
 export function DatabasesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { data: databases, isLoading } = useDatabases();
+  const { data: databases, isLoading, isError, error, refetch } = useDatabases();
   const createDatabase = useCreateDatabase();
   const deleteDatabase = useDeleteDatabase();
 
@@ -27,30 +29,37 @@ export function DatabasesPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const handleCreate = async () => {
-    try {
-      await createDatabase.mutateAsync({ name: newDbName, engine: newDbEngine });
-      setShowCreateModal(false);
-      setNewDbName('');
-      queryClient.invalidateQueries({ queryKey: ['databases'] });
-    } catch (err) {
-      console.error(err);
-    }
+    if (!newDbName) return;
+    createDatabase.mutateAsync(
+      { name: newDbName, type: newDbEngine },
+      {
+        onSuccess: () => {
+          toast.success('Database created');
+          setShowCreateModal(false);
+          setNewDbName('');
+          queryClient.invalidateQueries({ queryKey: ['databases'] });
+        },
+        onError: (err: any) => toast.error(`Failed to create database: ${err.message}`),
+      }
+    );
   };
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    try {
-      await deleteDatabase.mutateAsync(deleteId);
-      setDeleteId(null);
-      queryClient.invalidateQueries({ queryKey: ['databases'] });
-    } catch (err) {
-      console.error(err);
-    }
+    deleteDatabase.mutateAsync(deleteId, {
+      onSuccess: () => {
+        toast.success('Database deleted');
+        setDeleteId(null);
+        queryClient.invalidateQueries({ queryKey: ['databases'] });
+      },
+      onError: (err: any) => toast.error(`Failed to delete database: ${err.message}`),
+    });
   };
 
   if (isLoading) {
     return <PageSkeleton />;
   }
+  if (isError) return <ErrorState message={error?.message} onRetry={refetch} />;
 
   const columns = [
     {
@@ -175,11 +184,12 @@ export function DatabasesPage() {
       <ConfirmDialog
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
-        onConfirm={handleDelete}
+        onConfirm={() => handleDelete()}
         title="Delete Database"
         description="This action cannot be undone. All data will be permanently deleted."
         confirmText="Delete"
         impact="high"
+        loading={deleteDatabase.isPending}
       />
     </div>
   );

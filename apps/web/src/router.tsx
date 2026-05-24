@@ -21,6 +21,7 @@ import { LogsPage } from './pages/logs/LogsPage';
 import { FilesPage } from './pages/files/FilesPage';
 import { TerminalPage } from './pages/terminal/TerminalPage';
 import { ContainersPage } from './pages/containers/ContainersPage';
+import { ContainerDetailPage } from './pages/containers/ContainerDetailPage';
 import { RegistriesPage } from './pages/registries/RegistriesPage';
 import { WebhooksPage } from './pages/webhooks/WebhooksPage';
 import { AuditPage } from './pages/audit/AuditPage';
@@ -180,6 +181,12 @@ const containersRoute = createRoute({
   component: ContainersPage,
 });
 
+const containerDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/containers/$containerId',
+  component: ContainerDetailPage,
+});
+
 const registriesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/registries',
@@ -293,6 +300,7 @@ const routeTree = rootRoute.addChildren([
     logsRoute,
     filesRoute,
     containersRoute,
+    containerDetailRoute,
     registriesRoute,
     webhooksRoute,
     auditRoute,

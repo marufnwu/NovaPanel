@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../components/ui/Button';
 import { DataTable } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { PageSkeleton } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { ErrorState } from '../../components/ui/ErrorState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import {
   useContainers,
@@ -14,55 +16,62 @@ import {
   useDeleteContainer,
   type Container,
 } from '../../api/hooks/containers';
+import { useAuthStore } from '../../store/auth.store';
+import { toast } from '../../lib/toast';
 import { Icon } from '../../components/icons';
 
 export function ContainersPage() {
   const queryClient = useQueryClient();
-  const [projectId] = useState('default');
+  const navigate = useNavigate();
+  const activeOrgId = useAuthStore((s) => s.activeOrgId);
   const [deleteContainerId, setDeleteContainerId] = useState<string | null>(null);
 
-  const { data: containers, isLoading } = useContainers(projectId);
+  const { data: containers, isLoading, isError, error, refetch } = useContainers(activeOrgId ?? 'default');
   const startContainer = useStartContainer();
   const stopContainer = useStopContainer();
   const restartContainer = useRestartContainer();
   const deleteContainer = useDeleteContainer();
 
-  const handleStart = async (id: string) => {
-    try {
-      await startContainer.mutateAsync(id);
-      queryClient.invalidateQueries({ queryKey: ['containers'] });
-    } catch (err) {
-      console.error(err);
-    }
+  const handleStart = (id: string) => {
+    startContainer.mutate(id, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['containers'] });
+        toast.success('Container started');
+      },
+      onError: (err) => toast.error(`Failed to start container: ${err.message}`),
+    });
   };
 
-  const handleStop = async (id: string) => {
-    try {
-      await stopContainer.mutateAsync(id);
-      queryClient.invalidateQueries({ queryKey: ['containers'] });
-    } catch (err) {
-      console.error(err);
-    }
+  const handleStop = (id: string) => {
+    stopContainer.mutate(id, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['containers'] });
+        toast.success('Container stopped');
+      },
+      onError: (err) => toast.error(`Failed to stop container: ${err.message}`),
+    });
   };
 
-  const handleRestart = async (id: string) => {
-    try {
-      await restartContainer.mutateAsync(id);
-      queryClient.invalidateQueries({ queryKey: ['containers'] });
-    } catch (err) {
-      console.error(err);
-    }
+  const handleRestart = (id: string) => {
+    restartContainer.mutate(id, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['containers'] });
+        toast.success('Container restarted');
+      },
+      onError: (err) => toast.error(`Failed to restart container: ${err.message}`),
+    });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteContainerId) return;
-    try {
-      await deleteContainer.mutateAsync(deleteContainerId);
-      setDeleteContainerId(null);
-      queryClient.invalidateQueries({ queryKey: ['containers'] });
-    } catch (err) {
-      console.error(err);
-    }
+    deleteContainer.mutate(deleteContainerId, {
+      onSuccess: () => {
+        toast.success('Container deleted');
+        setDeleteContainerId(null);
+        queryClient.invalidateQueries({ queryKey: ['containers'] });
+      },
+      onError: (err) => toast.error(`Failed to delete container: ${err.message}`),
+    });
   };
 
   const getStatusBadge = (status: Container['status']) => {
@@ -83,6 +92,7 @@ export function ContainersPage() {
   if (isLoading) {
     return <PageSkeleton />;
   }
+  if (isError) return <ErrorState message={error?.message} onRetry={refetch} />;
 
   const columns = [
     {
@@ -187,7 +197,9 @@ export function ContainersPage() {
       </div>
 
       {containers && containers.length > 0 ? (
-        <DataTable columns={columns} data={containers} rowKey={(c) => c.id} />
+        <DataTable columns={columns} data={containers} rowKey={(c) => c.id}
+          onRowClick={(c) => navigate({ to: '/containers/$containerId', params: { containerId: c.id } })}
+        />
       ) : (
         <EmptyState
           icon="icon-box"
@@ -204,6 +216,7 @@ export function ContainersPage() {
         description="This action cannot be undone. All data associated with this container will be lost."
         confirmText="Delete"
         impact="high"
+        loading={deleteContainer.isPending}
       />
     </div>
   );

@@ -47,7 +47,7 @@ export function useDatabases() {
 export function useDatabaseInfo(databaseId: string) {
   return useQuery({
     queryKey: ['database-info', databaseId],
-    queryFn: () => api.get<DatabaseInfo>(`/databases/${databaseId}/info`),
+    queryFn: () => api.get<DatabaseInfo>(`/databases/${databaseId}`),
     enabled: !!databaseId,
   });
 }
@@ -55,7 +55,7 @@ export function useDatabaseInfo(databaseId: string) {
 export function useCreateDatabase() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; engine: 'mariadb' | 'postgresql'; charset?: string }) =>
+    mutationFn: (data: { projectId?: string; name: string; type: 'mariadb' | 'postgresql'; charset?: string }) =>
       api.post('/databases', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['databases'] }),
   });
