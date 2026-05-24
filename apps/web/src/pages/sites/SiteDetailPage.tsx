@@ -28,8 +28,8 @@ import { toast } from '../../lib/toast';
 import { Icon } from '../../components/icons';
 
 export function SiteDetailPage() {
-  const params = useParams({ from: '/sites/$siteId' });
-  const search = useSearch({ from: '/sites/$siteId' });
+  const params = useParams();
+  const search = useSearch({ strict: false });
   const siteId = params.siteId as string;
   const activeTab = (search as any)?.tab || 'overview';
   const queryClient = useQueryClient();
