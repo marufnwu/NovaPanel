@@ -22,7 +22,9 @@
       "Bash(pnpm test:e2e -- --project=chromium --headed --reporter=list)",
       "Bash(git commit -m 'test: add comprehensive page feature tests + increase timeout tolerance *)",
       "Bash(git commit -m 'test: increase timeout tolerance for slow pages *)",
-      "Bash(git commit -m 'test: remove accessibility tests \\(a11y.spec.ts\\) *)"
+      "Bash(git commit -m 'test: remove accessibility tests \\(a11y.spec.ts\\) *)",
+      "Bash(git commit -m 'fix: disable API rate limiting for testing *)",
+      "Bash(curl -s http://192.168.0.212:8732/api/v1/health)"
     ]
   }
 }
