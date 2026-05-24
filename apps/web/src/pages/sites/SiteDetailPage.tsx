@@ -29,8 +29,8 @@ import { Icon } from '../../components/icons';
 export function SiteDetailPage() {
   const location = useLocation();
   const siteId = location.pathname.split('/sites/')[1] || '';
-  const search = useRouterState({ select: (s) => s.location.search }) as Record<string, unknown> | undefined;
-  const activeTab = (search as any)?.tab || 'overview';
+  const search = useRouterState({ select: (s) => s.location.search }) as any;
+  const activeTab = search?.tab || 'overview';
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
