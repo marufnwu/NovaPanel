@@ -131,9 +131,19 @@ test.describe('SSL API', () => {
   });
 
   test('can list SSL certificates', async ({ request }) => {
-    const res = await request.get('/api/v1/ssl', {
+    // Get domains first, then check SSL for each
+    const res = await request.get('/api/v1/domains', {
       headers: { Cookie: `sf_session=${sessionId}` },
     });
     expect(res.status()).toBe(200);
+    const body = await res.json();
+    const domains = body.data?.items || [];
+    // SSL is per-domain at /api/v1/domains/:id/ssl
+    if (domains.length > 0) {
+      const sslRes = await request.get(`/api/v1/domains/${domains[0].id}/ssl`, {
+        headers: { Cookie: `sf_session=${sessionId}` },
+      });
+      expect(sslRes.status()).toBe(200);
+    }
   });
 });
