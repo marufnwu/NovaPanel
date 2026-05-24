@@ -45,7 +45,9 @@ export function Modal({ isOpen, onClose, title, size = 'medium', children, foote
       <div className="absolute inset-0 bg-black/40 animate-fade-in" onClick={onClose} />
       <div
         ref={panelRef}
+        role="dialog"
         tabIndex={-1}
+        aria-modal="true"
         className={cn(
           'relative w-full mx-4 bg-background-primary border border-border-tertiary rounded-xl p-6 animate-fade-in',
           'focus:outline-none',
