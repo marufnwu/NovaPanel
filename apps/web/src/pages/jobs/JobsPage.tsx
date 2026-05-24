@@ -6,8 +6,10 @@ import { DataTable } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { PageSkeleton } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { ErrorState } from '../../components/ui/ErrorState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { useJobs, useCancelJob, type BackgroundJob, type JobStatus } from '../../api/hooks/jobs';
+import { toast } from '../../lib/toast';
 import { Icon } from '../../components/icons';
 
 export function JobsPage() {
@@ -15,7 +17,7 @@ export function JobsPage() {
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<JobStatus | undefined>(undefined);
 
-  const { data: jobs, isLoading } = useJobs({ status: statusFilter });
+  const { data: jobs, isLoading, isError, error, refetch } = useJobs({ status: statusFilter });
   const cancelJob = useCancelJob();
 
   const handleCancel = async () => {
@@ -24,14 +26,16 @@ export function JobsPage() {
       await cancelJob.mutateAsync(cancelId);
       setCancelId(null);
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
-    } catch (err) {
-      console.error(err);
+      toast.success('Job cancelled');
+    } catch (err: any) {
+      toast.error(`Failed to cancel job: ${err.message}`);
     }
   };
 
   if (isLoading) {
     return <PageSkeleton />;
   }
+  if (isError) return <ErrorState message={error?.message} onRetry={refetch} />;
 
   const formatDate = (date: string) => {
     return new Date(date).toLocaleString();
@@ -161,6 +165,7 @@ export function JobsPage() {
         description="This job will be cancelled and won't execute."
         confirmText="Cancel Job"
         impact="medium"
+        loading={cancelJob.isPending}
       />
     </div>
   );

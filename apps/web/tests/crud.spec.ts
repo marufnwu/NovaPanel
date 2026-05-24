@@ -1,26 +1,16 @@
 import { test, expect } from '@playwright/test';
+import { login, loginViaApi } from './helpers';
 
-const ADMIN_USER = 'admin';
-const ADMIN_PASS = '7656ea4205a1b648632549c37c2089dc';
 const TS = Date.now();
 
 test.describe.configure({ mode: 'serial' });
-
-async function getSessionCookie(request: any): Promise<string | null> {
-  const res = await request.post('/api/v1/auth/login', {
-    data: { username: ADMIN_USER, password: ADMIN_PASS },
-  });
-  if (!res.ok()) return null;
-  const body = await res.json();
-  return body.data?.sessionId || null;
-}
 
 test.describe('Sites CRUD', () => {
   let siteId: string;
   let sessionCookie: string;
 
   test.beforeAll(async ({ request }) => {
-    sessionCookie = await getSessionCookie(request);
+    sessionCookie = await loginViaApi(request);
   });
 
   test('creates a site via API', async ({ request }) => {
@@ -69,7 +59,7 @@ test.describe('Domains CRUD', () => {
   let sessionCookie: string;
 
   test.beforeAll(async ({ request }) => {
-    sessionCookie = await getSessionCookie(request);
+    sessionCookie = await loginViaApi(request);
   });
 
   test('creates a domain via API', async ({ request }) => {
@@ -107,7 +97,7 @@ test.describe('Databases CRUD', () => {
   let sessionCookie: string;
 
   test.beforeAll(async ({ request }) => {
-    sessionCookie = await getSessionCookie(request);
+    sessionCookie = await loginViaApi(request);
   });
 
   test('reads database list', async ({ request }) => {
@@ -122,14 +112,6 @@ test.describe('Databases CRUD', () => {
 });
 
 test.describe('Sites UI', () => {
-  async function login(page: any) {
-    await page.goto('/login');
-    await page.fill('input[name="username"], input[type="text"]', ADMIN_USER);
-    await page.fill('input[type="password"]', ADMIN_PASS);
-    await page.click('button[type="submit"]');
-    await page.waitForURL(/\/dashboard/, { timeout: 20000 });
-  }
-
   test('sites page loads', async ({ page }) => {
     await login(page);
     await page.goto('/sites');

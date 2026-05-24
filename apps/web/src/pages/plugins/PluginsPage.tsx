@@ -6,41 +6,46 @@ import { DataTable } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageSkeleton } from '../../components/ui/Skeleton';
+import { ErrorState } from '../../components/ui/ErrorState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { usePlugins, useTogglePlugin, useDeletePlugin, type Plugin } from '../../api/hooks/plugins';
+import { toast } from '../../lib/toast';
 import { Icon } from '../../components/icons';
 
 export function PluginsPage() {
   const queryClient = useQueryClient();
-  const { data: plugins, isLoading } = usePlugins();
+  const { data: plugins, isLoading, isError, error, refetch } = usePlugins();
   const togglePlugin = useTogglePlugin();
   const deletePlugin = useDeletePlugin();
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const handleToggle = async (id: string) => {
-    try {
-      await togglePlugin.mutateAsync(id);
-      queryClient.invalidateQueries({ queryKey: ['plugins'] });
-    } catch (err) {
-      console.error(err);
-    }
+  const handleToggle = (id: string) => {
+    togglePlugin.mutate(id, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['plugins'] });
+        toast.success('Plugin updated');
+      },
+      onError: (err) => toast.error(`Failed to update plugin: ${err.message}`),
+    });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteId) return;
-    try {
-      await deletePlugin.mutateAsync(deleteId);
-      setDeleteId(null);
-      queryClient.invalidateQueries({ queryKey: ['plugins'] });
-    } catch (err) {
-      console.error(err);
-    }
+    deletePlugin.mutate(deleteId, {
+      onSuccess: () => {
+        toast.success('Plugin deleted');
+        setDeleteId(null);
+        queryClient.invalidateQueries({ queryKey: ['plugins'] });
+      },
+      onError: (err) => toast.error(`Failed to delete plugin: ${err.message}`),
+    });
   };
 
   if (isLoading) {
     return <PageSkeleton />;
   }
+  if (isError) return <ErrorState message={error?.message} onRetry={refetch} />;
 
   const columns = [
     {
@@ -68,7 +73,7 @@ export function PluginsPage() {
       label: '',
       render: (p: Plugin) => (
         <div className="flex gap-1">
-          <Button variant="ghost" size="small" onClick={() => handleToggle(p.id)} icon={<Icon name="icon-refresh" size={15} />}>
+          <Button variant="ghost" size="small" onClick={() => handleToggle(p.id)} icon={<Icon name="icon-refresh" size={15} />} loading={togglePlugin.isPending}>
             {p.enabled ? 'Disable' : 'Enable'}
           </Button>
           <Button variant="ghost" size="small" onClick={() => setDeleteId(p.id)} icon={<Icon name="icon-trash" size={15} />}>
@@ -106,6 +111,7 @@ export function PluginsPage() {
         description="This plugin will be permanently removed."
         confirmText="Delete"
         impact="medium"
+        loading={deletePlugin.isPending}
       />
     </div>
   );

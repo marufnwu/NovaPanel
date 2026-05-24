@@ -6,6 +6,7 @@ import { DataTable } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { PageSkeleton } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { ErrorState } from '../../components/ui/ErrorState';
 import {
   useWafRules,
   useIpAllowlists,
@@ -15,6 +16,7 @@ import {
   type IpAllowlist,
 } from '../../api/hooks/security';
 import { useAuthStore } from '../../store/auth.store';
+import { toast } from '../../lib/toast';
 import { Icon } from '../../components/icons';
 
 export function SecurityPage() {
@@ -22,40 +24,44 @@ export function SecurityPage() {
   const activeOrgId = useAuthStore((s) => s.activeOrgId);
   const projectId = activeOrgId || 'default';
 
-  const { data: wafRules, isLoading: wafLoading } = useWafRules(projectId);
-  const { data: ipAllowlists, isLoading: ipLoading } = useIpAllowlists(projectId);
+  const { data: wafRules, isLoading: wafLoading, isError: wafError, error: wafErrorObj, refetch: wafRefetch } = useWafRules(projectId);
+  const { data: ipAllowlists, isLoading: ipLoading, isError: ipError, error: ipErrorObj, refetch: ipRefetch } = useIpAllowlists(projectId);
   const updateWafRule = useUpdateWafRule();
   const updateIpAllowlist = useUpdateIpAllowlist();
 
   const [activeSection, setActiveSection] = useState<'waf' | 'allowlists'>('waf');
 
-  const handleToggleWafRule = async (rule: WafRule) => {
-    try {
-      await updateWafRule.mutateAsync({
-        id: rule.id,
-        data: { enabled: !rule.enabled },
-      });
-      queryClient.invalidateQueries({ queryKey: ['waf-rules', projectId] });
-    } catch (err) {
-      console.error(err);
-    }
+  const handleToggleWafRule = (rule: WafRule) => {
+    updateWafRule.mutate(
+      { id: rule.id, data: { enabled: !rule.enabled } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ['waf-rules', projectId] });
+          toast.success('WAF rule updated');
+        },
+        onError: (err) => toast.error(`Failed to update WAF rule: ${err.message}`),
+      }
+    );
   };
 
-  const handleToggleIpAllowlist = async (allowlist: IpAllowlist) => {
-    try {
-      await updateIpAllowlist.mutateAsync({
-        id: allowlist.id,
-        data: { type: allowlist.type === 'allow' ? 'block' : 'allow' },
-      });
-      queryClient.invalidateQueries({ queryKey: ['ip-allowlists', projectId] });
-    } catch (err) {
-      console.error(err);
-    }
+  const handleToggleIpAllowlist = (allowlist: IpAllowlist) => {
+    updateIpAllowlist.mutate(
+      { id: allowlist.id, data: { type: allowlist.type === 'allow' ? 'block' : 'allow' } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ['ip-allowlists', projectId] });
+          toast.success('IP allowlist updated');
+        },
+        onError: (err) => toast.error(`Failed to update IP allowlist: ${err.message}`),
+      }
+    );
   };
 
   if (wafLoading || ipLoading) {
     return <PageSkeleton />;
   }
+  if (wafError) return <ErrorState message={wafErrorObj?.message} onRetry={wafRefetch} />;
+  if (ipError) return <ErrorState message={ipErrorObj?.message} onRetry={ipRefetch} />;
 
   const wafColumns = [
     {
@@ -87,8 +93,9 @@ export function SecurityPage() {
       label: '',
       render: (r: WafRule) => (
         <button
-          className={`relative w-10 h-5 rounded-full transition-colors ${r.enabled ? 'bg-foreground-primary' : 'bg-background-secondary'}`}
+          className={`relative w-10 h-5 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-foreground-info/50 ${r.enabled ? 'bg-foreground-primary' : 'bg-background-secondary'}`}
           onClick={() => handleToggleWafRule(r)}
+          aria-label={r.enabled ? 'Disable WAF rule' : 'Enable WAF rule'}
         >
           <span
             className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${r.enabled ? 'left-5' : 'left-0.5'}`}

@@ -1,6 +1,6 @@
 import { cn } from '../../lib/utils';
 
-type Status = 'running' | 'stopped' | 'pending' | 'deploying' | 'active' | 'inactive' | 'expired' | 'completed' | 'failed' | 'restoring';
+type Status = 'running' | 'stopped' | 'pending' | 'deploying' | 'active' | 'inactive' | 'expired' | 'completed' | 'failed' | 'restoring' | 'error';
 
 const statusConfig: Record<Status, { label: string; dotColor: string; textColor: string }> = {
   running: { label: 'Running', dotColor: 'bg-foreground-success', textColor: 'text-foreground-success' },
@@ -13,6 +13,7 @@ const statusConfig: Record<Status, { label: string; dotColor: string; textColor:
   completed: { label: 'Completed', dotColor: 'bg-foreground-success', textColor: 'text-foreground-success' },
   failed: { label: 'Failed', dotColor: 'bg-foreground-danger', textColor: 'text-foreground-danger' },
   restoring: { label: 'Restoring', dotColor: 'bg-foreground-warning', textColor: 'text-foreground-warning' },
+  error: { label: 'Error', dotColor: 'bg-foreground-danger', textColor: 'text-foreground-danger' },
 };
 
 interface StatusBadgeProps {

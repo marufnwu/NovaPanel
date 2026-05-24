@@ -6,50 +6,63 @@ import { DataTable } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageSkeleton } from '../../components/ui/Skeleton';
+import { ErrorState } from '../../components/ui/ErrorState';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { useRegistries, useCreateRegistry, useDeleteRegistry, type Registry } from '../../api/hooks/registries';
+import { useAuthStore } from '../../store/auth.store';
+import { toast } from '../../lib/toast';
 import { Icon } from '../../components/icons';
 
 export function RegistriesPage() {
   const queryClient = useQueryClient();
-  const { data: registries, isLoading } = useRegistries();
+  const activeOrgId = useAuthStore((s) => s.activeOrgId);
+  const { data: registries, isLoading, isError, error, refetch } = useRegistries();
   const createRegistry = useCreateRegistry();
   const deleteRegistry = useDeleteRegistry();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newProvider, setNewProvider] = useState<'dockerhub' | 'ghcr' | 'ecr' | 'gcr' | 'selfhosted'>('dockerhub');
+  type RegistryProvider = 'dockerhub' | 'ghcr' | 'ecr' | 'gcr' | 'selfhosted';
+
+  const [newProvider, setNewProvider] = useState<RegistryProvider>('dockerhub');
   const [newUrl, setNewUrl] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const handleCreate = async () => {
-    try {
-      await createRegistry.mutateAsync({ orgId: 'default', name: newName, provider: newProvider, url: newUrl });
-      setShowCreateModal(false);
-      setNewName('');
-      setNewUrl('');
-      queryClient.invalidateQueries({ queryKey: ['registries'] });
-    } catch (err) {
-      console.error(err);
-    }
+  const handleCreate = () => {
+    if (!newName) return;
+    createRegistry.mutate(
+      { orgId: activeOrgId ?? 'default', name: newName, provider: newProvider, url: newUrl },
+      {
+        onSuccess: () => {
+          toast.success('Registry created');
+          setShowCreateModal(false);
+          setNewName('');
+          setNewUrl('');
+          queryClient.invalidateQueries({ queryKey: ['registries'] });
+        },
+        onError: (err) => toast.error(`Failed to create registry: ${err.message}`),
+      }
+    );
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteId) return;
-    try {
-      await deleteRegistry.mutateAsync(deleteId);
-      setDeleteId(null);
-      queryClient.invalidateQueries({ queryKey: ['registries'] });
-    } catch (err) {
-      console.error(err);
-    }
+    deleteRegistry.mutate(deleteId, {
+      onSuccess: () => {
+        toast.success('Registry deleted');
+        setDeleteId(null);
+        queryClient.invalidateQueries({ queryKey: ['registries'] });
+      },
+      onError: (err) => toast.error(`Failed to delete registry: ${err.message}`),
+    });
   };
 
   if (isLoading) {
     return <PageSkeleton />;
   }
+  if (isError) return <ErrorState message={error?.message} onRetry={refetch} />;
 
   const columns = [
     {
@@ -137,7 +150,7 @@ export function RegistriesPage() {
             <label className="text-meta font-medium mb-1 block">Provider</label>
             <div className="flex flex-wrap gap-2">
               {providers.map((p) => (
-                <Button key={p.id} variant={newProvider === p.id ? 'primary' : 'default'} size="small" onClick={() => setNewProvider(p.id as any)}>
+                <Button key={p.id} variant={newProvider === p.id ? 'primary' : 'default'} size="small" onClick={() => setNewProvider(p.id as RegistryProvider)}>
                   {p.label}
                 </Button>
               ))}
@@ -157,6 +170,7 @@ export function RegistriesPage() {
         description="This registry will be removed."
         confirmText="Delete"
         impact="medium"
+        loading={deleteRegistry.isPending}
       />
     </div>
   );

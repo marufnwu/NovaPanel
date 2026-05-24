@@ -1,26 +1,5 @@
 import { test, expect } from '@playwright/test';
-
-const ADMIN_USER = 'admin';
-const ADMIN_PASS = '7656ea4205a1b648632549c37c2089dc';
-
-async function login(page: any) {
-  await page.goto('/login');
-  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-
-  const usernameInput = page.locator('input[name="username"], input[type="text"]').first();
-  const isLoginPage = await usernameInput.isVisible({ timeout: 3000 }).catch(() => false);
-
-  if (!isLoginPage) {
-    await page.evaluate(() => localStorage.clear());
-    await page.goto('/login');
-    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-  }
-
-  await page.fill('input[name="username"], input[type="text"]', ADMIN_USER).catch(() => {});
-  await page.fill('input[type="password"]', ADMIN_PASS).catch(() => {});
-  await page.click('button[type="submit"]').catch(() => {});
-  await page.waitForURL(/\/dashboard/, { timeout: 20000 }).catch(() => {});
-}
+import { login } from '../helpers';
 
 test.describe.configure({ mode: 'serial' });
 

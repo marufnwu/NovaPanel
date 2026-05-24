@@ -3,7 +3,23 @@ import { useQuery } from '@tanstack/react-query';
 import { Card } from '../../components/ui/Card';
 import { StatCard } from '../../components/ui/StatCard';
 import { PageSkeleton } from '../../components/ui/Skeleton';
+import { ErrorState } from '../../components/ui/ErrorState';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { DataTable } from '../../components/ui/DataTable';
+import { Button } from '../../components/ui/Button';
+import { StatusBadge } from '../../components/ui/StatusBadge';
 import { api } from '../../api/client';
+import {
+  useMetrics,
+  useAlertRules,
+  useUpdateAlertRule,
+  useAlertHistory,
+  type Metric,
+  type AlertRule,
+  type AlertHistory,
+} from '../../api/hooks/monitoring';
+import { useAuthStore } from '../../store/auth.store';
+import { toast } from '../../lib/toast';
 
 interface ServerStats {
   cpu: { usage: number; cores: number };
@@ -146,23 +162,178 @@ export function MonitoringPage() {
         </>
       )}
 
-      {activeTab === 'alerts' && (
-        <Card title="Alert Rules">
-          <p className="text-small text-foreground-tertiary text-center py-8">No alert rules configured</p>
-        </Card>
-      )}
-
-      {activeTab === 'metrics' && (
-        <Card title="System Metrics">
-          <p className="text-small text-foreground-tertiary text-center py-8">Metrics coming soon</p>
-        </Card>
-      )}
-
-      {activeTab === 'history' && (
-        <Card title="Alert History">
-          <p className="text-small text-foreground-tertiary text-center py-8">No alert history</p>
-        </Card>
-      )}
+      {activeTab === 'alerts' && <AlertsTab />}
+      {activeTab === 'metrics' && <MetricsTab />}
+      {activeTab === 'history' && <HistoryTab />}
     </div>
+  );
+}
+
+function AlertsTab() {
+  const activeOrgId = useAuthStore((s) => s.activeOrgId);
+  const { data: rules, isLoading, isError, error, refetch } = useAlertRules(activeOrgId ?? '');
+  const updateRule = useUpdateAlertRule();
+
+  if (isLoading) return <PageSkeleton />;
+  if (isError) return <ErrorState message={error?.message} onRetry={refetch} />;
+
+  const handleToggle = async (rule: AlertRule) => {
+    updateRule.mutateAsync(
+      { id: rule.id, data: { enabled: !rule.enabled } },
+      {
+        onSuccess: () => toast.success(rule.enabled ? 'Alert rule disabled' : 'Alert rule enabled'),
+        onError: (err: any) => toast.error(`Failed to update alert rule: ${err.message}`),
+      }
+    );
+  };
+
+  const columns = [
+    {
+      key: 'name',
+      label: 'Name',
+      render: (r: AlertRule) => (
+        <div>
+          <span className="font-medium">{r.name}</span>
+          <p className="text-small text-foreground-tertiary">{r.description}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'metric',
+      label: 'Metric',
+      render: (r: AlertRule) => <span className="text-foreground-secondary">{r.metric}</span>,
+    },
+    {
+      key: 'condition',
+      label: 'Condition',
+      render: (r: AlertRule) => (
+        <span className="font-mono text-small">
+          {r.metric} {r.condition} {r.threshold}
+        </span>
+      ),
+    },
+    {
+      key: 'enabled',
+      label: 'Status',
+      render: (r: AlertRule) => (
+        <StatusBadge status={r.enabled ? 'active' : 'inactive'} />
+      ),
+    },
+    {
+      key: 'actions',
+      label: '',
+      render: (r: AlertRule) => (
+        <Button
+          variant="ghost"
+          size="small"
+          onClick={() => handleToggle(r)}
+        >
+          {r.enabled ? 'Disable' : 'Enable'}
+        </Button>
+      ),
+    },
+  ];
+
+  return (
+    <Card title="Alert Rules">
+      {rules && rules.length > 0 ? (
+        <DataTable columns={columns} data={rules} rowKey={(r) => r.id} />
+      ) : (
+        <EmptyState
+          icon="icon-bell"
+          title="No alert rules"
+          description="Alert rules will appear here"
+        />
+      )}
+    </Card>
+  );
+}
+
+function MetricsTab() {
+  const { data: metrics, isLoading, isError, error, refetch } = useMetrics();
+
+  if (isLoading) return <PageSkeleton />;
+  if (isError) return <ErrorState message={error?.message} onRetry={refetch} />;
+
+  return (
+    <Card title="System Metrics">
+      {metrics && metrics.length > 0 ? (
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-border-tertiary">
+              <th className="text-left text-small font-medium text-foreground-secondary pb-2">Name</th>
+              <th className="text-left text-small font-medium text-foreground-secondary pb-2">Labels</th>
+              <th className="text-right text-small font-medium text-foreground-secondary pb-2">Value</th>
+              <th className="text-right text-small font-medium text-foreground-secondary pb-2">Timestamp</th>
+            </tr>
+          </thead>
+          <tbody>
+            {metrics.map((m: Metric) => (
+              <tr key={m.id} className="border-b border-border-tertiary last:border-0">
+                <td className="py-2 font-mono text-small">{m.name}</td>
+                <td className="py-2 text-small text-foreground-secondary">
+                  {Object.entries(m.labels).map(([k, v]) => `${k}=${v}`).join(', ') || '—'}
+                </td>
+                <td className="py-2 text-right font-mono text-small">{m.value}</td>
+                <td className="py-2 text-right text-small text-foreground-secondary">
+                  {new Date(m.timestamp).toLocaleString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <EmptyState
+          icon="icon-chart"
+          title="No metrics"
+          description="Metrics will appear here"
+        />
+      )}
+    </Card>
+  );
+}
+
+function HistoryTab() {
+  const activeOrgId = useAuthStore((s) => s.activeOrgId);
+  const { data: history, isLoading, isError, error, refetch } = useAlertHistory(activeOrgId ?? '');
+
+  if (isLoading) return <PageSkeleton />;
+  if (isError) return <ErrorState message={error?.message} onRetry={refetch} />;
+
+  return (
+    <Card title="Alert History">
+      {history && history.length > 0 ? (
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-border-tertiary">
+              <th className="text-left text-small font-medium text-foreground-secondary pb-2">Rule</th>
+              <th className="text-left text-small font-medium text-foreground-secondary pb-2">Value</th>
+              <th className="text-left text-small font-medium text-foreground-secondary pb-2">Triggered</th>
+              <th className="text-left text-small font-medium text-foreground-secondary pb-2">Resolved</th>
+            </tr>
+          </thead>
+          <tbody>
+            {history.map((h: AlertHistory) => (
+              <tr key={h.id} className="border-b border-border-tertiary last:border-0">
+                <td className="py-2 font-medium text-small">{h.ruleName}</td>
+                <td className="py-2 font-mono text-small">{h.value}</td>
+                <td className="py-2 text-small text-foreground-secondary">
+                  {new Date(h.triggeredAt).toLocaleString()}
+                </td>
+                <td className="py-2 text-small text-foreground-secondary">
+                  {h.resolvedAt ? new Date(h.resolvedAt).toLocaleString() : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <EmptyState
+          icon="icon-clock"
+          title="No alert history"
+          description="Alert history will appear here"
+        />
+      )}
+    </Card>
   );
 }

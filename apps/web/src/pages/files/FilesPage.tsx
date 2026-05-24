@@ -15,6 +15,7 @@ import {
 } from '../../api/hooks/files';
 import { Icon } from '../../components/icons';
 import { cn } from '../../lib/utils';
+import { toast } from '../../lib/toast';
 
 export function FilesPage() {
   const queryClient = useQueryClient();
@@ -51,8 +52,9 @@ export function FilesPage() {
       setShowCreateDir(false);
       setNewDirName('');
       queryClient.invalidateQueries({ queryKey: ['files'] });
-    } catch (err) {
-      console.error(err);
+      toast.success('Directory created');
+    } catch (err: any) {
+      toast.error(`Failed to create directory: ${err.message}`);
     }
   };
 
@@ -62,8 +64,9 @@ export function FilesPage() {
       await deleteFile.mutateAsync({ path: deletePath });
       setDeletePath(null);
       queryClient.invalidateQueries({ queryKey: ['files'] });
-    } catch (err) {
-      console.error(err);
+      toast.success('File or folder deleted');
+    } catch (err: any) {
+      toast.error(`Failed to delete: ${err.message}`);
     }
   };
 
@@ -77,8 +80,9 @@ export function FilesPage() {
       setRenamePath(null);
       setNewName('');
       queryClient.invalidateQueries({ queryKey: ['files'] });
-    } catch (err) {
-      console.error(err);
+      toast.success('File renamed');
+    } catch (err: any) {
+      toast.error(`Failed to rename: ${err.message}`);
     }
   };
 

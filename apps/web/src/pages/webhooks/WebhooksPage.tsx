@@ -6,10 +6,12 @@ import { DataTable } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageSkeleton } from '../../components/ui/Skeleton';
+import { ErrorState } from '../../components/ui/ErrorState';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { useWebhooks, useCreateWebhook, useDeleteWebhook, useRegenerateWebhookSecret, type Webhook } from '../../api/hooks/webhooks';
+import { toast } from '../../lib/toast';
 import { Icon } from '../../components/icons';
 import { useAuthStore } from '../../store/auth.store';
 
@@ -17,7 +19,7 @@ export function WebhooksPage() {
   const queryClient = useQueryClient();
   const activeOrgId = useAuthStore((s) => s.activeOrgId);
   const orgId = activeOrgId || 'default';
-  const { data: webhooks, isLoading } = useWebhooks(orgId);
+  const { data: webhooks, isLoading, isError, error, refetch } = useWebhooks(orgId);
   const createWebhook = useCreateWebhook();
   const deleteWebhook = useDeleteWebhook();
   const regenerateSecret = useRegenerateWebhookSecret();
@@ -27,41 +29,49 @@ export function WebhooksPage() {
   const [newUrl, setNewUrl] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const handleCreate = async () => {
-    try {
-      await createWebhook.mutateAsync({ orgId, data: { name: newName, url: newUrl, events: ['*'] } });
-      setShowCreateModal(false);
-      setNewName('');
-      setNewUrl('');
-      queryClient.invalidateQueries({ queryKey: ['webhooks', orgId] });
-    } catch (err) {
-      console.error(err);
-    }
+  const handleCreate = () => {
+    if (!newName || !newUrl) return;
+    createWebhook.mutate(
+      { orgId, data: { name: newName, url: newUrl, events: ['*'] } },
+      {
+        onSuccess: () => {
+          toast.success('Webhook created');
+          setShowCreateModal(false);
+          setNewName('');
+          setNewUrl('');
+          queryClient.invalidateQueries({ queryKey: ['webhooks', orgId] });
+        },
+        onError: (err) => toast.error(`Failed to create webhook: ${err.message}`),
+      }
+    );
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteId) return;
-    try {
-      await deleteWebhook.mutateAsync(deleteId);
-      setDeleteId(null);
-      queryClient.invalidateQueries({ queryKey: ['webhooks', orgId] });
-    } catch (err) {
-      console.error(err);
-    }
+    deleteWebhook.mutate(deleteId, {
+      onSuccess: () => {
+        toast.success('Webhook deleted');
+        setDeleteId(null);
+        queryClient.invalidateQueries({ queryKey: ['webhooks', orgId] });
+      },
+      onError: (err) => toast.error(`Failed to delete webhook: ${err.message}`),
+    });
   };
 
-  const handleRegenerateSecret = async (id: string) => {
-    try {
-      await regenerateSecret.mutateAsync(id);
-      queryClient.invalidateQueries({ queryKey: ['webhooks', orgId] });
-    } catch (err) {
-      console.error(err);
-    }
+  const handleRegenerateSecret = (id: string) => {
+    regenerateSecret.mutate(id, {
+      onSuccess: () => {
+        toast.success('Webhook secret regenerated');
+        queryClient.invalidateQueries({ queryKey: ['webhooks', orgId] });
+      },
+      onError: (err) => toast.error(`Failed to regenerate secret: ${err.message}`),
+    });
   };
 
   if (isLoading) {
     return <PageSkeleton />;
   }
+  if (isError) return <ErrorState message={error?.message} onRetry={refetch} />;
 
   const columns = [
     {
@@ -150,6 +160,7 @@ export function WebhooksPage() {
         description="This webhook will be permanently deleted."
         confirmText="Delete"
         impact="medium"
+        loading={deleteWebhook.isPending}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -9,6 +9,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { ErrorState } from '../../components/ui/ErrorState';
 import {
   useMailDomainInfo,
   useMailboxes,
@@ -26,6 +27,7 @@ import {
 import { useDomains } from '../../api/hooks/domains';
 import { Icon } from '../../components/icons';
 import { cn } from '../../lib/utils';
+import { toast } from '../../lib/toast';
 
 const TABS = [
   { id: 'mailboxes', label: 'Mailboxes' },
@@ -51,10 +53,10 @@ export function MailPage() {
   const [newDestination, setNewDestination] = useState('');
 
   const { data: domains } = useDomains('');
-  const { data: domainInfo, isLoading: infoLoading } = useMailDomainInfo(selectedDomainId);
-  const { data: mailboxes, isLoading: mailboxesLoading } = useMailboxes(selectedDomainId);
-  const { data: aliases, isLoading: aliasesLoading } = useMailAliases(selectedDomainId);
-  const { data: dkimStatus, isLoading: dkimLoading } = useDkimStatus(selectedDomainId);
+  const { data: domainInfo, isLoading: infoLoading, isError: infoError, error: infoErr, refetch: refetchInfo } = useMailDomainInfo(selectedDomainId);
+  const { data: mailboxes, isLoading: mailboxesLoading, isError: mailboxesError, error: mailboxesErr, refetch: refetchMailboxes } = useMailboxes(selectedDomainId);
+  const { data: aliases, isLoading: aliasesLoading, isError: aliasesError, error: aliasesErr, refetch: refetchAliases } = useMailAliases(selectedDomainId);
+  const { data: dkimStatus, isLoading: dkimLoading, isError: dkimError, error: dkimErr, refetch: refetchDkim } = useDkimStatus(selectedDomainId);
 
   const createMailbox = useCreateMailbox();
   const deleteMailbox = useDeleteMailbox();
@@ -63,68 +65,75 @@ export function MailPage() {
   const generateDkim = useGenerateDKIM();
 
   const handleCreateMailbox = async () => {
-    try {
-      await createMailbox.mutateAsync({
-        domainId: selectedDomainId,
-        username: newUsername,
-        password: newPassword,
-        quotaMb: parseInt(newQuotaMb) || 512,
-      });
-      setShowCreateMailbox(false);
-      setNewUsername('');
-      setNewPassword('');
-      setNewQuotaMb('512');
-      queryClient.invalidateQueries({ queryKey: ['mail'] });
-    } catch (err) {
-      console.error(err);
-    }
+    if (!newUsername || !newPassword) return;
+    createMailbox.mutateAsync({
+      domainId: selectedDomainId,
+      username: newUsername,
+      password: newPassword,
+      quotaMb: parseInt(newQuotaMb) || 512,
+    }, {
+      onSuccess: () => {
+        toast.success('Mailbox created successfully');
+        setShowCreateMailbox(false);
+        setNewUsername('');
+        setNewPassword('');
+        setNewQuotaMb('512');
+        queryClient.invalidateQueries({ queryKey: ['mail'] });
+      },
+      onError: (err: any) => toast.error(`Failed to create mailbox: ${err.message}`),
+    });
   };
 
   const handleDeleteMailbox = async () => {
     if (!deleteMailboxId) return;
-    try {
-      await deleteMailbox.mutateAsync({ domainId: selectedDomainId, id: deleteMailboxId });
-      setDeleteMailboxId(null);
-      queryClient.invalidateQueries({ queryKey: ['mail'] });
-    } catch (err) {
-      console.error(err);
-    }
+    deleteMailbox.mutateAsync({ domainId: selectedDomainId, id: deleteMailboxId }, {
+      onSuccess: () => {
+        toast.success('Mailbox deleted successfully');
+        setDeleteMailboxId(null);
+        queryClient.invalidateQueries({ queryKey: ['mail'] });
+      },
+      onError: (err: any) => toast.error(`Failed to delete mailbox: ${err.message}`),
+    });
   };
 
   const handleCreateAlias = async () => {
-    try {
-      await createAlias.mutateAsync({
-        domainId: selectedDomainId,
-        alias: newAlias,
-        destination: newDestination,
-      });
-      setShowCreateAlias(false);
-      setNewAlias('');
-      setNewDestination('');
-      queryClient.invalidateQueries({ queryKey: ['mail'] });
-    } catch (err) {
-      console.error(err);
-    }
+    if (!newAlias || !newDestination) return;
+    createAlias.mutateAsync({
+      domainId: selectedDomainId,
+      alias: newAlias,
+      destination: newDestination,
+    }, {
+      onSuccess: () => {
+        toast.success('Alias created successfully');
+        setShowCreateAlias(false);
+        setNewAlias('');
+        setNewDestination('');
+        queryClient.invalidateQueries({ queryKey: ['mail'] });
+      },
+      onError: (err: any) => toast.error(`Failed to create alias: ${err.message}`),
+    });
   };
 
   const handleDeleteAlias = async () => {
     if (!deleteAliasId) return;
-    try {
-      await deleteAlias.mutateAsync({ domainId: selectedDomainId, id: deleteAliasId });
-      setDeleteAliasId(null);
-      queryClient.invalidateQueries({ queryKey: ['mail'] });
-    } catch (err) {
-      console.error(err);
-    }
+    deleteAlias.mutateAsync({ domainId: selectedDomainId, id: deleteAliasId }, {
+      onSuccess: () => {
+        toast.success('Alias deleted successfully');
+        setDeleteAliasId(null);
+        queryClient.invalidateQueries({ queryKey: ['mail'] });
+      },
+      onError: (err: any) => toast.error(`Failed to delete alias: ${err.message}`),
+    });
   };
 
   const handleGenerateDkim = async () => {
-    try {
-      await generateDkim.mutateAsync(selectedDomainId);
-      queryClient.invalidateQueries({ queryKey: ['mail'] });
-    } catch (err) {
-      console.error(err);
-    }
+    generateDkim.mutateAsync(selectedDomainId, {
+      onSuccess: () => {
+        toast.success('DKIM key generated successfully');
+        queryClient.invalidateQueries({ queryKey: ['mail'] });
+      },
+      onError: (err: any) => toast.error(`Failed to generate DKIM key: ${err.message}`),
+    });
   };
 
   const handleTabChange = (tabId: string) => {
@@ -136,14 +145,29 @@ export function MailPage() {
 
   const domainOptions = domains?.map((d) => ({ value: d.id, label: d.name })) || [];
 
-  if (!selectedDomainId && domainOptions.length > 0) {
-    setSelectedDomainId(domainOptions[0].value);
-  }
+  useEffect(() => {
+    if (!selectedDomainId && domainOptions.length > 0) {
+      setSelectedDomainId(domainOptions[0].value);
+    }
+  }, [domainOptions, selectedDomainId]);
 
   const isLoading = infoLoading || (selectedDomainId && (mailboxesLoading || aliasesLoading || dkimLoading));
 
   if (isLoading) {
     return <PageSkeleton />;
+  }
+
+  if (infoError) {
+    return <ErrorState message={infoErr?.message} onRetry={refetchInfo} />;
+  }
+  if (selectedDomainId && mailboxesError) {
+    return <ErrorState message={mailboxesErr?.message} onRetry={refetchMailboxes} />;
+  }
+  if (selectedDomainId && aliasesError) {
+    return <ErrorState message={aliasesErr?.message} onRetry={refetchAliases} />;
+  }
+  if (selectedDomainId && dkimError) {
+    return <ErrorState message={dkimErr?.message} onRetry={refetchDkim} />;
   }
 
   return (
@@ -473,6 +497,7 @@ export function MailPage() {
         description="This action cannot be undone. All emails in this mailbox will be deleted."
         confirmText="Delete"
         impact="high"
+        loading={deleteMailbox.isPending}
       />
 
       <ConfirmDialog
@@ -483,6 +508,7 @@ export function MailPage() {
         description="This action cannot be undone."
         confirmText="Delete"
         impact="high"
+        loading={deleteAlias.isPending}
       />
     </div>
   );

@@ -11,10 +11,12 @@ import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { useCronJobs, useCreateCronJob, useDeleteCronJob, useToggleCronJob, useRunCronJob, type CronJob } from '../../api/hooks/cron';
 import { Icon } from '../../components/icons';
+import { toast } from '../../lib/toast';
+import { ErrorState } from '../../components/ui/ErrorState';
 
 export function CronPage() {
   const queryClient = useQueryClient();
-  const { data: jobs, isLoading } = useCronJobs();
+  const { data: jobs, isLoading, isError, error, refetch } = useCronJobs();
   const createCron = useCreateCronJob();
   const deleteCron = useDeleteCronJob();
   const toggleCron = useToggleCronJob();
@@ -26,31 +28,38 @@ export function CronPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const handleCreate = async () => {
-    try {
-      await createCron.mutateAsync({ schedule: newSchedule, command: newCommand });
-      setShowCreateModal(false);
-      setNewSchedule('');
-      setNewCommand('');
-      queryClient.invalidateQueries({ queryKey: ['cron'] });
-    } catch (err) {
-      console.error(err);
-    }
+    if (!newSchedule || !newCommand) return;
+    createCron.mutateAsync(
+      { schedule: newSchedule, command: newCommand },
+      {
+        onSuccess: () => {
+          toast.success('Cron job created');
+          setShowCreateModal(false);
+          setNewSchedule('');
+          setNewCommand('');
+          queryClient.invalidateQueries({ queryKey: ['cron'] });
+        },
+        onError: (err: any) => toast.error(`Failed to create cron job: ${err.message}`),
+      }
+    );
   };
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    try {
-      await deleteCron.mutateAsync(deleteId);
-      setDeleteId(null);
-      queryClient.invalidateQueries({ queryKey: ['cron'] });
-    } catch (err) {
-      console.error(err);
-    }
+    deleteCron.mutateAsync(deleteId, {
+      onSuccess: () => {
+        toast.success('Cron job deleted');
+        setDeleteId(null);
+        queryClient.invalidateQueries({ queryKey: ['cron'] });
+      },
+      onError: (err: any) => toast.error(`Failed to delete cron job: ${err.message}`),
+    });
   };
 
   if (isLoading) {
     return <PageSkeleton />;
   }
+  if (isError) return <ErrorState message={error?.message} onRetry={refetch} />;
 
   const columns = [
     {
@@ -89,10 +98,10 @@ export function CronPage() {
       label: '',
       render: (j: CronJob) => (
         <div className="flex gap-1">
-          <Button variant="ghost" size="small" onClick={() => runCron.mutate(j.id)} icon={<Icon name="icon-play" size={15} />}>
+          <Button variant="ghost" size="small" onClick={() => runCron.mutate(j.id, { onSuccess: () => toast.success('Cron job started'), onError: (err) => toast.error(`Failed to run cron job: ${err.message}`) })} icon={<Icon name="icon-play" size={15} />} loading={runCron.isPending}>
             Run
           </Button>
-          <Button variant="ghost" size="small" onClick={() => toggleCron.mutate(j.id)} icon={<Icon name="icon-refresh" size={15} />}>
+          <Button variant="ghost" size="small" onClick={() => toggleCron.mutate(j.id, { onSuccess: () => toast.success('Cron job toggled'), onError: (err) => toast.error(`Failed to toggle cron job: ${err.message}`) })} icon={<Icon name="icon-refresh" size={15} />} loading={toggleCron.isPending}>
             Toggle
           </Button>
           <Button variant="ghost" size="small" onClick={() => setDeleteId(j.id)} icon={<Icon name="icon-trash" size={15} />}>
@@ -161,11 +170,12 @@ export function CronPage() {
       <ConfirmDialog
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
-        onConfirm={handleDelete}
+        onConfirm={() => handleDelete()}
         title="Delete Cron Job"
         description="This cron job will be permanently deleted."
         confirmText="Delete"
         impact="medium"
+        loading={deleteCron.isPending}
       />
     </div>
   );

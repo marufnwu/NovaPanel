@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Button } from '../../components/ui/Button';
@@ -9,14 +9,21 @@ import { PageSkeleton } from '../../components/ui/Skeleton';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { ErrorState } from '../../components/ui/ErrorState';
 import { useDomains, useCreateDomain, useDeleteDomain, type Domain } from '../../api/hooks/domains';
 import { Icon } from '../../components/icons';
+import { toast } from '../../lib/toast';
 
 export function DomainsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
-  const { data: domains, isLoading } = useDomains(search);
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+  const { data: domains, isLoading, isError, error, refetch } = useDomains(debouncedSearch);
   const createDomain = useCreateDomain();
   const deleteDomain = useDeleteDomain();
 
@@ -25,29 +32,39 @@ export function DomainsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const handleCreate = async () => {
-    try {
-      await createDomain.mutateAsync({ name: newDomainName, type: 'apex', skipDnsVerification: false });
-      setShowCreateModal(false);
-      setNewDomainName('');
-      queryClient.invalidateQueries({ queryKey: ['domains'] });
-    } catch (err) {
-      console.error(err);
-    }
+    if (!newDomainName) return;
+    createDomain.mutateAsync(
+      { name: newDomainName, type: 'apex', skipDnsVerification: false },
+      {
+        onSuccess: () => {
+          toast.success('Domain created successfully');
+          setShowCreateModal(false);
+          setNewDomainName('');
+          queryClient.invalidateQueries({ queryKey: ['domains'] });
+        },
+        onError: (err: any) => toast.error(`Failed to create domain: ${err.message}`),
+      }
+    );
   };
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    try {
-      await deleteDomain.mutateAsync(deleteId);
-      setDeleteId(null);
-      queryClient.invalidateQueries({ queryKey: ['domains'] });
-    } catch (err) {
-      console.error(err);
-    }
+    deleteDomain.mutateAsync(deleteId, {
+      onSuccess: () => {
+        toast.success('Domain deleted successfully');
+        setDeleteId(null);
+        queryClient.invalidateQueries({ queryKey: ['domains'] });
+      },
+      onError: (err: any) => toast.error(`Failed to delete domain: ${err.message}`),
+    });
   };
 
   if (isLoading) {
     return <PageSkeleton />;
+  }
+
+  if (isError) {
+    return <ErrorState message={error?.message} onRetry={refetch} />;
   }
 
   const getDomainType = (domain: Domain) => {
@@ -141,8 +158,8 @@ export function DomainsPage() {
       <div className="max-w-[300px]">
         <Input
           placeholder="Search domains..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
         />
       </div>
 
@@ -190,6 +207,7 @@ export function DomainsPage() {
         description="This action cannot be undone. All associated records will be deleted."
         confirmText="Delete"
         impact="high"
+        loading={deleteDomain.isPending}
       />
     </div>
   );

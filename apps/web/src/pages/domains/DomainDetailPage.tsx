@@ -8,8 +8,25 @@ import { DataTable } from '../../components/ui/DataTable';
 import { PageSkeleton } from '../../components/ui/Skeleton';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
-import { useDomain, useSubdomains, useCreateSubdomain, useDeleteSubdomain, useAliases, useCreateAlias, useDeleteAlias, useRedirects, useCreateRedirect, useDeleteRedirect, type Subdomain, type DomainAlias, type DomainRedirect } from '../../api/hooks/domains';
+import { ErrorState } from '../../components/ui/ErrorState';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import { EmptyState } from '../../components/ui/EmptyState';
+import {
+  useDomain, useSubdomains, useCreateSubdomain, useDeleteSubdomain,
+  useAliases as useDomainAliases, useCreateAlias as useCreateDomainAlias, useDeleteAlias as useDeleteDomainAlias,
+  useRedirects, useCreateRedirect, useDeleteRedirect,
+  useDomainCloudflareZone, useDomainCloudflareDns, useDomainCloudflareSsl,
+  useDomainCloudflareFirewall, useDomainCloudflareRedirects,
+  useDomainAccessLog, useDomainErrorLog,
+  useDeleteDomain as useDeleteDomainMutation,
+  type Subdomain, type DomainAlias, type DomainRedirect,
+} from '../../api/hooks/domains';
+import { useDnsZone, useCreateDnsRecord, useDeleteDnsRecord } from '../../api/hooks/dns';
+import { useIssueLetsEncrypt, useRenewCertificate } from '../../api/hooks/ssl';
+import { useMailAliases as useMailForwardAliases, useCreateAlias as useCreateMailForwardAlias, useDeleteAlias as useDeleteMailForwardAlias, useMailboxes, useCreateMailbox, useDeleteMailbox, useMailDomainInfo, useDkimStatus } from '../../api/hooks/mail';
+import { FtpPage } from '../ftp/FtpPage';
 import { Icon } from '../../components/icons';
+import { toast } from '../../lib/toast';
 
 export function DomainDetailPage() {
   const params = useParams({ from: '/domains/$domainId' });
@@ -17,16 +34,16 @@ export function DomainDetailPage() {
   const domainId = params.domainId as string;
   const activeTab = (search as any)?.tab || 'overview';
 
-  const { data: domain, isLoading } = useDomain(domainId);
+  const { data: domain, isLoading, isError, error, refetch } = useDomain(domainId);
   const { data: subdomains } = useSubdomains(domainId);
-  const { data: aliases } = useAliases(domainId);
+  const { data: aliases } = useDomainAliases(domainId);
   const { data: redirects } = useRedirects(domainId);
 
   const queryClient = useQueryClient();
   const createSubdomain = useCreateSubdomain(domainId);
   const deleteSubdomain = useDeleteSubdomain(domainId);
-  const createAlias = useCreateAlias(domainId);
-  const deleteAlias = useDeleteAlias(domainId);
+  const createAlias = useCreateDomainAlias(domainId);
+  const deleteAlias = useDeleteDomainAlias(domainId);
   const createRedirect = useCreateRedirect(domainId);
   const deleteRedirect = useDeleteRedirect(domainId);
 
@@ -38,6 +55,33 @@ export function DomainDetailPage() {
   const [redirectSource, setRedirectSource] = useState('');
   const [redirectTarget, setRedirectTarget] = useState('');
   const [redirectType, setRedirectType] = useState<'301' | '302'>('301');
+  const [deleteSubdomainId, setDeleteSubdomainId] = useState<string | null>(null);
+  const [deleteAliasId, setDeleteAliasId] = useState<string | null>(null);
+  const [deleteRedirectId, setDeleteRedirectId] = useState<string | null>(null);
+  const [deleteDomainId, setDeleteDomainId] = useState<string | null>(null);
+
+  const deleteDomain = useDeleteDomainMutation();
+
+  const { data: dnsZone } = useDnsZone(domainId);
+  const issueCert = useIssueLetsEncrypt();
+  const renewCert = useRenewCertificate();
+
+  const { data: cloudflareZone } = useDomainCloudflareZone(domainId);
+  const { data: cloudflareDns } = useDomainCloudflareDns(domainId);
+  const { data: cloudflareSsl } = useDomainCloudflareSsl(domainId);
+  const { data: cloudflareFirewall } = useDomainCloudflareFirewall(domainId);
+
+  const { data: mailInfo } = useMailDomainInfo(domainId);
+  const { data: mailboxes } = useMailboxes(domainId);
+  const { data: mailAliases } = useMailForwardAliases(domainId);
+  const { data: dkimStatus } = useDkimStatus(domainId);
+  const createMailbox = useCreateMailbox();
+  const deleteMailbox = useDeleteMailbox();
+  const createMailAlias = useCreateMailForwardAlias();
+  const deleteMailAlias = useDeleteMailForwardAlias();
+
+  const { data: accessLog } = useDomainAccessLog(domainId);
+  const { data: errorLog } = useDomainErrorLog(domainId);
 
   const handleTabChange = (tabId: string) => {
     const url = new URL(window.location.href);
@@ -47,42 +91,52 @@ export function DomainDetailPage() {
   };
 
   const handleAddSubdomain = async () => {
-    try {
-      await createSubdomain.mutateAsync({ name: newSubdomainName });
-      setShowAddSubdomain(false);
-      setNewSubdomainName('');
-      queryClient.invalidateQueries({ queryKey: ['domains', domainId, 'subdomains'] });
-    } catch (err) {
-      console.error(err);
-    }
+    if (!newSubdomainName) return;
+    createSubdomain.mutateAsync({ name: newSubdomainName }, {
+      onSuccess: () => {
+        toast.success('Subdomain created successfully');
+        setShowAddSubdomain(false);
+        setNewSubdomainName('');
+        queryClient.invalidateQueries({ queryKey: ['domains', domainId, 'subdomains'] });
+      },
+      onError: (err: any) => toast.error(`Failed to create subdomain: ${err.message}`),
+    });
   };
 
   const handleAddAlias = async () => {
-    try {
-      await createAlias.mutateAsync({ alias: newAliasName });
-      setShowAddAlias(false);
-      setNewAliasName('');
-      queryClient.invalidateQueries({ queryKey: ['domains', domainId, 'aliases'] });
-    } catch (err) {
-      console.error(err);
-    }
+    if (!newAliasName) return;
+    createAlias.mutateAsync({ alias: newAliasName }, {
+      onSuccess: () => {
+        toast.success('Alias created successfully');
+        setShowAddAlias(false);
+        setNewAliasName('');
+        queryClient.invalidateQueries({ queryKey: ['domains', domainId, 'aliases'] });
+      },
+      onError: (err: any) => toast.error(`Failed to create alias: ${err.message}`),
+    });
   };
 
   const handleAddRedirect = async () => {
-    try {
-      await createRedirect.mutateAsync({ sourcePath: redirectSource, targetUrl: redirectTarget, type: redirectType });
-      setShowAddRedirect(false);
-      setRedirectSource('');
-      setRedirectTarget('');
-      setRedirectType('301');
-      queryClient.invalidateQueries({ queryKey: ['domains', domainId, 'redirects'] });
-    } catch (err) {
-      console.error(err);
-    }
+    if (!redirectTarget) return;
+    createRedirect.mutateAsync({ sourcePath: redirectSource, targetUrl: redirectTarget, type: redirectType }, {
+      onSuccess: () => {
+        toast.success('Redirect created successfully');
+        setShowAddRedirect(false);
+        setRedirectSource('');
+        setRedirectTarget('');
+        setRedirectType('301');
+        queryClient.invalidateQueries({ queryKey: ['domains', domainId, 'redirects'] });
+      },
+      onError: (err: any) => toast.error(`Failed to create redirect: ${err.message}`),
+    });
   };
 
   if (isLoading) {
     return <PageSkeleton />;
+  }
+
+  if (isError) {
+    return <ErrorState message={error?.message} onRetry={refetch} />;
   }
 
   if (!domain) {
@@ -94,6 +148,12 @@ export function DomainDetailPage() {
     { id: 'subdomains', label: 'Subdomains' },
     { id: 'aliases', label: 'Aliases' },
     { id: 'redirects', label: 'Redirects' },
+    { id: 'dns', label: 'DNS' },
+    { id: 'ssl', label: 'SSL' },
+    { id: 'mail', label: 'Mail' },
+    { id: 'ftp', label: 'FTP' },
+    { id: 'cloudflare', label: 'Cloudflare' },
+    { id: 'logs', label: 'Logs' },
   ];
 
   return (
@@ -153,7 +213,7 @@ export function DomainDetailPage() {
               </div>
             </div>
           ) : (
-            <p className="text-small text-foreground-tertiary">No SSL certificate</p>
+            <EmptyState icon="icon-shield" title="No SSL certificate" description="Add an SSL certificate to this domain" />
           )}
           </Card>
         </div>
@@ -171,7 +231,7 @@ export function DomainDetailPage() {
                   key: 'actions',
                   label: '',
                   render: (s: Subdomain) => (
-                    <Button variant="ghost" size="small" onClick={() => deleteSubdomain.mutate(s.id)} icon={<Icon name="icon-trash" size={15} />}>Delete</Button>
+                    <Button variant="ghost" size="small" onClick={() => setDeleteSubdomainId(s.id)} icon={<Icon name="icon-trash" size={15} />}>Delete</Button>
                   ),
                 },
               ]}
@@ -179,7 +239,7 @@ export function DomainDetailPage() {
               rowKey={(s) => s.id}
             />
           ) : (
-            <p className="text-small text-foreground-tertiary text-center py-4">No subdomains</p>
+            <EmptyState icon="icon-world" title="No subdomains" description="Add subdomains to this domain" action={{ label: 'Add Subdomain', onClick: () => setShowAddSubdomain(true) }} />
           )}
         </Card>
       )}
@@ -195,7 +255,7 @@ export function DomainDetailPage() {
                   key: 'actions',
                   label: '',
                   render: (a: DomainAlias) => (
-                    <Button variant="ghost" size="small" onClick={() => deleteAlias.mutate(a.id)} icon={<Icon name="icon-trash" size={15} />}>Delete</Button>
+                    <Button variant="ghost" size="small" onClick={() => setDeleteAliasId(a.id)} icon={<Icon name="icon-trash" size={15} />}>Delete</Button>
                   ),
                 },
               ]}
@@ -203,7 +263,7 @@ export function DomainDetailPage() {
               rowKey={(a) => a.id}
             />
           ) : (
-            <p className="text-small text-foreground-tertiary text-center py-4">No aliases</p>
+            <EmptyState icon="icon-world" title="No aliases" description="Add aliases to this domain" action={{ label: 'Add Alias', onClick: () => setShowAddAlias(true) }} />
           )}
         </Card>
       )}
@@ -220,7 +280,7 @@ export function DomainDetailPage() {
                   key: 'actions',
                   label: '',
                   render: (r: DomainRedirect) => (
-                    <Button variant="ghost" size="small" onClick={() => deleteRedirect.mutate(r.id)} icon={<Icon name="icon-trash" size={15} />}>Delete</Button>
+                    <Button variant="ghost" size="small" onClick={() => setDeleteRedirectId(r.id)} icon={<Icon name="icon-trash" size={15} />}>Delete</Button>
                   ),
                 },
               ]}
@@ -228,9 +288,198 @@ export function DomainDetailPage() {
               rowKey={(r) => r.id}
             />
           ) : (
-            <p className="text-small text-foreground-tertiary text-center py-4">No redirects</p>
+            <EmptyState icon="icon-arrows-right" title="No redirects" description="Add redirects to this domain" action={{ label: 'Add Redirect', onClick: () => setShowAddRedirect(true) }} />
           )}
         </Card>
+      )}
+
+      {activeTab === 'dns' && (
+        <Card title="DNS Records">
+          {dnsZone?.records && dnsZone.records.length > 0 ? (
+            <DataTable
+              columns={[
+                { key: 'type', label: 'Type', render: (r: any) => <span className="font-mono">{r.type}</span> },
+                { key: 'name', label: 'Name', render: (r: any) => <span className="font-mono">{r.name}</span> },
+                { key: 'value', label: 'Value', render: (r: any) => <span className="font-mono text-foreground-secondary">{r.value}</span> },
+                { key: 'ttl', label: 'TTL' },
+              ]}
+              data={dnsZone.records}
+              rowKey={(r: any) => r.id}
+            />
+          ) : (
+            <EmptyState icon="icon-world" title="No DNS records" description="No DNS records found for this zone" />
+          )}
+        </Card>
+      )}
+
+      {activeTab === 'ssl' && (
+        <Card title="SSL Certificate">
+          {domain.sslStatus === 'active' ? (
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-foreground-secondary">Status</span>
+                <StatusBadge status="active" />
+              </div>
+              <div className="flex justify-between">
+                <span className="text-foreground-secondary">Auto Renew</span>
+                <span>{domain.sslAutoRenew ? 'Enabled' : 'Disabled'}</span>
+              </div>
+              <Button variant="default" size="small" onClick={() => renewCert.mutate(domainId, { onSuccess: () => toast.success('Certificate renewed'), onError: (err: any) => toast.error(`Failed to renew: ${err.message}`) })} loading={renewCert.isPending}>Renew Certificate</Button>
+            </div>
+          ) : (
+            <div className="text-center py-6">
+              <p className="text-small text-foreground-secondary mb-4">No SSL certificate</p>
+              <Button onClick={() => issueCert.mutate({ domainId, email: '', challengeType: 'http-01' }, { onSuccess: () => toast.success('Certificate issuance started'), onError: (err: any) => toast.error(`Failed to issue: ${err.message}`) })} loading={issueCert.isPending}>Issue Certificate</Button>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {activeTab === 'mail' && (
+        <div className="space-y-4">
+          <Card title="Mailboxes">
+            {mailboxes && mailboxes.length > 0 ? (
+              <DataTable
+                columns={[
+                  { key: 'username', label: 'Username', render: (m: any) => <span className="font-mono">{m.username}</span> },
+                  { key: 'quotaMb', label: 'Quota (MB)' },
+                  { key: 'isActive', label: 'Status', render: (m: any) => <StatusBadge status={m.isActive ? 'active' : 'inactive'} /> },
+                ]}
+                data={mailboxes}
+                rowKey={(m: any) => m.id}
+              />
+            ) : (
+              <EmptyState icon="icon-mail" title="No mailboxes" description="No mailboxes configured for this domain" />
+            )}
+          </Card>
+          <Card title="Email Aliases / Forwards">
+            {mailAliases && mailAliases.length > 0 ? (
+              <DataTable
+                columns={[
+                  { key: 'alias', label: 'Alias', render: (a: any) => <span className="font-mono">{a.alias || a.source}</span> },
+                  { key: 'destination', label: 'Forwards To', render: (a: any) => <span className="font-mono text-foreground-secondary">{a.destination}</span> },
+                ]}
+                data={mailAliases}
+                rowKey={(a: any) => a.id}
+              />
+            ) : (
+              <EmptyState icon="icon-arrows-right" title="No forwards" description="No email forwards configured" />
+            )}
+          </Card>
+          <Card title="DKIM Status">
+            {dkimStatus ? (
+              <div className="space-y-2 text-small">
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">DKIM Enabled</span>
+                  <span>{dkimStatus.enabled ? 'Yes' : 'No'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">Has Public Key</span>
+                  <span>{dkimStatus.hasPublicKey ? 'Yes' : 'No'}</span>
+                </div>
+                {dkimStatus.dnsRecord && (
+                  <div className="flex justify-between">
+                    <span className="text-foreground-secondary">DNS Record</span>
+                    <span className="font-mono text-small">{dkimStatus.dnsRecord}</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <EmptyState icon="icon-shield" title="No DKIM configured" description="Mail authentication not yet configured" />
+            )}
+          </Card>
+        </div>
+      )}
+
+      {activeTab === 'ftp' && (
+        <FtpPage domainId={domainId} hideDomainSelector />
+      )}
+
+      {activeTab === 'cloudflare' && (
+        <div className="space-y-4">
+          <Card title="Cloudflare Zone">
+            {cloudflareZone ? (
+              <div className="space-y-2 text-small">
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">Zone</span>
+                  <span>{cloudflareZone.zoneName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">Paused</span>
+                  <span>{cloudflareZone.isPaused ? 'Yes' : 'No'}</span>
+                </div>
+              </div>
+            ) : (
+              <EmptyState icon="icon-cloud" title="No Cloudflare zone" description="Cloudflare is not connected to this domain" />
+            )}
+          </Card>
+          {cloudflareDns?.records && cloudflareDns.records.length > 0 && (
+            <Card title="Cloudflare DNS">
+              <DataTable
+                columns={[
+                  { key: 'type', label: 'Type', render: (r: any) => <span className="font-mono">{r.type}</span> },
+                  { key: 'name', label: 'Name', render: (r: any) => <span className="font-mono">{r.name}</span> },
+                  { key: 'content', label: 'Content', render: (r: any) => <span className="font-mono text-foreground-secondary">{r.content}</span> },
+                ]}
+                data={cloudflareDns.records}
+                rowKey={(r: any) => r.id}
+              />
+            </Card>
+          )}
+          {cloudflareSsl && (
+            <Card title="Cloudflare SSL">
+              <div className="space-y-2 text-small">
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">SSL Mode</span>
+                  <span>{cloudflareSsl.sslMode || '—'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">Always Use HTTPS</span>
+                  <span>{cloudflareSsl.alwaysUseHttps ? 'Yes' : 'No'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">HTTP2</span>
+                  <span>{cloudflareSsl.http2 ? 'Yes' : 'No'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">HTTP3</span>
+                  <span>{cloudflareSsl.http3 ? 'Yes' : 'No'}</span>
+                </div>
+              </div>
+            </Card>
+          )}
+          {cloudflareFirewall && cloudflareFirewall.length > 0 && (
+            <Card title="Cloudflare Firewall">
+              <DataTable
+                columns={[
+                  { key: 'description', label: 'Description', render: (r: any) => <span>{r.description}</span> },
+                  { key: 'action', label: 'Action', render: (r: any) => <StatusBadge status={r.action === 'allow' ? 'active' : 'inactive'} /> },
+                ]}
+                data={cloudflareFirewall}
+                rowKey={(r: any) => r.id}
+              />
+            </Card>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'logs' && (
+        <div className="space-y-4">
+          <Card title="Access Log">
+            {accessLog ? (
+              <pre className="text-meta font-mono text-small whitespace-pre-wrap">{accessLog}</pre>
+            ) : (
+              <EmptyState icon="icon-document" title="No access log" description="Access log not available" />
+            )}
+          </Card>
+          <Card title="Error Log">
+            {errorLog ? (
+              <pre className="text-meta font-mono text-small whitespace-pre-wrap">{errorLog}</pre>
+            ) : (
+              <EmptyState icon="icon-alert" title="No error log" description="Error log not available" />
+            )}
+          </Card>
+        </div>
       )}
 
       <Modal isOpen={showAddSubdomain} onClose={() => setShowAddSubdomain(false)} title="Add Subdomain"
@@ -254,6 +503,69 @@ export function DomainDetailPage() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={!!deleteSubdomainId}
+        onClose={() => setDeleteSubdomainId(null)}
+        onConfirm={() => {
+          if (!deleteSubdomainId) return;
+          deleteSubdomain.mutate(deleteSubdomainId, {
+            onSuccess: () => {
+              toast.success('Subdomain deleted');
+              setDeleteSubdomainId(null);
+              queryClient.invalidateQueries({ queryKey: ['domains', domainId, 'subdomains'] });
+            },
+            onError: (err: any) => toast.error(`Failed to delete subdomain: ${err.message}`),
+          });
+        }}
+        title="Delete Subdomain"
+        description="This subdomain will be removed from the domain."
+        confirmText="Delete"
+        impact="medium"
+        loading={deleteSubdomain.isPending}
+      />
+
+      <ConfirmDialog
+        isOpen={!!deleteAliasId}
+        onClose={() => setDeleteAliasId(null)}
+        onConfirm={() => {
+          if (!deleteAliasId) return;
+          deleteAlias.mutate(deleteAliasId, {
+            onSuccess: () => {
+              toast.success('Alias deleted');
+              setDeleteAliasId(null);
+              queryClient.invalidateQueries({ queryKey: ['domains', domainId, 'aliases'] });
+            },
+            onError: (err: any) => toast.error(`Failed to delete alias: ${err.message}`),
+          });
+        }}
+        title="Delete Alias"
+        description="This alias will be removed from the domain."
+        confirmText="Delete"
+        impact="medium"
+        loading={deleteAlias.isPending}
+      />
+
+      <ConfirmDialog
+        isOpen={!!deleteRedirectId}
+        onClose={() => setDeleteRedirectId(null)}
+        onConfirm={() => {
+          if (!deleteRedirectId) return;
+          deleteRedirect.mutate(deleteRedirectId, {
+            onSuccess: () => {
+              toast.success('Redirect deleted');
+              setDeleteRedirectId(null);
+              queryClient.invalidateQueries({ queryKey: ['domains', domainId, 'redirects'] });
+            },
+            onError: (err: any) => toast.error(`Failed to delete redirect: ${err.message}`),
+          });
+        }}
+        title="Delete Redirect"
+        description="This redirect will be removed."
+        confirmText="Delete"
+        impact="medium"
+        loading={deleteRedirect.isPending}
+      />
     </div>
   );
 }

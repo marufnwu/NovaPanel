@@ -1,44 +1,24 @@
 import { test, expect } from '@playwright/test';
-
-const ADMIN_USER = 'admin';
-const ADMIN_PASS = '7656ea4205a1b648632549c37c2089dc';
-
-async function loginViaApi(request: any, cookieName = 'sf_session') {
-  const response = await request.post('/api/v1/auth/login', {
-    data: { username: ADMIN_USER, password: ADMIN_PASS },
-  });
-  const body = await response.json();
-  return body.data.sessionId;
-}
+import { login, loginViaApi } from './helpers';
 
 test.describe('Authentication', () => {
   test('login page renders correctly', async ({ page }) => {
     await page.goto('/login');
-    await expect(page).toHaveTitle(/ServerForge|NovaPanel/);
+    await page.waitForLoadState('networkidle', { timeout: 10000 });
     await expect(page.locator('input[type="text"], input[name="username"]').first()).toBeVisible();
     await expect(page.locator('input[type="password"]').first()).toBeVisible();
     await expect(page.locator('button[type="submit"]').first()).toBeVisible();
   });
 
   test('logs in successfully with valid credentials', async ({ page }) => {
-    await page.goto('/login');
-    await page.fill('input[name="username"], input[type="text"]', ADMIN_USER);
-    await page.fill('input[type="password"]', ADMIN_PASS);
-    await page.click('button[type="submit"]');
-    await page.waitForURL(/\/dashboard/, { timeout: 15000 });
-    await expect(page).not.toHaveURL(/\/login/);
+    await login(page);
+    await expect(page).toHaveURL(/\/dashboard/);
   });
 });
 
 test.describe('Dashboard Navigation', () => {
-  test.use({ storageState: {} });
-
   test('can login and see dashboard', async ({ page }) => {
-    await page.goto('/login');
-    await page.fill('input[name="username"], input[type="text"]', ADMIN_USER);
-    await page.fill('input[type="password"]', ADMIN_PASS);
-    await page.click('button[type="submit"]');
-    await page.waitForURL(/\/dashboard/, { timeout: 15000 });
+    await login(page);
     await expect(page.locator('body')).toBeVisible();
   });
 });

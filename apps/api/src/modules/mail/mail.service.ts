@@ -84,6 +84,22 @@ export class MailService {
     return (JSON.parse(mb.aliases as string || '[]') as Array<{ source: string; destination: string }>).map(a => ({ ...a, mailboxId: mb.id }));
   }
 
+  async updateMailbox(mailboxId: string, data: { password?: string; quotaMb?: number; isActive?: boolean; isSuspended?: boolean; autoresponder?: boolean; autoresponderSubject?: string; autoresponderMessage?: string }, userId?: string, ipAddress?: string) {
+    const [mb] = await db.select().from(mailboxes).where(eq(mailboxes.id, mailboxId)).limit(1);
+    if (!mb) throw new AppError(404, 'MAILBOX_NOT_FOUND', 'Mailbox not found');
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (data.password) updates.password = data.password;
+    if (data.quotaMb !== undefined) updates.quotaMb = data.quotaMb;
+    if (data.isActive !== undefined) updates.enabled = data.isActive;
+    if (data.isSuspended !== undefined) updates.suspended = data.isSuspended;
+    if (data.autoresponder !== undefined) updates.autoresponder = data.autoresponder;
+    if (data.autoresponderSubject) updates.autoresponderSubject = data.autoresponderSubject;
+    if (data.autoresponderMessage) updates.autoresponderMessage = data.autoresponderMessage;
+    const [updated] = await db.update(mailboxes).set(updates).where(eq(mailboxes.id, mailboxId)).returning();
+    auditService.log({ userId, action: 'mail.mailbox.update', resource: `mailbox:${mb.username}`, ipAddress }).catch(() => {});
+    return updated;
+  }
+
   async deleteAlias(domainId: string, aliasId: string, userId?: string, ipAddress?: string) {
     const [mb] = await db.select().from(mailboxes).where(eq(mailboxes.domainId, domainId)).limit(1);
     if (!mb) throw new AppError(404, 'MAILBOX_NOT_FOUND', 'Mailbox not found');

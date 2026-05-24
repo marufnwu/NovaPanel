@@ -5,6 +5,7 @@ import { Card } from '../../components/ui/Card';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { PageSkeleton } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { ErrorState } from '../../components/ui/ErrorState';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import {
   useNotifications,
@@ -15,6 +16,7 @@ import {
   useDeleteNotification,
   type Notification,
 } from '../../api/hooks/notifications';
+import { toast } from '../../lib/toast';
 import { Icon } from '../../components/icons';
 
 export function NotificationsPage() {
@@ -22,50 +24,49 @@ export function NotificationsPage() {
   const [activeTab, setActiveTab] = useState<'history' | 'preferences'>('history');
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const { data: notificationsData, isLoading: notificationsLoading } = useNotifications(50);
+  const { data: notificationsData, isLoading: notificationsLoading, isError: notificationsError, error: notificationsErrorObj, refetch: notificationsRefetch } = useNotifications(50);
   const { data: preferences, isLoading: preferencesLoading } = useNotificationPreferences();
   const updatePreferences = useUpdateNotificationPreferences();
   const markAsRead = useMarkAsRead();
   const markAllAsRead = useMarkAllAsRead();
   const deleteNotification = useDeleteNotification();
 
-  const handleMarkAsRead = async (id: string) => {
-    try {
-      await markAsRead.mutateAsync(id);
-    } catch (err) {
-      console.error(err);
-    }
+  const handleMarkAsRead = (id: string) => {
+    markAsRead.mutate(id, {
+      onSuccess: () => toast.success('Notification marked as read'),
+      onError: (err) => toast.error(`Failed to mark as read: ${err.message}`),
+    });
   };
 
-  const handleMarkAllAsRead = async () => {
-    try {
-      await markAllAsRead.mutateAsync();
-    } catch (err) {
-      console.error(err);
-    }
+  const handleMarkAllAsRead = () => {
+    markAllAsRead.mutate(undefined, {
+      onSuccess: () => toast.success('All notifications marked as read'),
+      onError: (err) => toast.error(`Failed to mark all as read: ${err.message}`),
+    });
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteId) return;
-    try {
-      await deleteNotification.mutateAsync(deleteId);
-      setDeleteId(null);
-    } catch (err) {
-      console.error(err);
-    }
+    deleteNotification.mutate(deleteId, {
+      onSuccess: () => {
+        toast.success('Notification deleted');
+        setDeleteId(null);
+      },
+      onError: (err) => toast.error(`Failed to delete notification: ${err.message}`),
+    });
   };
 
-  const handleTogglePreference = async (key: string, value: boolean) => {
-    try {
-      await updatePreferences.mutateAsync({ [key]: value });
-    } catch (err) {
-      console.error(err);
-    }
+  const handleTogglePreference = (key: string, value: boolean) => {
+    updatePreferences.mutate({ [key]: value }, {
+      onSuccess: () => toast.success('Preferences updated'),
+      onError: (err) => toast.error(`Failed to update preferences: ${err.message}`),
+    });
   };
 
   if (notificationsLoading || preferencesLoading) {
     return <PageSkeleton />;
   }
+  if (notificationsError) return <ErrorState message={notificationsErrorObj?.message} onRetry={notificationsRefetch} />;
 
   const notifications = notificationsData?.notifications || [];
   const unreadCount = notifications.filter(n => !n.isRead).length;
@@ -251,6 +252,7 @@ export function NotificationsPage() {
         description="This notification will be permanently deleted."
         confirmText="Delete"
         impact="medium"
+        loading={deleteNotification.isPending}
       />
     </div>
   );

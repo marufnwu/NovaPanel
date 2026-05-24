@@ -1,59 +1,42 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../components/ui/Button';
-import { Card } from '../../components/ui/Card';
 import { DataTable } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { PageSkeleton } from '../../components/ui/Skeleton';
+import { ErrorState } from '../../components/ui/ErrorState';
 import { Modal } from '../../components/ui/Modal';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { useBackups, useCreateBackup, useRestoreBackup, useDeleteBackup, type Backup } from '../../api/hooks/backup';
+import {
+  useBackups,
+  useCreateBackup,
+  useRestoreBackup,
+  useDeleteBackup,
+  useDownloadBackup,
+  type Backup,
+} from '../../api/hooks/backup';
+import { toast } from '../../lib/toast';
 import { Icon } from '../../components/icons';
 
 export function BackupsPage() {
   const queryClient = useQueryClient();
-  const { data: backups, isLoading } = useBackups();
+  const {
+    data: backups,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useBackups();
   const createBackup = useCreateBackup();
   const restoreBackup = useRestoreBackup();
   const deleteBackup = useDeleteBackup();
+  const downloadBackup = useDownloadBackup();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [backupType, setBackupType] = useState<'full' | 'files' | 'database'>('full');
-  const [restoreId, setRestoreId] = useState<string | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-
-  const handleCreate = async () => {
-    try {
-      await createBackup.mutateAsync({ type: backupType });
-      setShowCreateModal(false);
-      queryClient.invalidateQueries({ queryKey: ['backups'] });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleRestore = async () => {
-    if (!restoreId) return;
-    try {
-      await restoreBackup.mutateAsync({ id: restoreId });
-      setRestoreId(null);
-      queryClient.invalidateQueries({ queryKey: ['backups'] });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!deleteId) return;
-    try {
-      await deleteBackup.mutateAsync(deleteId);
-      setDeleteId(null);
-      queryClient.invalidateQueries({ queryKey: ['backups'] });
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const [restoreTarget, setRestoreTarget] = useState<Backup | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Backup | null>(null);
 
   const formatBytes = (bytes?: number | null) => {
     if (!bytes) return '—';
@@ -62,9 +45,8 @@ export function BackupsPage() {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
-  if (isLoading) {
-    return <PageSkeleton />;
-  }
+  if (isLoading) return <PageSkeleton />;
+  if (isError) return <ErrorState message={error?.message} onRetry={refetch} />;
 
   const columns = [
     {
@@ -101,13 +83,41 @@ export function BackupsPage() {
       label: '',
       render: (b: Backup) => (
         <div className="flex gap-1">
-          <Button variant="ghost" size="small" icon={<Icon name="icon-refresh" size={15} />} onClick={() => setRestoreId(b.id)}>
+          <Button
+            variant="ghost"
+            size="small"
+            icon={<Icon name="icon-refresh" size={15} />}
+            onClick={(e) => {
+              e.stopPropagation();
+              setRestoreTarget(b);
+            }}
+          >
             Restore
           </Button>
-          <Button variant="ghost" size="small" icon={<Icon name="icon-download" size={15} />}>
+          <Button
+            variant="ghost"
+            size="small"
+            icon={<Icon name="icon-download" size={15} />}
+            loading={downloadBackup.isPending}
+            onClick={(e) => {
+              e.stopPropagation();
+              downloadBackup.mutate({ id: b.id, filename: b.filename }, {
+                onSuccess: () => toast.success('Download started'),
+                onError: (err) => toast.error(`Failed to download: ${err.message}`),
+              });
+            }}
+          >
             Download
           </Button>
-          <Button variant="ghost" size="small" icon={<Icon name="icon-trash" size={15} />} onClick={() => setDeleteId(b.id)}>
+          <Button
+            variant="ghost"
+            size="small"
+            icon={<Icon name="icon-trash" size={15} />}
+            onClick={(e) => {
+              e.stopPropagation();
+              setDeleteTarget(b);
+            }}
+          >
             Delete
           </Button>
         </div>
@@ -119,7 +129,10 @@ export function BackupsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-page-title font-medium">Backups</h1>
-        <Button icon={<Icon name="icon-backup" size={16} />} onClick={() => setShowCreateModal(true)}>
+        <Button
+          icon={<Icon name="icon-backup" size={16} />}
+          onClick={() => setShowCreateModal(true)}
+        >
           Create Backup
         </Button>
       </div>
@@ -144,8 +157,25 @@ export function BackupsPage() {
         title="Create Backup"
         footer={
           <>
-            <Button variant="ghost" onClick={() => setShowCreateModal(false)}>Cancel</Button>
-            <Button variant="primary" onClick={handleCreate} loading={createBackup.isPending}>
+            <Button variant="ghost" onClick={() => setShowCreateModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              loading={createBackup.isPending}
+              onClick={() => {
+                createBackup.mutate(
+                  { type: backupType },
+                  {
+                    onSuccess: () => {
+                      toast.success('Backup created');
+                      setShowCreateModal(false);
+                    },
+                    onError: (err) => toast.error(`Failed to create backup: ${err.message}`),
+                  }
+                );
+              }}
+            >
               Create
             </Button>
           </>
@@ -153,9 +183,24 @@ export function BackupsPage() {
       >
         <div className="space-y-4">
           <div className="flex gap-2">
-            <Button variant={backupType === 'full' ? 'primary' : 'default'} onClick={() => setBackupType('full')}>Full</Button>
-            <Button variant={backupType === 'files' ? 'primary' : 'default'} onClick={() => setBackupType('files')}>Files</Button>
-            <Button variant={backupType === 'database' ? 'primary' : 'default'} onClick={() => setBackupType('database')}>Database</Button>
+            <Button
+              variant={backupType === 'full' ? 'primary' : 'default'}
+              onClick={() => setBackupType('full')}
+            >
+              Full
+            </Button>
+            <Button
+              variant={backupType === 'files' ? 'primary' : 'default'}
+              onClick={() => setBackupType('files')}
+            >
+              Files
+            </Button>
+            <Button
+              variant={backupType === 'database' ? 'primary' : 'default'}
+              onClick={() => setBackupType('database')}
+            >
+              Database
+            </Button>
           </div>
           <p className="text-small text-foreground-secondary">
             {backupType === 'full' && 'Backup all files and databases'}
@@ -166,19 +211,40 @@ export function BackupsPage() {
       </Modal>
 
       <ConfirmDialog
-        isOpen={!!restoreId}
-        onClose={() => setRestoreId(null)}
-        onConfirm={handleRestore}
+        isOpen={!!restoreTarget}
+        onClose={() => setRestoreTarget(null)}
+        onConfirm={() => {
+          if (!restoreTarget) return;
+          restoreBackup.mutate(
+            { id: restoreTarget.id },
+            {
+              onSuccess: () => {
+                toast.success('Backup restore started');
+                setRestoreTarget(null);
+              },
+              onError: (err) => toast.error(`Failed to restore: ${err.message}`),
+            }
+          );
+        }}
         title="Restore Backup"
-        description="This will overwrite current data with the backup. This action cannot be undone."
+        description={`Restore "${restoreTarget?.filename}"? This will overwrite current data. This cannot be undone.`}
         confirmText="Restore"
         impact="high"
       />
 
       <ConfirmDialog
-        isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
-        onConfirm={handleDelete}
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          deleteBackup.mutate(deleteTarget.id, {
+            onSuccess: () => {
+              toast.success('Backup deleted');
+              setDeleteTarget(null);
+            },
+            onError: (err) => toast.error(`Failed to delete backup: ${err.message}`),
+          });
+        }}
         title="Delete Backup"
         description="This backup will be permanently deleted."
         confirmText="Delete"

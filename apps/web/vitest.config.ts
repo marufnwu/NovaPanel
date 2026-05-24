@@ -26,10 +26,10 @@ export default defineConfig({
         'src/router.tsx',
       ],
       thresholds: {
-        statements: 49,
+        statements: 55,
         branches: 75,
-        functions: 27,
-        lines: 49,
+        functions: 35,
+        lines: 55,
       },
     },
   },

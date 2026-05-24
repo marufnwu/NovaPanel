@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(claude mcp *)",
+      "Bash(ssh -i \"C:\\\\Users\\\\Maruf\\\\.ssh\\\\id_rsa\" maruf@192.168.0.211 \"sudo /opt/novapanel/rebuild-and-deploy.sh\")",
+      "Bash(ssh -i \"C:\\\\Users\\\\Maruf\\\\.ssh\\\\id_rsa\" maruf@192.168.0.211 \"ls /opt/novapanel/scripts/\")",
+      "Bash(ssh -i \"C:\\\\Users\\\\Maruf\\\\.ssh\\\\id_rsa\" maruf@192.168.0.211 \"bash /opt/novapanel/scripts/rebuild-and-deploy.sh\")",
+      "Bash(ssh -i \"C:\\\\Users\\\\Maruf\\\\.ssh\\\\id_rsa\" maruf@192.168.0.211 \"cat /opt/novapanel/apps/web/tsconfig.json\")",
+      "Bash(ssh -i \"C:\\\\Users\\\\Maruf\\\\.ssh\\\\id_rsa\" maruf@192.168.0.211 \"cd /opt/novapanel/apps/web && sed -i 's/\\\\\"include\\\\\":/\\\\\"exclude\\\\\": [\\\\\"src\\\\/\\\\**\\\\/*.test.ts\\\\\", \\\\\"src\\\\/\\\\**\\\\/*.test.tsx\\\\\", \\\\\"src\\\\/test\\\\/**\\\\\", \\\\\"src\\\\/test\\\\/**\\\\\"],\\\\n  \\\\\"include\\\\\":/' tsconfig.json\")",
+      "Bash(ssh -i \"C:\\\\Users\\\\Maruf\\\\.ssh\\\\id_rsa\" maruf@192.168.0.211 \"cd /opt/novapanel/apps/web && sed -i 's/\\\\\"exclude\\\\\": \\\\[.*\\\\],/\\\\\"exclude\\\\\": [\\\\\"src\\\\/**\\\\/*.test.ts\\\\\", \\\\\"src\\\\/**\\\\/*.test.tsx\\\\\", \\\\\"src\\\\/test\\\\/**\\\\\"],/' tsconfig.json\")",
+      "Bash(ssh -i \"C:\\\\Users\\\\Maruf\\\\.ssh\\\\id_rsa\" maruf@192.168.0.211 \"cd /opt/novapanel && git checkout apps/web/tsconfig.json 2>&1 && cat apps/web/tsconfig.json\")"
+    ]
+  }
+}

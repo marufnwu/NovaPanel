@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../components/ui/Button';
 import { DataTable } from '../../components/ui/DataTable';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -9,17 +9,33 @@ import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { useDomains } from '../../api/hooks/domains';
-import { useDnsZone, useCreateDnsRecord, useDeleteDnsRecord, type DnsRecord } from '../../api/hooks/dns';
+import { ErrorState } from '../../components/ui/ErrorState';
+import {
+  useDnsZone,
+  useCreateDnsRecord,
+  useDeleteDnsRecord,
+  useCloudflareConfig,
+  useUpdateCloudflareConfig,
+  useSyncCloudflareRecords,
+  type DnsRecord,
+} from '../../api/hooks/dns';
 import { Icon } from '../../components/icons';
+import { toast } from '../../lib/toast';
 
 export function DnsPage() {
   const queryClient = useQueryClient();
-  const { data: domains } = useDomains();
+  const { data: domains, isLoading: domainsLoading, isError: domainsError, error: domainsErr, refetch: refetchDomains } = useDomains();
   const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
 
-  const { data: dnsZone, isLoading } = useDnsZone(selectedDomainId || '');
+  const { data: dnsZone, isLoading, isError: dnsError, error: dnsErr, refetch: refetchDns } = useDnsZone(selectedDomainId || '');
   const createRecord = useCreateDnsRecord();
   const deleteRecord = useDeleteDnsRecord();
+
+  const { data: cloudflareConfig } = useCloudflareConfig(selectedDomainId || '');
+  const updateCloudflare = useUpdateCloudflareConfig();
+  const syncCloudflare = useSyncCloudflareRecords();
+
+  const [cloudflareOpen, setCloudflareOpen] = useState(false);
 
   const [showAddRecord, setShowAddRecord] = useState(false);
   const [newRecordType, setNewRecordType] = useState('A');
@@ -28,34 +44,42 @@ export function DnsPage() {
   const [newRecordTtl, setNewRecordTtl] = useState(3600);
   const [deleteRecordId, setDeleteRecordId] = useState<string | null>(null);
 
-  const handleAddRecord = async () => {
-    if (!selectedDomainId) return;
-    try {
-      await createRecord.mutateAsync({
-        domainId: selectedDomainId,
-        type: newRecordType,
-        name: newRecordName,
-        value: newRecordValue,
-        ttl: newRecordTtl,
-      });
-      setShowAddRecord(false);
-      setNewRecordName('');
-      setNewRecordValue('');
-      queryClient.invalidateQueries({ queryKey: ['dns', selectedDomainId] });
-    } catch (err) {
-      console.error(err);
+  useEffect(() => {
+    if (!selectedDomainId && domains && domains.length > 0) {
+      setSelectedDomainId(domains[0].id);
     }
+  }, [domains, selectedDomainId]);
+
+  const handleAddRecord = async () => {
+    if (!selectedDomainId || !newRecordName || !newRecordValue) return;
+    createRecord.mutateAsync({
+      domainId: selectedDomainId,
+      type: newRecordType,
+      name: newRecordName,
+      value: newRecordValue,
+      ttl: newRecordTtl,
+    }, {
+      onSuccess: () => {
+        toast.success('DNS record added');
+        setShowAddRecord(false);
+        setNewRecordName('');
+        setNewRecordValue('');
+        queryClient.invalidateQueries({ queryKey: ['dns', selectedDomainId] });
+      },
+      onError: (err: any) => toast.error(`Failed to add DNS record: ${err.message}`),
+    });
   };
 
   const handleDeleteRecord = async () => {
     if (!deleteRecordId || !selectedDomainId) return;
-    try {
-      await deleteRecord.mutateAsync({ domainId: selectedDomainId, recordId: deleteRecordId });
-      setDeleteRecordId(null);
-      queryClient.invalidateQueries({ queryKey: ['dns', selectedDomainId] });
-    } catch (err) {
-      console.error(err);
-    }
+    deleteRecord.mutateAsync({ domainId: selectedDomainId, recordId: deleteRecordId }, {
+      onSuccess: () => {
+        toast.success('DNS record deleted');
+        setDeleteRecordId(null);
+        queryClient.invalidateQueries({ queryKey: ['dns', selectedDomainId] });
+      },
+      onError: (err: any) => toast.error(`Failed to delete DNS record: ${err.message}`),
+    });
   };
 
   const recordTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SOA', 'SRV', 'CAA'];
@@ -106,13 +130,11 @@ export function DnsPage() {
     },
   ];
 
-  if (!selectedDomainId && domains && domains.length > 0) {
-    setSelectedDomainId(domains[0].id);
-  }
-
-  if (isLoading) {
+  if (domainsLoading) {
     return <PageSkeleton />;
   }
+  if (domainsError) return <ErrorState message={domainsErr?.message} onRetry={refetchDomains} />;
+  if (dnsError && selectedDomainId) return <ErrorState message={dnsErr?.message} onRetry={refetchDns} />;
 
   return (
     <div className="space-y-6">
@@ -160,6 +182,69 @@ export function DnsPage() {
           </p>
         )}
       </Card>
+
+      {selectedDomainId && (
+        <Card className="p-0">
+          <button
+            onClick={() => setCloudflareOpen((prev) => !prev)}
+            className="w-full flex items-center justify-between p-4 hover:bg-background-secondary transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <Icon name="icon-cloud" size={18} className="text-foreground-secondary" />
+              <span className="text-card-title font-medium">Cloudflare</span>
+            </div>
+            <Icon
+              name="icon-chevron-down"
+              size={16}
+              className={`text-foreground-secondary transition-transform ${cloudflareOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {cloudflareOpen && (
+            <div className="px-4 pb-4 border-t border-border-tertiary pt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-small font-medium">Enable Cloudflare DNS</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={cloudflareConfig?.enabled ?? false}
+                  onChange={(e) => {
+                    if (!selectedDomainId) return;
+                    updateCloudflare.mutate(
+                      { domainId: selectedDomainId, enabled: e.target.checked },
+                      {
+                        onSuccess: () => toast.success('Cloudflare DNS updated'),
+                        onError: (err) => toast.error(`Failed to update: ${err.message}`),
+                      }
+                    );
+                  }}
+                  className="accent-foreground-info"
+                />
+              </div>
+              {cloudflareConfig?.lastSyncAt && (
+                <p className="text-small text-foreground-tertiary mt-2">
+                  Last synced: {new Date(cloudflareConfig.lastSyncAt).toLocaleString()}
+                </p>
+              )}
+              <Button
+                variant="default"
+                size="small"
+                loading={syncCloudflare.isPending}
+                onClick={() => {
+                  if (!selectedDomainId) return;
+                  syncCloudflare.mutate(selectedDomainId, {
+                    onSuccess: () => toast.success('Cloudflare records synced'),
+                    onError: (err) => toast.error(`Failed to sync: ${err.message}`),
+                  });
+                }}
+                className="mt-3"
+              >
+                Sync with Cloudflare
+              </Button>
+            </div>
+          )}
+        </Card>
+      )}
 
       <Modal
         isOpen={showAddRecord}
@@ -219,6 +304,7 @@ export function DnsPage() {
         description="This record will be removed from your DNS zone."
         confirmText="Delete"
         impact="medium"
+        loading={deleteRecord.isPending}
       />
     </div>
   );

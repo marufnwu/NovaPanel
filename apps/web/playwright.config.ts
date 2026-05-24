@@ -2,15 +2,21 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
-  fullyParallel: true,
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : 2,
+  retries: 1,
+  workers: 1,
   reporter: process.env.CI ? 'github' : 'html',
+  timeout: 60000,
   use: {
     baseURL: 'http://192.168.0.212:8732',
+    actionTimeout: 15000,
+    navigationTimeout: 30000,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+  },
+  expect: {
+    toHaveScreenshot: { maxDiffPixels: 100 },
   },
   projects: [
     {

@@ -13,11 +13,11 @@ export function BillingPage() {
   const orgId = activeOrgId || 'default';
   const { data: invoices, isLoading: invoicesLoading } = useInvoices(orgId);
   const { data: usageSummary, isLoading: usageLoading } = useUsageSummary(orgId);
-  const { data: plans } = usePlans();
+  const { data: plans, isLoading: plansLoading } = usePlans();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'invoices' | 'plans'>('overview');
 
-  if (invoicesLoading || usageLoading) {
+  if (invoicesLoading || usageLoading || (activeTab === 'plans' && plansLoading)) {
     return <PageSkeleton />;
   }
 

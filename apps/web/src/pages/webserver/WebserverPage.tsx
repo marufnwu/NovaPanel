@@ -7,8 +7,10 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { PageSkeleton } from '../../components/ui/Skeleton';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { useWebserverStatus, useWebserverDomains, useVhostConfig, useUpdateVhost, type VhostConfig, type DomainOption } from '../../api/hooks/webserver';
 import { Icon } from '../../components/icons';
+import { toast } from '../../lib/toast';
 
 export function WebserverPage() {
   const queryClient = useQueryClient();
@@ -23,6 +25,7 @@ export function WebserverPage() {
   const [gzip, setGzip] = useState(true);
   const [hsts, setHsts] = useState(false);
   const [caching, setCaching] = useState(false);
+  const [reloadTarget, setReloadTarget] = useState<'nginx' | 'apache' | null>(null);
 
   const handleSave = async () => {
     if (!selectedDomain) return;
@@ -36,9 +39,25 @@ export function WebserverPage() {
       });
       setShowEditModal(false);
       queryClient.invalidateQueries({ queryKey: ['webserver'] });
-    } catch (err) {
-      console.error(err);
+      toast.success('Webserver configuration saved');
+    } catch (err: any) {
+      toast.error(`Failed to save configuration: ${err.message}`);
     }
+  };
+
+  const handleReload = () => {
+    if (!reloadTarget) return;
+    updateVhost.mutate(
+      { domain: reloadTarget, action: 'reload' } as any,
+      {
+        onSuccess: () => {
+          toast.success(`${reloadTarget.charAt(0).toUpperCase() + reloadTarget.slice(1)} reloaded`);
+          setReloadTarget(null);
+          queryClient.invalidateQueries({ queryKey: ['webserver'] });
+        },
+        onError: (err: any) => toast.error(`Failed to reload ${reloadTarget}: ${err.message}`),
+      }
+    );
   };
 
   if (statusLoading) {
@@ -90,7 +109,7 @@ export function WebserverPage() {
         <Card title="Nginx">
           <div className="flex items-center justify-between">
             <StatusBadge status={status?.nginx?.status === 'running' ? 'running' : 'stopped'} />
-            <Button variant="ghost" size="small" onClick={() => updateVhost.mutate({ domain: 'nginx', action: 'reload' } as any)}>
+            <Button variant="ghost" size="small" onClick={() => setReloadTarget('nginx')} loading={updateVhost.isPending}>
               Reload
             </Button>
           </div>
@@ -98,7 +117,7 @@ export function WebserverPage() {
         <Card title="Apache">
           <div className="flex items-center justify-between">
             <StatusBadge status={status?.apache?.status === 'running' ? 'running' : 'stopped'} />
-            <Button variant="ghost" size="small" onClick={() => updateVhost.mutate({ domain: 'apache', action: 'reload' } as any)}>
+            <Button variant="ghost" size="small" onClick={() => setReloadTarget('apache')} loading={updateVhost.isPending}>
               Reload
             </Button>
           </div>
@@ -155,6 +174,17 @@ export function WebserverPage() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={!!reloadTarget}
+        onClose={() => setReloadTarget(null)}
+        onConfirm={handleReload}
+        title={`Reload ${reloadTarget ? reloadTarget.charAt(0).toUpperCase() + reloadTarget.slice(1) : ''}`}
+        description="Reloading the web server may cause a brief interruption for active connections."
+        confirmText="Reload"
+        impact="medium"
+        loading={updateVhost.isPending}
+      />
     </div>
   );
 }

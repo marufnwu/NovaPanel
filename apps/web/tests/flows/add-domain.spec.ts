@@ -1,27 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { login, loginViaApi } from '../helpers';
 
-const ADMIN_USER = 'admin';
-const ADMIN_PASS = '7656ea4205a1b648632549c37c2089dc';
 const DOMAIN_NAME = `e2e-add-domain-${Date.now()}.com`;
-
-async function login(page: any) {
-  await page.goto('/login');
-  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-
-  const usernameInput = page.locator('input[name="username"], input[type="text"]').first();
-  const isLoginPage = await usernameInput.isVisible({ timeout: 3000 }).catch(() => false);
-
-  if (!isLoginPage) {
-    await page.evaluate(() => localStorage.clear());
-    await page.goto('/login');
-    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-  }
-
-  await page.fill('input[name="username"], input[type="text"]', ADMIN_USER).catch(() => {});
-  await page.fill('input[type="password"]', ADMIN_PASS).catch(() => {});
-  await page.click('button[type="submit"]').catch(() => {});
-  await page.waitForURL(/\/dashboard/, { timeout: 20000 }).catch(() => {});
-}
 
 test.describe.configure({ mode: 'serial' });
 
@@ -44,11 +24,11 @@ test.describe('Add Domain Flow', () => {
   });
 
   test('create domain via API', async ({ page }) => {
-    const res = await page.request.post('/api/v1/auth/login', {
-      data: { username: ADMIN_USER, password: ADMIN_PASS },
-    });
-    const body = await res.json();
-    const sessionId = body.data?.sessionId;
+    const sessionId = await loginViaApi(page.request);
+    if (!sessionId) {
+      test.skip();
+      return;
+    }
 
     const createRes = await page.request.post('/api/v1/domains', {
       headers: { Cookie: `sf_session=${sessionId}`, 'Content-Type': 'application/json' },
@@ -61,6 +41,7 @@ test.describe('Add Domain Flow', () => {
       expect(createBody.data.name).toBe(DOMAIN_NAME);
     } else {
       test.skip();
+      return;
     }
   });
 
@@ -68,6 +49,8 @@ test.describe('Add Domain Flow', () => {
     if (!domainId) return;
     await login(page);
     await page.goto('/domains');
+    await page.waitForLoadState('networkidle', { timeout: 15000 });
+    await page.reload();
     await page.waitForLoadState('networkidle', { timeout: 15000 });
     await expect(page.locator(`text=${DOMAIN_NAME}`).first()).toBeVisible({ timeout: 10000 });
   });
@@ -80,11 +63,7 @@ test.describe('Add Domain Flow', () => {
 });
 
 test.afterAll(async ({ request }) => {
-  const loginRes = await request.post('/api/v1/auth/login', {
-    data: { username: ADMIN_USER, password: ADMIN_PASS },
-  });
-  const loginBody = await loginRes.json();
-  const sessionId = loginBody.data?.sessionId;
+  const sessionId = await loginViaApi(request);
   if (!sessionId) return;
 
   const listRes = await request.get('/api/v1/domains', {

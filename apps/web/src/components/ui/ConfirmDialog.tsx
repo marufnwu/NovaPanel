@@ -11,6 +11,7 @@ interface ConfirmDialogProps {
   confirmText?: string;
   cancelText?: string;
   impact?: 'low' | 'medium' | 'high';
+  loading?: boolean;
 }
 
 export function ConfirmDialog({
@@ -22,6 +23,7 @@ export function ConfirmDialog({
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   impact = 'low',
+  loading = false,
 }: ConfirmDialogProps) {
   const [confirmValue, setConfirmValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -72,7 +74,8 @@ export function ConfirmDialog({
           <Button
             variant="danger"
             onClick={onConfirm}
-            disabled={!canConfirm}
+            disabled={!canConfirm || loading}
+            loading={loading}
           >
             {confirmText}
           </Button>

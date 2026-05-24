@@ -1,21 +1,5 @@
 import { test, expect } from '@playwright/test';
-
-const ADMIN_USER = 'admin';
-const ADMIN_PASS = '7656ea4205a1b648632549c37c2089dc';
-
-async function login(page: any) {
-  await page.goto('/login');
-  await page.fill('input[name="username"], input[type="text"]', ADMIN_USER);
-  await page.fill('input[type="password"]', ADMIN_PASS);
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/dashboard/, { timeout: 20000 });
-}
-
-async function logout(page: any) {
-  await page.click('button[aria-label="User menu"]');
-  await page.getByText('Logout').click();
-  await page.waitForURL(/\/login/, { timeout: 5000 });
-}
+import { login } from './helpers';
 
 test.describe('Login Page', () => {
   test('renders login form elements', async ({ page }) => {
@@ -26,11 +10,7 @@ test.describe('Login Page', () => {
   });
 
   test('redirects to dashboard on valid login', async ({ page }) => {
-    await page.goto('/login');
-    await page.fill('input[name="username"], input[type="text"]', ADMIN_USER);
-    await page.fill('input[type="password"]', ADMIN_PASS);
-    await page.click('button[type="submit"]');
-    await page.waitForURL(/\/dashboard/, { timeout: 20000 });
+    await login(page);
     await expect(page).toHaveURL(/\/dashboard/);
   });
 
@@ -110,6 +90,8 @@ test.describe('Logout', () => {
 });
 
 test.describe('Auth State', () => {
+  test.use({ storageState: [] });
+
   test('unauthenticated user redirected to login', async ({ page }) => {
     await page.goto('/dashboard');
     await page.waitForURL(/\/login/, { timeout: 5000 });
@@ -118,6 +100,8 @@ test.describe('Auth State', () => {
 
   test('login page is accessible without auth', async ({ page }) => {
     await page.goto('/login');
-    await expect(page.locator('input[name="username"], input[type="text"]').first()).toBeVisible();
+    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    const input = page.locator('input[name="username"], input[type="text"]').first();
+    await expect(input).toBeVisible({ timeout: 10000 });
   });
 });

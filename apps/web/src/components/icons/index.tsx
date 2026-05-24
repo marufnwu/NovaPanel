@@ -55,7 +55,9 @@ type IconName =
   | 'icon-alert-triangle'
   | 'icon-alert-circle'
   | 'icon-check-circle'
-  | 'icon-x-circle';
+  | 'icon-x-circle'
+  | 'icon-cloud'
+  | 'icon-users';
 
 const iconMap: Record<IconName, React.FC<{ size?: number; className?: string }>> = {
   'icon-host': TablerIcons.IconWorld as any,
@@ -113,6 +115,8 @@ const iconMap: Record<IconName, React.FC<{ size?: number; className?: string }>>
   'icon-alert-circle': TablerIcons.IconAlertCircle as any,
   'icon-check-circle': TablerIcons.IconCircleCheck as any,
   'icon-x-circle': TablerIcons.IconCircleX as any,
+  'icon-cloud': TablerIcons.IconCloud as any,
+  'icon-users': TablerIcons.IconUsers as any,
 };
 
 interface IconProps {

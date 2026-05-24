@@ -122,7 +122,10 @@ export function useUninstallApp() {
   return useMutation({
     mutationFn: (data: { appId: string }) =>
       api.post('/installer/uninstall', data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['installer', 'installed'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['installer', 'installed'] });
+      qc.invalidateQueries({ queryKey: ['installer', 'apps'] });
+    },
   });
 }
 

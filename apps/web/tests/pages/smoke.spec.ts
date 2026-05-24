@@ -1,15 +1,5 @@
 import { test, expect } from '@playwright/test';
-
-const ADMIN_USER = 'admin';
-const ADMIN_PASS = '7656ea4205a1b648632549c37c2089dc';
-
-async function login(page: any) {
-  await page.goto('/login');
-  await page.fill('input[name="username"], input[type="text"]', ADMIN_USER);
-  await page.fill('input[type="password"]', ADMIN_PASS);
-  await page.click('button[type="submit"]');
-  await page.waitForURL(/\/dashboard/, { timeout: 20000 });
-}
+import { login } from '../helpers';
 
 const PAGES = [
   { path: '/dashboard', name: 'Dashboard' },

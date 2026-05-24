@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAccessLogs, useErrorLogs, usePanelLogs, useSystemLogs } from '../../api/hooks/logs';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Icon } from '../../components/icons';
+import { toast } from '../../lib/toast';
 import { cn } from '../../lib/utils';
 
 type LogSource = 'access' | 'error' | 'panel' | 'system';
@@ -15,6 +17,7 @@ const LOG_SOURCES: { id: LogSource; label: string }[] = [
 ];
 
 export function LogsPage() {
+  const queryClient = useQueryClient();
   const [selectedSource, setSelectedSource] = useState<LogSource>('access');
   const [lines, setLines] = useState(100);
 
@@ -45,7 +48,8 @@ export function LogsPage() {
   };
 
   const handleRefresh = () => {
-    window.location.reload();
+    queryClient.invalidateQueries({ queryKey: ['logs'] });
+    toast.success('Logs refreshed');
   };
 
   return (
