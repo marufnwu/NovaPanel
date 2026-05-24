@@ -21,7 +21,12 @@ Received array:  [{"description": "Ensure the contrast between foreground and ba
   Element has insufficient color contrast of 3.47 (foreground color: #6b7280, background color: #1a1d27, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1", "html": "<span class=\"text-section-label text-foreground-tertiary uppercase tracking-wide\">Server</span>", "impact": "serious", "none": [], "target": [".mb-4:nth-child(2) > .mb-1.px-4 > .text-section-label.uppercase.tracking-wide"]}, {"all": [], "any": [[Object]], "failureSummary": "Fix any of the following:
   Element has insufficient color contrast of 3.47 (foreground color: #6b7280, background color: #1a1d27, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1", "html": "<span class=\"text-section-label text-foreground-tertiary uppercase tracking-wide\">Domains</span>", "impact": "serious", "none": [], "target": [".mb-4:nth-child(3) > .mb-1.px-4 > .text-section-label.uppercase.tracking-wide"]}, {"all": [], "any": [[Object]], "failureSummary": "Fix any of the following:
   Element has insufficient color contrast of 3.47 (foreground color: #6b7280, background color: #1a1d27, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1", "html": "<span class=\"text-section-label text-foreground-tertiary uppercase tracking-wide\">System</span>", "impact": "serious", "none": [], "target": [".mb-4:nth-child(4) > .mb-1.px-4 > .text-section-label.uppercase.tracking-wide"]}, {"all": [], "any": [[Object]], "failureSummary": "Fix any of the following:
-  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #0f1117, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1", "html": "<p class=\"text-small text-foreground-tertiary text-center py-8\">Select a domain to configure PHP settings</p>", "impact": "serious", "none": [], "target": ["p"]}], "tags": ["cat.color", "wcag2aa", "wcag143", "TTv5", "TT13.c", "EN-301-549", "EN-9.1.4.3", "ACT", "RGAAv4", "RGAA-3.2.1"]}, {"description": "Ensure the order of headings is semantically correct", "help": "Heading levels should only increase by one", "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/heading-order?application=playwright", "id": "heading-order", "impact": "moderate", "nodes": [{"all": [], "any": [[Object]], "failureSummary": "Fix any of the following:
+  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #0f1117, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1", "html": "<span class=\"text-foreground-tertiary\">Process Manager</span>", "impact": "serious", "none": [], "target": [".border-t.pt-4.border-border-tertiary:nth-child(2) > .grid.grid-cols-3.gap-4 > div:nth-child(1) > .text-foreground-tertiary"]}, {"all": [], "any": [[Object]], "failureSummary": "Fix any of the following:
+  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #0f1117, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1", "html": "<span class=\"text-foreground-tertiary\">Max Children</span>", "impact": "serious", "none": [], "target": [".border-t.pt-4.border-border-tertiary:nth-child(2) > .grid.grid-cols-3.gap-4 > div:nth-child(2) > .text-foreground-tertiary"]}, {"all": [], "any": [[Object]], "failureSummary": "Fix any of the following:
+  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #0f1117, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1", "html": "<span class=\"text-foreground-tertiary\">Start Servers</span>", "impact": "serious", "none": [], "target": [".border-t.pt-4.border-border-tertiary:nth-child(2) > .grid.grid-cols-3.gap-4 > div:nth-child(3) > .text-foreground-tertiary"]}, {"all": [], "any": [[Object]], "failureSummary": "Fix any of the following:
+  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #0f1117, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1", "html": "<span class=\"text-foreground-tertiary\">Memory Limit</span>", "impact": "serious", "none": [], "target": [".border-t.pt-4.border-border-tertiary:nth-child(3) > .grid.grid-cols-3.gap-4 > div:nth-child(1) > .text-foreground-tertiary"]}, {"all": [], "any": [[Object]], "failureSummary": "Fix any of the following:
+  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #0f1117, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1", "html": "<span class=\"text-foreground-tertiary\">Max Execution Time</span>", "impact": "serious", "none": [], "target": [".border-t.pt-4.border-border-tertiary:nth-child(3) > .grid.grid-cols-3.gap-4 > div:nth-child(2) > .text-foreground-tertiary"]}, {"all": [], "any": [[Object]], "failureSummary": "Fix any of the following:
+  Element has insufficient color contrast of 3.9 (foreground color: #6b7280, background color: #0f1117, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1", "html": "<span class=\"text-foreground-tertiary\">Upload Max</span>", "impact": "serious", "none": [], "target": [".border-t.pt-4.border-border-tertiary:nth-child(3) > .grid.grid-cols-3.gap-4 > div:nth-child(3) > .text-foreground-tertiary"]}, …], "tags": ["cat.color", "wcag2aa", "wcag143", "TTv5", "TT13.c", "EN-301-549", "EN-9.1.4.3", "ACT", "RGAAv4", "RGAA-3.2.1"]}, {"description": "Ensure the order of headings is semantically correct", "help": "Heading levels should only increase by one", "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/heading-order?application=playwright", "id": "heading-order", "impact": "moderate", "nodes": [{"all": [], "any": [[Object]], "failureSummary": "Fix any of the following:
   Heading order invalid", "html": "<h3 class=\"text-card-title font-medium\">Installed Versions</h3>", "impact": "moderate", "none": [], "target": [".rounded-xl.p-4.border:nth-child(2) > .mb-3.justify-between > h3"]}], "tags": ["cat.semantics", "best-practice"]}, {"description": "Ensure landmarks are unique", "help": "Landmarks should have a unique role or role/label/title (i.e. accessible name) combination", "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/landmark-unique?application=playwright", "id": "landmark-unique", "impact": "moderate", "nodes": [{"all": [], "any": [[Object]], "failureSummary": "Fix any of the following:
   The landmark must have a unique aria-label, aria-labelledby, or title to make landmarks distinguishable", "html": "<nav class=\"flex-1 overflow-y-auto py-2\">", "impact": "moderate", "none": [], "target": ["aside > nav"]}], "tags": ["cat.semantics", "best-practice"]}, {"description": "Ensure all page content is contained by landmarks", "help": "All page content should be contained by landmarks", "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/region?application=playwright", "id": "region", "impact": "moderate", "nodes": [{"all": [], "any": [[Object]], "failureSummary": "Fix any of the following:
   Some page content is not contained by landmarks", "html": "<div class=\"h-9 flex items-center px-6 bg-background-secondary border-b border-border-tertiary text-small gap-6\">", "impact": "moderate", "none": [], "target": [".h-9"]}], "tags": ["cat.keyboard", "best-practice", "RGAAv4", "RGAA-9.2.1"]}, {"description": "Ensure select element has an accessible name", "help": "Select element must have an accessible name", "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/select-name?application=playwright", "id": "select-name", "impact": "critical", "nodes": [{"all": [], "any": [[Object], [Object], [Object], [Object], [Object], [Object]], "failureSummary": "Fix any of the following:
@@ -36,222 +41,279 @@ Received array:  [{"description": "Ensure the contrast between foreground and ba
 # Page snapshot
 
 ```yaml
-- generic [ref=e3]:
-  - complementary [ref=e4]:
-    - generic [ref=e6]: NovaPanel
-    - navigation [ref=e7]:
-      - generic [ref=e8]:
-        - generic [ref=e9]: Apps
-        - list [ref=e10]:
-          - listitem [ref=e11]:
-            - link "Sites" [ref=e12] [cursor=pointer]:
-              - /url: /sites
-              - img [ref=e13]
-              - generic [ref=e17]: Sites
-          - listitem [ref=e18]:
-            - link "Databases" [ref=e19] [cursor=pointer]:
-              - /url: /databases
-              - img [ref=e20]
-              - generic [ref=e24]: Databases
-          - listitem [ref=e25]:
-            - link "Cron Jobs" [ref=e26] [cursor=pointer]:
-              - /url: /cron
-              - img [ref=e27]
-              - generic [ref=e30]: Cron Jobs
-          - listitem [ref=e31]:
-            - link "Installer" [ref=e32] [cursor=pointer]:
-              - /url: /installer
-              - img [ref=e33]
-              - generic [ref=e36]: Installer
-      - generic [ref=e37]:
-        - generic [ref=e38]: Server
-        - list [ref=e39]:
-          - listitem [ref=e40]:
-            - link "Services" [ref=e41] [cursor=pointer]:
-              - /url: /services
-              - img [ref=e42]
-              - generic [ref=e45]: Services
-          - listitem [ref=e46]:
-            - link "Firewall" [ref=e47] [cursor=pointer]:
-              - /url: /firewall
-              - img [ref=e48]
-              - generic [ref=e50]: Firewall
-          - listitem [ref=e51]:
-            - link "Backups" [ref=e52] [cursor=pointer]:
-              - /url: /backups
-              - img [ref=e53]
-              - generic [ref=e56]: Backups
-          - listitem [ref=e57]:
-            - link "Terminal" [ref=e58] [cursor=pointer]:
-              - /url: /terminal
-              - img [ref=e59]
-              - generic [ref=e61]: Terminal
-          - listitem [ref=e62]:
-            - link "Files" [ref=e63] [cursor=pointer]:
-              - /url: /files
-              - img [ref=e64]
-              - generic [ref=e66]: Files
-      - generic [ref=e67]:
-        - generic [ref=e68]: Domains
-        - list [ref=e69]:
-          - listitem [ref=e70]:
-            - link "Domains" [ref=e71] [cursor=pointer]:
-              - /url: /domains
-              - img [ref=e72]
-              - generic [ref=e76]: Domains
-          - listitem [ref=e77]:
-            - link "DNS" [ref=e78] [cursor=pointer]:
-              - /url: /dns
-              - img [ref=e79]
-              - generic [ref=e81]: DNS
-          - listitem [ref=e82]:
-            - link "SSL" [ref=e83] [cursor=pointer]:
-              - /url: /ssl
-              - img [ref=e84]
-              - generic [ref=e88]: SSL
-          - listitem [ref=e89]:
-            - link "Mail" [ref=e90] [cursor=pointer]:
-              - /url: /mail
-              - img [ref=e91]
-              - generic [ref=e94]: Mail
-          - listitem [ref=e95]:
-            - link "FTP" [ref=e96] [cursor=pointer]:
-              - /url: /ftp
-              - img [ref=e97]
-              - generic [ref=e100]: FTP
-      - generic [ref=e101]:
-        - generic [ref=e102]: System
-        - list [ref=e103]:
-          - listitem [ref=e104]:
-            - link "Monitoring" [ref=e105] [cursor=pointer]:
-              - /url: /monitoring
-              - img [ref=e106]
-              - generic [ref=e110]: Monitoring
-          - listitem [ref=e111]:
-            - link "Logs" [ref=e112] [cursor=pointer]:
-              - /url: /logs
-              - img [ref=e113]
-              - generic [ref=e116]: Logs
-          - listitem [ref=e117]:
-            - link "Containers" [ref=e118] [cursor=pointer]:
-              - /url: /containers
-              - img [ref=e119]
-              - generic [ref=e123]: Containers
-          - listitem [ref=e124]:
-            - link "Jobs" [ref=e125] [cursor=pointer]:
-              - /url: /jobs
-              - img [ref=e126]
-              - generic [ref=e127]: Jobs
-          - listitem [ref=e128]:
-            - link "Audit" [ref=e129] [cursor=pointer]:
-              - /url: /audit
-              - img [ref=e130]
-              - generic [ref=e133]: Audit
-      - generic [ref=e134]:
-        - generic [ref=e135]: Settings
-        - list [ref=e136]:
-          - listitem [ref=e137]:
-            - link "Server Settings" [ref=e138] [cursor=pointer]:
-              - /url: /settings
-              - img [ref=e139]
-              - generic [ref=e142]: Server Settings
-          - listitem [ref=e143]:
-            - link "Security" [ref=e144] [cursor=pointer]:
-              - /url: /security
-              - img [ref=e145]
-              - generic [ref=e148]: Security
-          - listitem [ref=e149]:
-            - link "Notifications" [ref=e150] [cursor=pointer]:
-              - /url: /notifications
-              - img [ref=e151]
-              - generic [ref=e154]: Notifications
-          - listitem [ref=e155]:
-            - link "Webhooks" [ref=e156] [cursor=pointer]:
-              - /url: /webhooks
-              - img [ref=e157]
-              - generic [ref=e161]: Webhooks
-          - listitem [ref=e162]:
-            - link "API Tokens" [ref=e163] [cursor=pointer]:
-              - /url: /settings/api-tokens
-              - img [ref=e164]
-              - generic [ref=e166]: API Tokens
-          - listitem [ref=e167]:
-            - link "Plugins" [ref=e168] [cursor=pointer]:
-              - /url: /plugins
-              - img [ref=e169]
-              - generic [ref=e171]: Plugins
-          - listitem [ref=e172]:
-            - link "Billing" [ref=e173] [cursor=pointer]:
-              - /url: /billing
-              - img [ref=e174]
-              - generic [ref=e176]: Billing
-          - listitem [ref=e177]:
-            - link "Organizations" [ref=e178] [cursor=pointer]:
-              - /url: /organizations
-              - img [ref=e179]
-              - generic [ref=e181]: Organizations
-          - listitem [ref=e182]:
-            - link "Profile" [ref=e183] [cursor=pointer]:
-              - /url: /settings/profile
-              - img [ref=e184]
-              - generic [ref=e187]: Profile
-  - generic [ref=e188]:
-    - banner [ref=e189]:
-      - navigation [ref=e190]:
-        - generic [ref=e192]: PHP
-      - generic [ref=e193]:
-        - button "Search" [ref=e194] [cursor=pointer]:
-          - img [ref=e195]
-        - button "Notifications" [ref=e198] [cursor=pointer]:
-          - img [ref=e199]
-        - button "User menu" [ref=e202] [cursor=pointer]:
-          - img [ref=e203]
-    - generic [ref=e206]:
-      - generic [ref=e207]:
-        - generic [ref=e208]: CPU
-        - generic [ref=e209]: 34%
-      - generic [ref=e210]:
-        - generic [ref=e211]: RAM
-        - generic [ref=e212]: 83%
-      - generic [ref=e213]:
-        - generic [ref=e214]: Disk
-        - generic [ref=e215]: 30%
-      - generic [ref=e216]:
-        - generic [ref=e217]: Uptime
-        - generic [ref=e218]: 4d 12h
-      - generic [ref=e219]:
-        - generic [ref=e222]: nginx
-        - generic [ref=e225]: apache2
-        - generic [ref=e228]: named
-        - generic [ref=e231]: mariadb
-        - generic [ref=e234]: postgresql
-        - generic [ref=e237]: postfix
-        - generic [ref=e240]: dovecot
-        - generic [ref=e243]: proftpd
-        - generic [ref=e246]: ufw
-        - generic [ref=e249]: fail2ban
-        - generic [ref=e252]: cloudflared
-    - main [ref=e253]:
-      - generic [ref=e254]:
-        - heading "PHP" [level=1] [ref=e256]
-        - heading "Installed Versions" [level=3] [ref=e259]
-        - generic [ref=e260]:
-          - generic [ref=e261]:
-            - heading "Domain PHP Settings" [level=3] [ref=e262]
-            - combobox [ref=e264]:
-              - option "Select domain..." [selected]
-              - option "e2e.example.com"
-              - option "e2e.example.com"
-              - option "e2e.example.com"
-              - option "e2e.example.com"
-              - option "e2e.example.com"
-              - option "e2e.example.com"
-              - option "e2e.example.com"
-              - option "e2e.example.com"
-              - option "e2e.example.com"
-              - option "e2e.example.com"
-              - option "e2e.example.com"
-          - paragraph [ref=e265]: Select a domain to configure PHP settings
+- generic [ref=e2]:
+  - region "Notifications alt+T"
+  - generic [ref=e3]:
+    - complementary [ref=e4]:
+      - generic [ref=e6]: NovaPanel
+      - navigation [ref=e7]:
+        - generic [ref=e8]:
+          - generic [ref=e9]: Apps
+          - list [ref=e10]:
+            - listitem [ref=e11]:
+              - link "Sites" [ref=e12] [cursor=pointer]:
+                - /url: /sites
+                - img [ref=e13]
+                - generic [ref=e17]: Sites
+            - listitem [ref=e18]:
+              - link "Databases" [ref=e19] [cursor=pointer]:
+                - /url: /databases
+                - img [ref=e20]
+                - generic [ref=e24]: Databases
+            - listitem [ref=e25]:
+              - link "Cron Jobs" [ref=e26] [cursor=pointer]:
+                - /url: /cron
+                - img [ref=e27]
+                - generic [ref=e30]: Cron Jobs
+            - listitem [ref=e31]:
+              - link "Installer" [ref=e32] [cursor=pointer]:
+                - /url: /installer
+                - img [ref=e33]
+                - generic [ref=e36]: Installer
+        - generic [ref=e37]:
+          - generic [ref=e38]: Server
+          - list [ref=e39]:
+            - listitem [ref=e40]:
+              - link "Services" [ref=e41] [cursor=pointer]:
+                - /url: /services
+                - img [ref=e42]
+                - generic [ref=e45]: Services
+            - listitem [ref=e46]:
+              - link "Firewall" [ref=e47] [cursor=pointer]:
+                - /url: /firewall
+                - img [ref=e48]
+                - generic [ref=e50]: Firewall
+            - listitem [ref=e51]:
+              - link "Backups" [ref=e52] [cursor=pointer]:
+                - /url: /backups
+                - img [ref=e53]
+                - generic [ref=e56]: Backups
+            - listitem [ref=e57]:
+              - link "Terminal" [ref=e58] [cursor=pointer]:
+                - /url: /terminal
+                - img [ref=e59]
+                - generic [ref=e61]: Terminal
+            - listitem [ref=e62]:
+              - link "Files" [ref=e63] [cursor=pointer]:
+                - /url: /files
+                - img [ref=e64]
+                - generic [ref=e66]: Files
+        - generic [ref=e67]:
+          - generic [ref=e68]: Domains
+          - list [ref=e69]:
+            - listitem [ref=e70]:
+              - link "Domains" [ref=e71] [cursor=pointer]:
+                - /url: /domains
+                - img [ref=e72]
+                - generic [ref=e76]: Domains
+            - listitem [ref=e77]:
+              - link "DNS" [ref=e78] [cursor=pointer]:
+                - /url: /dns
+                - img [ref=e79]
+                - generic [ref=e81]: DNS
+            - listitem [ref=e82]:
+              - link "SSL" [ref=e83] [cursor=pointer]:
+                - /url: /ssl
+                - img [ref=e84]
+                - generic [ref=e88]: SSL
+            - listitem [ref=e89]:
+              - link "Mail" [ref=e90] [cursor=pointer]:
+                - /url: /mail
+                - img [ref=e91]
+                - generic [ref=e94]: Mail
+            - listitem [ref=e95]:
+              - link "FTP" [ref=e96] [cursor=pointer]:
+                - /url: /ftp
+                - img [ref=e97]
+                - generic [ref=e100]: FTP
+        - generic [ref=e101]:
+          - generic [ref=e102]: System
+          - list [ref=e103]:
+            - listitem [ref=e104]:
+              - link "Monitoring" [ref=e105] [cursor=pointer]:
+                - /url: /monitoring
+                - img [ref=e106]
+                - generic [ref=e110]: Monitoring
+            - listitem [ref=e111]:
+              - link "Logs" [ref=e112] [cursor=pointer]:
+                - /url: /logs
+                - img [ref=e113]
+                - generic [ref=e116]: Logs
+            - listitem [ref=e117]:
+              - link "Containers" [ref=e118] [cursor=pointer]:
+                - /url: /containers
+                - img [ref=e119]
+                - generic [ref=e123]: Containers
+            - listitem [ref=e124]:
+              - link "Jobs" [ref=e125] [cursor=pointer]:
+                - /url: /jobs
+                - img [ref=e126]
+                - generic [ref=e127]: Jobs
+            - listitem [ref=e128]:
+              - link "Audit" [ref=e129] [cursor=pointer]:
+                - /url: /audit
+                - img [ref=e130]
+                - generic [ref=e133]: Audit
+        - generic [ref=e134]:
+          - generic [ref=e135]: Settings
+          - list [ref=e136]:
+            - listitem [ref=e137]:
+              - link "Server Settings" [ref=e138] [cursor=pointer]:
+                - /url: /settings
+                - img [ref=e139]
+                - generic [ref=e142]: Server Settings
+            - listitem [ref=e143]:
+              - link "Security" [ref=e144] [cursor=pointer]:
+                - /url: /security
+                - img [ref=e145]
+                - generic [ref=e148]: Security
+            - listitem [ref=e149]:
+              - link "Notifications" [ref=e150] [cursor=pointer]:
+                - /url: /notifications
+                - img [ref=e151]
+                - generic [ref=e154]: Notifications
+            - listitem [ref=e155]:
+              - link "Webhooks" [ref=e156] [cursor=pointer]:
+                - /url: /webhooks
+                - img [ref=e157]
+                - generic [ref=e161]: Webhooks
+            - listitem [ref=e162]:
+              - link "API Tokens" [ref=e163] [cursor=pointer]:
+                - /url: /settings/api-tokens
+                - img [ref=e164]
+                - generic [ref=e166]: API Tokens
+            - listitem [ref=e167]:
+              - link "Plugins" [ref=e168] [cursor=pointer]:
+                - /url: /plugins
+                - img [ref=e169]
+                - generic [ref=e171]: Plugins
+            - listitem [ref=e172]:
+              - link "Billing" [ref=e173] [cursor=pointer]:
+                - /url: /billing
+                - img [ref=e174]
+                - generic [ref=e176]: Billing
+            - listitem [ref=e177]:
+              - link "Organizations" [ref=e178] [cursor=pointer]:
+                - /url: /organizations
+                - img [ref=e179]
+                - generic [ref=e181]: Organizations
+            - listitem [ref=e182]:
+              - link "Profile" [ref=e183] [cursor=pointer]:
+                - /url: /settings/profile
+                - img [ref=e184]
+                - generic [ref=e187]: Profile
+    - generic [ref=e188]:
+      - banner [ref=e189]:
+        - navigation [ref=e190]:
+          - generic [ref=e192]: PHP
+        - generic [ref=e193]:
+          - button "Search" [ref=e194] [cursor=pointer]:
+            - img [ref=e195]
+          - button "Notifications" [ref=e198] [cursor=pointer]:
+            - img [ref=e199]
+          - button "User menu" [ref=e202] [cursor=pointer]:
+            - img [ref=e203]
+      - generic [ref=e206]:
+        - generic [ref=e207]:
+          - generic [ref=e208]: CPU
+          - generic [ref=e209]: 27%
+        - generic [ref=e210]:
+          - generic [ref=e211]: RAM
+          - generic [ref=e212]: 32%
+        - generic [ref=e213]:
+          - generic [ref=e214]: Disk
+          - generic [ref=e215]: 30%
+        - generic [ref=e216]:
+          - generic [ref=e217]: Uptime
+          - generic [ref=e218]: 6h
+        - generic [ref=e219]:
+          - generic [ref=e222]: nginx
+          - generic [ref=e225]: apache2
+          - generic [ref=e228]: named
+          - generic [ref=e231]: mariadb
+          - generic [ref=e234]: postgresql
+          - generic [ref=e237]: postfix
+          - generic [ref=e240]: dovecot
+          - generic [ref=e243]: proftpd
+          - generic [ref=e246]: ufw
+          - generic [ref=e249]: fail2ban
+          - generic [ref=e252]: cloudflared
+      - main [ref=e253]:
+        - generic [ref=e254]:
+          - heading "PHP" [level=1] [ref=e256]
+          - heading "Installed Versions" [level=3] [ref=e259]
+          - generic [ref=e260]:
+            - generic [ref=e261]:
+              - heading "Domain PHP Settings" [level=3] [ref=e262]
+              - combobox [ref=e264]:
+                - option "Select domain..."
+                - option "e2e.example.com" [selected]
+                - option "e2e.example.com"
+                - option "e2e.example.com"
+                - option "e2e.example.com"
+                - option "e2e.example.com"
+                - option "e2e.example.com"
+                - option "e2e.example.com"
+                - option "e2e.example.com"
+                - option "e2e.example.com"
+                - option "e2e.example.com"
+                - option "e2e.example.com"
+                - option "e2e.example.com"
+                - option "e2e.example.com"
+                - option "e2e.example.com"
+                - option "e2e.example.com"
+                - option "e2e-domain-1779620107431.com"
+                - option "e2e.example.com"
+                - option "e2e-add-domain-1779620162885.com"
+            - generic [ref=e265]:
+              - generic [ref=e266]:
+                - generic [ref=e267]:
+                  - text: Current Version
+                  - paragraph
+                - generic [ref=e268]:
+                  - button "PHP 8.1" [ref=e269] [cursor=pointer]
+                  - button "PHP 8.2" [ref=e270] [cursor=pointer]
+                  - button "PHP 8.3" [ref=e271] [cursor=pointer]
+                  - button "PHP 8.4" [ref=e272] [cursor=pointer]
+              - generic [ref=e273]:
+                - generic [ref=e274]:
+                  - generic [ref=e275]: Pool Settings
+                  - button "Edit" [ref=e276] [cursor=pointer]
+                - generic [ref=e277]:
+                  - generic [ref=e278]:
+                    - text: Process Manager
+                    - paragraph
+                  - generic [ref=e279]:
+                    - text: Max Children
+                    - paragraph
+                  - generic [ref=e280]:
+                    - text: Start Servers
+                    - paragraph
+              - generic [ref=e281]:
+                - generic [ref=e282]:
+                  - generic [ref=e283]: PHP Limits
+                  - button "Edit" [ref=e284] [cursor=pointer]
+                - generic [ref=e285]:
+                  - generic [ref=e286]:
+                    - text: Memory Limit
+                    - paragraph
+                  - generic [ref=e287]:
+                    - text: Max Execution Time
+                    - paragraph [ref=e288]: 30s
+                  - generic [ref=e289]:
+                    - text: Upload Max
+                    - paragraph [ref=e290]: 8M
+              - generic [ref=e291]:
+                - generic [ref=e292]:
+                  - generic [ref=e293]: Security
+                  - button "Edit" [ref=e294] [cursor=pointer]
+                - generic [ref=e295]:
+                  - generic [ref=e296]:
+                    - generic [ref=e297]: "Open Basedir:"
+                    - generic [ref=e298]: Inactive
+                  - generic [ref=e300]:
+                    - text: "Disabled Functions:"
+                    - generic [ref=e301]: 0 functions
 ```
 
 # Test source

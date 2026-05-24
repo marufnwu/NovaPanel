@@ -29,213 +29,215 @@ Received array:  [{"description": "Ensure the contrast between foreground and ba
 # Page snapshot
 
 ```yaml
-- generic [ref=e3]:
-  - complementary [ref=e4]:
-    - generic [ref=e6]: NovaPanel
-    - navigation [ref=e7]:
-      - generic [ref=e8]:
-        - generic [ref=e9]: Apps
-        - list [ref=e10]:
-          - listitem [ref=e11]:
-            - link "Sites" [ref=e12] [cursor=pointer]:
-              - /url: /sites
-              - img [ref=e13]
-              - generic [ref=e17]: Sites
-          - listitem [ref=e18]:
-            - link "Databases" [ref=e19] [cursor=pointer]:
-              - /url: /databases
-              - img [ref=e20]
-              - generic [ref=e24]: Databases
-          - listitem [ref=e25]:
-            - link "Cron Jobs" [ref=e26] [cursor=pointer]:
-              - /url: /cron
-              - img [ref=e27]
-              - generic [ref=e30]: Cron Jobs
-          - listitem [ref=e31]:
-            - link "Installer" [ref=e32] [cursor=pointer]:
-              - /url: /installer
-              - img [ref=e33]
-              - generic [ref=e36]: Installer
-      - generic [ref=e37]:
-        - generic [ref=e38]: Server
-        - list [ref=e39]:
-          - listitem [ref=e40]:
-            - link "Services" [ref=e41] [cursor=pointer]:
-              - /url: /services
-              - img [ref=e42]
-              - generic [ref=e45]: Services
-          - listitem [ref=e46]:
-            - link "Firewall" [ref=e47] [cursor=pointer]:
-              - /url: /firewall
-              - img [ref=e48]
-              - generic [ref=e50]: Firewall
-          - listitem [ref=e51]:
-            - link "Backups" [ref=e52] [cursor=pointer]:
-              - /url: /backups
-              - img [ref=e53]
-              - generic [ref=e56]: Backups
-          - listitem [ref=e57]:
-            - link "Terminal" [ref=e58] [cursor=pointer]:
-              - /url: /terminal
-              - img [ref=e59]
-              - generic [ref=e61]: Terminal
-          - listitem [ref=e62]:
-            - link "Files" [ref=e63] [cursor=pointer]:
-              - /url: /files
-              - img [ref=e64]
-              - generic [ref=e66]: Files
-      - generic [ref=e67]:
-        - generic [ref=e68]: Domains
-        - list [ref=e69]:
-          - listitem [ref=e70]:
-            - link "Domains" [ref=e71] [cursor=pointer]:
-              - /url: /domains
-              - img [ref=e72]
-              - generic [ref=e76]: Domains
-          - listitem [ref=e77]:
-            - link "DNS" [ref=e78] [cursor=pointer]:
-              - /url: /dns
-              - img [ref=e79]
-              - generic [ref=e81]: DNS
-          - listitem [ref=e82]:
-            - link "SSL" [ref=e83] [cursor=pointer]:
-              - /url: /ssl
-              - img [ref=e84]
-              - generic [ref=e88]: SSL
-          - listitem [ref=e89]:
-            - link "Mail" [ref=e90] [cursor=pointer]:
-              - /url: /mail
-              - img [ref=e91]
-              - generic [ref=e94]: Mail
-          - listitem [ref=e95]:
-            - link "FTP" [ref=e96] [cursor=pointer]:
-              - /url: /ftp
-              - img [ref=e97]
-              - generic [ref=e100]: FTP
-      - generic [ref=e101]:
-        - generic [ref=e102]: System
-        - list [ref=e103]:
-          - listitem [ref=e104]:
-            - link "Monitoring" [ref=e105] [cursor=pointer]:
-              - /url: /monitoring
-              - img [ref=e106]
-              - generic [ref=e110]: Monitoring
-          - listitem [ref=e111]:
-            - link "Logs" [ref=e112] [cursor=pointer]:
-              - /url: /logs
-              - img [ref=e113]
-              - generic [ref=e116]: Logs
-          - listitem [ref=e117]:
-            - link "Containers" [ref=e118] [cursor=pointer]:
-              - /url: /containers
-              - img [ref=e119]
-              - generic [ref=e123]: Containers
-          - listitem [ref=e124]:
-            - link "Jobs" [ref=e125] [cursor=pointer]:
-              - /url: /jobs
-              - img [ref=e126]
-              - generic [ref=e127]: Jobs
-          - listitem [ref=e128]:
-            - link "Audit" [ref=e129] [cursor=pointer]:
-              - /url: /audit
-              - img [ref=e130]
-              - generic [ref=e133]: Audit
-      - generic [ref=e134]:
-        - generic [ref=e135]: Settings
-        - list [ref=e136]:
-          - listitem [ref=e137]:
-            - link "Server Settings" [ref=e138] [cursor=pointer]:
-              - /url: /settings
-              - img [ref=e139]
-              - generic [ref=e142]: Server Settings
-          - listitem [ref=e143]:
-            - link "Security" [ref=e144] [cursor=pointer]:
-              - /url: /security
-              - img [ref=e145]
-              - generic [ref=e148]: Security
-          - listitem [ref=e149]:
-            - link "Notifications" [ref=e150] [cursor=pointer]:
-              - /url: /notifications
-              - img [ref=e151]
-              - generic [ref=e154]: Notifications
-          - listitem [ref=e155]:
-            - link "Webhooks" [ref=e156] [cursor=pointer]:
-              - /url: /webhooks
-              - img [ref=e157]
-              - generic [ref=e161]: Webhooks
-          - listitem [ref=e162]:
-            - link "API Tokens" [ref=e163] [cursor=pointer]:
-              - /url: /settings/api-tokens
-              - img [ref=e164]
-              - generic [ref=e166]: API Tokens
-          - listitem [ref=e167]:
-            - link "Plugins" [ref=e168] [cursor=pointer]:
-              - /url: /plugins
-              - img [ref=e169]
-              - generic [ref=e171]: Plugins
-          - listitem [ref=e172]:
-            - link "Billing" [ref=e173] [cursor=pointer]:
-              - /url: /billing
-              - img [ref=e174]
-              - generic [ref=e176]: Billing
-          - listitem [ref=e177]:
-            - link "Organizations" [ref=e178] [cursor=pointer]:
-              - /url: /organizations
-              - img [ref=e179]
-              - generic [ref=e181]: Organizations
-          - listitem [ref=e182]:
-            - link "Profile" [ref=e183] [cursor=pointer]:
-              - /url: /settings/profile
-              - img [ref=e184]
-              - generic [ref=e187]: Profile
-  - generic [ref=e188]:
-    - banner [ref=e189]:
-      - navigation [ref=e190]:
-        - generic [ref=e192]: SSL
-      - generic [ref=e193]:
-        - button "Search" [ref=e194] [cursor=pointer]:
-          - img [ref=e195]
-        - button "Notifications" [ref=e198] [cursor=pointer]:
-          - img [ref=e199]
-        - button "User menu" [ref=e202] [cursor=pointer]:
-          - img [ref=e203]
-    - generic [ref=e206]:
-      - generic [ref=e207]:
-        - generic [ref=e208]: CPU
-        - generic [ref=e209]: 33%
-      - generic [ref=e210]:
-        - generic [ref=e211]: RAM
-        - generic [ref=e212]: 83%
-      - generic [ref=e213]:
-        - generic [ref=e214]: Disk
-        - generic [ref=e215]: 30%
-      - generic [ref=e216]:
-        - generic [ref=e217]: Uptime
-        - generic [ref=e218]: 4d 12h
-      - generic [ref=e219]:
-        - generic [ref=e222]: nginx
-        - generic [ref=e225]: apache2
-        - generic [ref=e228]: named
-        - generic [ref=e231]: mariadb
-        - generic [ref=e234]: postgresql
-        - generic [ref=e237]: postfix
-        - generic [ref=e240]: dovecot
-        - generic [ref=e243]: proftpd
-        - generic [ref=e246]: ufw
-        - generic [ref=e249]: fail2ban
-        - generic [ref=e252]: cloudflared
-    - main [ref=e253]:
-      - generic [ref=e254]:
-        - generic [ref=e255]:
-          - heading "SSL Certificates" [level=1] [ref=e256]
-          - button "Issue Certificate" [ref=e257] [cursor=pointer]:
-            - img [ref=e258]
-            - text: Issue Certificate
-        - generic [ref=e262]:
-          - img [ref=e263]
-          - heading "No SSL certificates" [level=3] [ref=e267]
-          - paragraph [ref=e268]: Issue a certificate to secure your domains
-          - button "Issue Certificate" [ref=e269] [cursor=pointer]
+- generic [ref=e2]:
+  - region "Notifications alt+T"
+  - generic [ref=e3]:
+    - complementary [ref=e4]:
+      - generic [ref=e6]: NovaPanel
+      - navigation [ref=e7]:
+        - generic [ref=e8]:
+          - generic [ref=e9]: Apps
+          - list [ref=e10]:
+            - listitem [ref=e11]:
+              - link "Sites" [ref=e12] [cursor=pointer]:
+                - /url: /sites
+                - img [ref=e13]
+                - generic [ref=e17]: Sites
+            - listitem [ref=e18]:
+              - link "Databases" [ref=e19] [cursor=pointer]:
+                - /url: /databases
+                - img [ref=e20]
+                - generic [ref=e24]: Databases
+            - listitem [ref=e25]:
+              - link "Cron Jobs" [ref=e26] [cursor=pointer]:
+                - /url: /cron
+                - img [ref=e27]
+                - generic [ref=e30]: Cron Jobs
+            - listitem [ref=e31]:
+              - link "Installer" [ref=e32] [cursor=pointer]:
+                - /url: /installer
+                - img [ref=e33]
+                - generic [ref=e36]: Installer
+        - generic [ref=e37]:
+          - generic [ref=e38]: Server
+          - list [ref=e39]:
+            - listitem [ref=e40]:
+              - link "Services" [ref=e41] [cursor=pointer]:
+                - /url: /services
+                - img [ref=e42]
+                - generic [ref=e45]: Services
+            - listitem [ref=e46]:
+              - link "Firewall" [ref=e47] [cursor=pointer]:
+                - /url: /firewall
+                - img [ref=e48]
+                - generic [ref=e50]: Firewall
+            - listitem [ref=e51]:
+              - link "Backups" [ref=e52] [cursor=pointer]:
+                - /url: /backups
+                - img [ref=e53]
+                - generic [ref=e56]: Backups
+            - listitem [ref=e57]:
+              - link "Terminal" [ref=e58] [cursor=pointer]:
+                - /url: /terminal
+                - img [ref=e59]
+                - generic [ref=e61]: Terminal
+            - listitem [ref=e62]:
+              - link "Files" [ref=e63] [cursor=pointer]:
+                - /url: /files
+                - img [ref=e64]
+                - generic [ref=e66]: Files
+        - generic [ref=e67]:
+          - generic [ref=e68]: Domains
+          - list [ref=e69]:
+            - listitem [ref=e70]:
+              - link "Domains" [ref=e71] [cursor=pointer]:
+                - /url: /domains
+                - img [ref=e72]
+                - generic [ref=e76]: Domains
+            - listitem [ref=e77]:
+              - link "DNS" [ref=e78] [cursor=pointer]:
+                - /url: /dns
+                - img [ref=e79]
+                - generic [ref=e81]: DNS
+            - listitem [ref=e82]:
+              - link "SSL" [ref=e83] [cursor=pointer]:
+                - /url: /ssl
+                - img [ref=e84]
+                - generic [ref=e88]: SSL
+            - listitem [ref=e89]:
+              - link "Mail" [ref=e90] [cursor=pointer]:
+                - /url: /mail
+                - img [ref=e91]
+                - generic [ref=e94]: Mail
+            - listitem [ref=e95]:
+              - link "FTP" [ref=e96] [cursor=pointer]:
+                - /url: /ftp
+                - img [ref=e97]
+                - generic [ref=e100]: FTP
+        - generic [ref=e101]:
+          - generic [ref=e102]: System
+          - list [ref=e103]:
+            - listitem [ref=e104]:
+              - link "Monitoring" [ref=e105] [cursor=pointer]:
+                - /url: /monitoring
+                - img [ref=e106]
+                - generic [ref=e110]: Monitoring
+            - listitem [ref=e111]:
+              - link "Logs" [ref=e112] [cursor=pointer]:
+                - /url: /logs
+                - img [ref=e113]
+                - generic [ref=e116]: Logs
+            - listitem [ref=e117]:
+              - link "Containers" [ref=e118] [cursor=pointer]:
+                - /url: /containers
+                - img [ref=e119]
+                - generic [ref=e123]: Containers
+            - listitem [ref=e124]:
+              - link "Jobs" [ref=e125] [cursor=pointer]:
+                - /url: /jobs
+                - img [ref=e126]
+                - generic [ref=e127]: Jobs
+            - listitem [ref=e128]:
+              - link "Audit" [ref=e129] [cursor=pointer]:
+                - /url: /audit
+                - img [ref=e130]
+                - generic [ref=e133]: Audit
+        - generic [ref=e134]:
+          - generic [ref=e135]: Settings
+          - list [ref=e136]:
+            - listitem [ref=e137]:
+              - link "Server Settings" [ref=e138] [cursor=pointer]:
+                - /url: /settings
+                - img [ref=e139]
+                - generic [ref=e142]: Server Settings
+            - listitem [ref=e143]:
+              - link "Security" [ref=e144] [cursor=pointer]:
+                - /url: /security
+                - img [ref=e145]
+                - generic [ref=e148]: Security
+            - listitem [ref=e149]:
+              - link "Notifications" [ref=e150] [cursor=pointer]:
+                - /url: /notifications
+                - img [ref=e151]
+                - generic [ref=e154]: Notifications
+            - listitem [ref=e155]:
+              - link "Webhooks" [ref=e156] [cursor=pointer]:
+                - /url: /webhooks
+                - img [ref=e157]
+                - generic [ref=e161]: Webhooks
+            - listitem [ref=e162]:
+              - link "API Tokens" [ref=e163] [cursor=pointer]:
+                - /url: /settings/api-tokens
+                - img [ref=e164]
+                - generic [ref=e166]: API Tokens
+            - listitem [ref=e167]:
+              - link "Plugins" [ref=e168] [cursor=pointer]:
+                - /url: /plugins
+                - img [ref=e169]
+                - generic [ref=e171]: Plugins
+            - listitem [ref=e172]:
+              - link "Billing" [ref=e173] [cursor=pointer]:
+                - /url: /billing
+                - img [ref=e174]
+                - generic [ref=e176]: Billing
+            - listitem [ref=e177]:
+              - link "Organizations" [ref=e178] [cursor=pointer]:
+                - /url: /organizations
+                - img [ref=e179]
+                - generic [ref=e181]: Organizations
+            - listitem [ref=e182]:
+              - link "Profile" [ref=e183] [cursor=pointer]:
+                - /url: /settings/profile
+                - img [ref=e184]
+                - generic [ref=e187]: Profile
+    - generic [ref=e188]:
+      - banner [ref=e189]:
+        - navigation [ref=e190]:
+          - generic [ref=e192]: SSL
+        - generic [ref=e193]:
+          - button "Search" [ref=e194] [cursor=pointer]:
+            - img [ref=e195]
+          - button "Notifications" [ref=e198] [cursor=pointer]:
+            - img [ref=e199]
+          - button "User menu" [ref=e202] [cursor=pointer]:
+            - img [ref=e203]
+      - generic [ref=e206]:
+        - generic [ref=e207]:
+          - generic [ref=e208]: CPU
+          - generic [ref=e209]: 57%
+        - generic [ref=e210]:
+          - generic [ref=e211]: RAM
+          - generic [ref=e212]: 32%
+        - generic [ref=e213]:
+          - generic [ref=e214]: Disk
+          - generic [ref=e215]: 30%
+        - generic [ref=e216]:
+          - generic [ref=e217]: Uptime
+          - generic [ref=e218]: 6h
+        - generic [ref=e219]:
+          - generic [ref=e222]: nginx
+          - generic [ref=e225]: apache2
+          - generic [ref=e228]: named
+          - generic [ref=e231]: mariadb
+          - generic [ref=e234]: postgresql
+          - generic [ref=e237]: postfix
+          - generic [ref=e240]: dovecot
+          - generic [ref=e243]: proftpd
+          - generic [ref=e246]: ufw
+          - generic [ref=e249]: fail2ban
+          - generic [ref=e252]: cloudflared
+      - main [ref=e253]:
+        - generic [ref=e254]:
+          - generic [ref=e255]:
+            - heading "SSL Certificates" [level=1] [ref=e256]
+            - button "Issue Certificate" [ref=e257] [cursor=pointer]:
+              - img [ref=e258]
+              - text: Issue Certificate
+          - generic [ref=e262]:
+            - img [ref=e263]
+            - heading "No SSL certificates" [level=3] [ref=e267]
+            - paragraph [ref=e268]: Issue a certificate to secure your domains
+            - button "Issue Certificate" [ref=e269] [cursor=pointer]
 ```
 
 # Test source

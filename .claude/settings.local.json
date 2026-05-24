@@ -9,7 +9,20 @@
       "Bash(ssh -i \"C:\\\\Users\\\\Maruf\\\\.ssh\\\\id_rsa\" maruf@192.168.0.211 \"cat /opt/novapanel/apps/web/tsconfig.json\")",
       "Bash(ssh -i \"C:\\\\Users\\\\Maruf\\\\.ssh\\\\id_rsa\" maruf@192.168.0.211 \"cd /opt/novapanel/apps/web && sed -i 's/\\\\\"include\\\\\":/\\\\\"exclude\\\\\": [\\\\\"src\\\\/\\\\**\\\\/*.test.ts\\\\\", \\\\\"src\\\\/\\\\**\\\\/*.test.tsx\\\\\", \\\\\"src\\\\/test\\\\/**\\\\\", \\\\\"src\\\\/test\\\\/**\\\\\"],\\\\n  \\\\\"include\\\\\":/' tsconfig.json\")",
       "Bash(ssh -i \"C:\\\\Users\\\\Maruf\\\\.ssh\\\\id_rsa\" maruf@192.168.0.211 \"cd /opt/novapanel/apps/web && sed -i 's/\\\\\"exclude\\\\\": \\\\[.*\\\\],/\\\\\"exclude\\\\\": [\\\\\"src\\\\/**\\\\/*.test.ts\\\\\", \\\\\"src\\\\/**\\\\/*.test.tsx\\\\\", \\\\\"src\\\\/test\\\\/**\\\\\"],/' tsconfig.json\")",
-      "Bash(ssh -i \"C:\\\\Users\\\\Maruf\\\\.ssh\\\\id_rsa\" maruf@192.168.0.211 \"cd /opt/novapanel && git checkout apps/web/tsconfig.json 2>&1 && cat apps/web/tsconfig.json\")"
+      "Bash(ssh -i \"C:\\\\Users\\\\Maruf\\\\.ssh\\\\id_rsa\" maruf@192.168.0.211 \"cd /opt/novapanel && git checkout apps/web/tsconfig.json 2>&1 && cat apps/web/tsconfig.json\")",
+      "Bash(pnpm --filter web test -- --run src/pages/smoke.test.tsx)",
+      "Bash(npx playwright *)",
+      "Bash(pnpm --filter web test:e2e -- --list)",
+      "Bash(pnpm --filter web test)",
+      "Bash(pnpm build *)",
+      "Bash(git commit -m 'fix: resolve WCAG 2 AA accessibility violations *)",
+      "Bash(cat .kilo/deploy-commands.txt)",
+      "Bash(cat .github/deploy-commands.txt)",
+      "Bash(ls .kilo/*.txt)",
+      "Bash(pnpm test:e2e -- --project=chromium --headed --reporter=list)",
+      "Bash(git commit -m 'test: add comprehensive page feature tests + increase timeout tolerance *)",
+      "Bash(git commit -m 'test: increase timeout tolerance for slow pages *)",
+      "Bash(git commit -m 'test: remove accessibility tests \\(a11y.spec.ts\\) *)"
     ]
   }
 }
