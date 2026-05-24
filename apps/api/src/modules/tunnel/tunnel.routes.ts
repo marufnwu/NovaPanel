@@ -131,13 +131,4 @@ export default async function tunnelRoutes(fastify: FastifyInstance) {
     const data = cnameSchema.parse(req.body);
     return { success: true, data: { created: true, hostname: data.hostname } };
   });
-
-  fastify.get('/settings/cloudflare', async () => {
-    return { success: true, data: null };
-  });
-
-  fastify.put('/settings/cloudflare', async (req) => {
-    const data = cloudflareConfigSchema.parse(req.body);
-    return { success: true, data };
-  });
 }
