@@ -1,9 +1,13 @@
 import { createRoot } from 'react-dom/client';
-import { StrictMode, Component, ReactNode } from 'react';
+import { Component, ReactNode } from 'react';
 import { RouterProvider } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router } from './router';
 import './index.css';
+
+window.addEventListener('error', (e) => {
+  console.error('GLOBAL ERROR:', e.error);
+});
 
 class ErrorBoundary extends Component<
   { children?: ReactNode },
@@ -12,18 +16,21 @@ class ErrorBoundary extends Component<
   constructor(props: { children?: ReactNode }) {
     super(props);
     this.state = { hasError: false, error: null };
+    console.log('ErrorBoundary constructor');
   }
 
   static getDerivedStateFromError(error: Error) {
+    console.error('getDerivedStateFromError:', error);
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    this.setState({ info });
-    console.error('React Error Boundary caught:', error, info.componentStack);
+    console.error('componentDidCatch:', error, info.componentStack);
+    this.setState({ error, info });
   }
 
   render() {
+    console.log('ErrorBoundary render, hasError:', this.state.hasError);
     if (this.state.hasError) {
       return (
         <div style={{
@@ -65,6 +72,7 @@ const queryClient = new QueryClient({
   },
 });
 
+console.log('About to create root');
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
@@ -72,3 +80,4 @@ createRoot(document.getElementById('root')!).render(
     </QueryClientProvider>
   </ErrorBoundary>
 );
+console.log('Root rendered');
