@@ -40,7 +40,7 @@ export function StatusBar() {
   };
 
   return (
-    <div className="h-9 flex items-center px-6 bg-background-secondary border-b border-border-tertiary text-small gap-6">
+    <header className="h-9 flex items-center px-6 bg-background-secondary border-b border-border-tertiary text-small gap-6" role="banner">
       {stats && (
         <>
           <div className="flex items-center gap-2">
@@ -74,6 +74,6 @@ export function StatusBar() {
           ))}
         </div>
       )}
-    </div>
+    </header>
   );
 }

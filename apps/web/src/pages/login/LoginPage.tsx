@@ -25,7 +25,7 @@ export function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background-primary p-4">
-      <div className="w-full max-w-[360px]">
+      <main className="w-full max-w-[360px]">
         <div className="text-center mb-8">
           <h1 className="text-page-title font-medium mb-2">NovaPanel</h1>
           <p className="text-foreground-secondary">Sign in to your account</p>
@@ -55,12 +55,12 @@ export function LoginPage() {
             type="submit"
             variant="primary"
             loading={login.isPending}
-            className="w-full"
+            className="w-full text-[#0f1117]"
           >
             Sign In
           </Button>
         </form>
-      </div>
+      </main>
     </div>
   );
 }

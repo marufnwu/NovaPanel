@@ -67,7 +67,7 @@ export function Sidebar() {
         <span className="text-card-title font-medium">NovaPanel</span>
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-2">
+      <nav aria-label="Main navigation" className="flex-1 overflow-y-auto py-2">
         {navigationGroups.map((group) => (
           <div key={group.label} className="mb-4">
             <div className="px-4 mb-1">
