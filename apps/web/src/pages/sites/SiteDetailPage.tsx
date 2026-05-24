@@ -1,6 +1,5 @@
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useLocation, useRouterState } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useParams, useSearch } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -28,9 +27,9 @@ import { toast } from '../../lib/toast';
 import { Icon } from '../../components/icons';
 
 export function SiteDetailPage() {
-  const params = useParams();
-  const search = useSearch({ strict: false });
-  const siteId = params.siteId as string;
+  const location = useLocation();
+  const siteId = location.pathname.split('/sites/')[1] || '';
+  const search = useRouterState({ select: (s) => s.location.search }) as Record<string, unknown> | undefined;
   const activeTab = (search as any)?.tab || 'overview';
   const queryClient = useQueryClient();
   const navigate = useNavigate();
