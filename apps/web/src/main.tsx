@@ -5,22 +5,27 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router } from './router';
 import './index.css';
 
-window.addEventListener('error', (event) => {
-  if (event.message?.includes?.('Invariant') || event.message?.includes?.('useSyncExternalStore')) {
-    event.preventDefault();
+window.onerror = function(msg, src, line, col, err) {
+  const msgStr = String(msg);
+  if (msgStr.includes('useSyncExternalStore') || msgStr.includes('Invariant')) {
     document.getElementById('root')!.innerHTML = `
-      <div style="padding:20px;background:#1a1a1a;color:#ff6b6b;min-height:100vh;font-family:monospace;">
-        <h1 style="color:#ff4757">useSyncExternalStore Error</h1>
-        <pre style="background:#2d2d2d;padding:16px;border-radius:8px;overflow:auto;max-height:60vh;">${event.message}</pre>
-        <pre style="background:#333;padding:16px;margin-top:16px;border-radius:8px;font-size:12px;">${event.error?.stack || 'No stack'}</pre>
+      <div style="padding:20px;background:#1a1a1a;color:#ff6b6b;min-height:100vh;font-family:monospace;font-size:14px;">
+        <h1 style="color:#ff4757;font-size:24px;">useSyncExternalStore Error</h1>
+        <p><strong>Message:</strong> ${msgStr}</p>
+        <p><strong>Source:</strong> ${src}</p>
+        <p><strong>Line:</strong> ${line}:${col}</p>
+        <h2 style="color:#ff6b6b;margin-top:20px;">Stack:</h2>
+        <pre style="background:#222;padding:16px;border-radius:8px;font-size:11px;overflow:auto;max-height:50vh;">${err?.stack || 'No stack'}</pre>
       </div>
     `;
+    return true;
   }
-});
+  return false;
+};
 
 class ErrorBoundary extends Component<
   { children?: ReactNode },
-  { hasError: boolean; error: Error | null; info?: React.ErrorInfo }
+  { hasError: boolean; error: Error | null }
 > {
   constructor(props: { children?: ReactNode }) {
     super(props);
@@ -29,10 +34,6 @@ class ErrorBoundary extends Component<
 
   static getDerivedStateFromError(error: Error) {
     return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
-    this.setState({ error, info });
   }
 
   render() {
@@ -56,10 +57,12 @@ const queryClient = new QueryClient({
   },
 });
 
-createRoot(document.getElementById('root')!).render(
+const App = () => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
     </QueryClientProvider>
   </ErrorBoundary>
 );
+
+createRoot(document.getElementById('root')!).render(<App />);
