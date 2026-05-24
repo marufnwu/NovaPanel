@@ -1,1 +1,0 @@
-export { MemoryRouter } from 'react-router-dom';
