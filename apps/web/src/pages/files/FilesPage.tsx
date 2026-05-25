@@ -6,16 +6,20 @@ import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { UploadZone } from '../../components/ui/UploadZone';
 import {
   useDirectoryListing,
   useCreateDirectory,
   useDeleteFile,
   useRenameFile,
+  useUploadFile,
   type FileEntry,
 } from '../../api/hooks/files';
 import { Icon } from '../../components/icons';
 import { cn } from '../../lib/utils';
 import { toast } from '../../lib/toast';
+import { FileEditorModal } from './FileEditorModal';
+import { PermissionsModal } from './PermissionsModal';
 
 export function FilesPage() {
   const queryClient = useQueryClient();
@@ -25,11 +29,16 @@ export function FilesPage() {
   const [deletePath, setDeletePath] = useState<string | null>(null);
   const [renamePath, setRenamePath] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
+  const [showUpload, setShowUpload] = useState(false);
+  const [editFilePath, setEditFilePath] = useState<string | null>(null);
+  const [permissionsPath, setPermissionsPath] = useState<{ path: string; permissions: string } | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const { data: listing, isLoading } = useDirectoryListing(currentPath);
   const createDirectory = useCreateDirectory();
   const deleteFile = useDeleteFile();
   const renameFile = useRenameFile();
+  const uploadFile = useUploadFile();
 
   const handleNavigate = (path: string) => {
     setCurrentPath(path);
@@ -118,13 +127,22 @@ export function FilesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-page-title font-medium">File Manager</h1>
-        <Button
-          variant="default"
-          onClick={() => setShowCreateDir(true)}
-          icon={<Icon name="icon-folder" size={16} />}
-        >
-          New Folder
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => setShowUpload(true)}
+            icon={<Icon name="icon-upload" size={16} />}
+          >
+            Upload
+          </Button>
+          <Button
+            variant="default"
+            onClick={() => setShowCreateDir(true)}
+            icon={<Icon name="icon-folder" size={16} />}
+          >
+            New Folder
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -222,6 +240,24 @@ export function FilesPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1">
+                          {!item.isDirectory && (
+                            <Button
+                              variant="ghost"
+                              size="small"
+                              onClick={() => setEditFilePath(currentPath + '/' + item.name)}
+                              icon={<Icon name="icon-edit" size={15} />}
+                            >
+                              Edit
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="small"
+                            onClick={() => setPermissionsPath({ path: currentPath + '/' + item.name, permissions: item.permissions })}
+                            icon={<Icon name="icon-lock" size={15} />}
+                          >
+                            Permissions
+                          </Button>
                           <Button
                             variant="ghost"
                             size="small"
@@ -310,6 +346,53 @@ export function FilesPage() {
         description="This action cannot be undone."
         confirmText="Delete"
         impact="high"
+      />
+
+      <Modal
+        isOpen={showUpload}
+        onClose={() => {
+          setShowUpload(false);
+          setUploadProgress(0);
+        }}
+        title="Upload File"
+        size="medium"
+      >
+        <UploadZone
+          onUpload={async (file) => {
+            try {
+              await uploadFile.mutateAsync({
+                file,
+                path: currentPath,
+                onProgress: setUploadProgress,
+              });
+              toast.success(`Uploaded ${file.name}`);
+              setShowUpload(false);
+              setUploadProgress(0);
+              queryClient.invalidateQueries({ queryKey: ['files'] });
+            } catch (err: any) {
+              toast.error(`Upload failed: ${err.message}`);
+              setUploadProgress(0);
+            }
+          }}
+          isUploading={uploadFile.isPending}
+          uploadProgress={uploadProgress}
+          disabled={uploadFile.isPending}
+        />
+      </Modal>
+
+      <FileEditorModal
+        isOpen={!!editFilePath}
+        onClose={() => setEditFilePath(null)}
+        filePath={editFilePath || ''}
+        onSave={() => queryClient.invalidateQueries({ queryKey: ['files'] })}
+      />
+
+      <PermissionsModal
+        isOpen={!!permissionsPath}
+        onClose={() => setPermissionsPath(null)}
+        filePath={permissionsPath?.path || ''}
+        currentPermissions={permissionsPath?.permissions || '755'}
+        onSave={() => queryClient.invalidateQueries({ queryKey: ['files'] })}
       />
     </div>
   );

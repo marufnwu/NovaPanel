@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 export const ftpAccounts = sqliteTable('ftp_accounts', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   databaseId: text('database_id'),
   siteId: text('site_id'),
   username: text('username').notNull(),

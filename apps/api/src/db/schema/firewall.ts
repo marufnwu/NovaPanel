@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 export const firewallRules = sqliteTable('firewall_rules', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   name: text('name').notNull(),
   action: text('action', { enum: ['allow', 'deny'] }).notNull(),
   protocol: text('protocol', { enum: ['tcp', 'udp', 'icmp', 'all'] }).default('tcp').notNull(),

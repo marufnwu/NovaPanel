@@ -5,7 +5,7 @@ import { api } from '../client';
 
 export interface WafRule {
   id: string;
-  projectId: string;
+  orgId: string;
   name: string;
   type: 'owasp' | 'custom' | 'rate_limit' | 'geo_block' | 'bot';
   enabled: boolean;
@@ -17,7 +17,7 @@ export interface WafRule {
 
 export interface IpAllowlist {
   id: string;
-  projectId: string;
+  orgId: string;
   name: string;
   ips: string[];
   type: 'allow' | 'block';
@@ -55,21 +55,21 @@ export interface UpdateIpAllowlistPayload {
 
 // ─── WAF Rules ───────────────────────────────────────────────────────────────
 
-export function useWafRules(projectId: string) {
+export function useWafRules(orgId: string) {
   return useQuery({
-    queryKey: ['waf-rules', projectId],
-    queryFn: () => api.get<WafRule[]>(`/projects/${projectId}/waf-rules`),
-    enabled: !!projectId,
+    queryKey: ['waf-rules', orgId],
+    queryFn: () => api.get<WafRule[]>(`/waf-rules`),
+    enabled: !!orgId,
   });
 }
 
 export function useCreateWafRule() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, data }: { projectId: string; data: CreateWafRulePayload }) =>
-      api.post<WafRule>(`/projects/${projectId}/waf-rules`, data),
-    onSuccess: (_, { projectId }) => {
-      qc.invalidateQueries({ queryKey: ['waf-rules', projectId] });
+    mutationFn: (data: CreateWafRulePayload) =>
+      api.post<WafRule>(`/waf-rules`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['waf-rules'] });
     },
   });
 }
@@ -97,21 +97,21 @@ export function useDeleteWafRule() {
 
 // ─── IP Allowlists ───────────────────────────────────────────────────────────
 
-export function useIpAllowlists(projectId: string) {
+export function useIpAllowlists(orgId: string) {
   return useQuery({
-    queryKey: ['ip-allowlists', projectId],
-    queryFn: () => api.get<IpAllowlist[]>(`/projects/${projectId}/ip-allowlists`),
-    enabled: !!projectId,
+    queryKey: ['ip-allowlists', orgId],
+    queryFn: () => api.get<IpAllowlist[]>(`/ip-allowlists`),
+    enabled: !!orgId,
   });
 }
 
 export function useCreateIpAllowlist() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, data }: { projectId: string; data: CreateIpAllowlistPayload }) =>
-      api.post<IpAllowlist>(`/projects/${projectId}/ip-allowlists`, data),
-    onSuccess: (_, { projectId }) => {
-      qc.invalidateQueries({ queryKey: ['ip-allowlists', projectId] });
+    mutationFn: (data: CreateIpAllowlistPayload) =>
+      api.post<IpAllowlist>(`/ip-allowlists`, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ip-allowlists'] });
     },
   });
 }

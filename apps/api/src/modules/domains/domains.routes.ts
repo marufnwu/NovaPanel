@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { DomainsService } from './domains.service.js';
-import { createDomainSchema, updateDomainSchema, verifyDomainDnsSchema } from './domains.schema.js';
+import { createDomainSchema, updateDomainSchema, verifyDomainDnsSchema, createSubdomainSchema, createAliasSchema, createRedirectSchema, makePublicSchema, domainLogsQuerySchema } from './domains.schema.js';
 import { requireAuth } from '../auth/auth.middleware.js';
 import { detectNetworkInfo } from '../../utils/network.js';
 import { verifyDomainPointsToIp } from '../../utils/network.js';
@@ -77,5 +77,111 @@ export default async function domainRoutes(fastify: FastifyInstance) {
     const { id } = req.params as { id: string };
     const status = await service.getCloudflareStatus(id);
     return { success: true, data: status };
+  });
+
+  // --- Subdomains ---
+
+  fastify.get('/:domainId/subdomains', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const subdomains = await service.listSubdomains(domainId);
+    return { success: true, data: subdomains };
+  });
+
+  fastify.post('/:domainId/subdomains', async (req, reply) => {
+    const { domainId } = req.params as { domainId: string };
+    const data = createSubdomainSchema.parse(req.body);
+    const subdomain = await service.createSubdomain(domainId, data, req.user.id, req.ip);
+    return reply.status(201).send({ success: true, data: subdomain });
+  });
+
+  fastify.delete('/:domainId/subdomains/:subdomainId', async (req) => {
+    const { domainId, subdomainId } = req.params as { domainId: string; subdomainId: string };
+    await service.deleteSubdomain(domainId, subdomainId, req.user.id, req.ip);
+    return { success: true, data: null };
+  });
+
+  // --- Aliases ---
+
+  fastify.get('/:domainId/aliases', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const aliases = await service.listAliases(domainId);
+    return { success: true, data: aliases };
+  });
+
+  fastify.post('/:domainId/aliases', async (req, reply) => {
+    const { domainId } = req.params as { domainId: string };
+    const data = createAliasSchema.parse(req.body);
+    const alias = await service.createAlias(domainId, data, req.user.id, req.ip);
+    return reply.status(201).send({ success: true, data: alias });
+  });
+
+  fastify.delete('/:domainId/aliases/:aliasId', async (req) => {
+    const { domainId, aliasId } = req.params as { domainId: string; aliasId: string };
+    await service.deleteAlias(domainId, aliasId, req.user.id, req.ip);
+    return { success: true, data: null };
+  });
+
+  // --- Redirects ---
+
+  fastify.get('/:domainId/redirects', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const redirects = await service.listRedirects(domainId);
+    return { success: true, data: redirects };
+  });
+
+  fastify.post('/:domainId/redirects', async (req, reply) => {
+    const { domainId } = req.params as { domainId: string };
+    const data = createRedirectSchema.parse(req.body);
+    const redirect = await service.createRedirect(domainId, data, req.user.id, req.ip);
+    return reply.status(201).send({ success: true, data: redirect });
+  });
+
+  fastify.delete('/:domainId/redirects/:redirectId', async (req) => {
+    const { domainId, redirectId } = req.params as { domainId: string; redirectId: string };
+    await service.deleteRedirect(domainId, redirectId, req.user.id, req.ip);
+    return { success: true, data: null };
+  });
+
+  // --- Domain Actions ---
+
+  fastify.post('/:domainId/make-primary', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const result = await service.makePrimary(domainId, req.user.id, req.ip);
+    return { success: true, data: result };
+  });
+
+  fastify.get('/:domainId/logs', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const query = domainLogsQuerySchema.parse(req.query);
+    const logs = await service.getLogs(domainId, query.lines);
+    return { success: true, data: logs };
+  });
+
+  fastify.get('/:domainId/logs/access', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const { lines } = domainLogsQuerySchema.parse(req.query);
+    const logs = await service.getLogs(domainId, lines);
+    return { success: true, data: logs.accessLog };
+  });
+
+  fastify.get('/:domainId/logs/error', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const { lines } = domainLogsQuerySchema.parse(req.query);
+    const logs = await service.getLogs(domainId, lines);
+    return { success: true, data: logs.errorLog };
+  });
+
+  fastify.put('/:domainId/make-public', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const data = makePublicSchema.parse(req.body);
+    const result = await service.setPublic(domainId, data, req.user.id, req.ip);
+    return { success: true, data: result };
+  });
+
+  // --- Cloudflare Zone for Domain ---
+  fastify.get('/:domainId/cloudflare-zone', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const result = await service.getCloudflareZone(domainId);
+    return { success: true, data: result };
   });
 }

@@ -3,7 +3,7 @@ import { ContainersService } from './containers.service.js';
 
 const mockContainerData = {
   id: 'test-nanoid-id',
-  projectId: 'proj-1',
+  orgId: 'proj-1',
   name: 'Test Container',
   type: 'image' as const,
   status: 'stopped' as const,
@@ -119,7 +119,7 @@ describe('Containers Service', () => {
   describe('create', () => {
     it('should create a container with image type', async () => {
       const result = await service.create({
-        projectId: 'proj-1',
+        orgId: 'proj-1',
         name: 'new-container',
         type: 'image',
         image: 'nginx:latest',

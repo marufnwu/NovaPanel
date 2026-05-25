@@ -8,7 +8,7 @@ import { PageSkeleton } from '../../components/ui/Skeleton';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
-import { useWebserverStatus, useWebserverDomains, useVhostConfig, useUpdateVhost, type VhostConfig, type DomainOption } from '../../api/hooks/webserver';
+import { useWebserverStatus, useWebserverDomains, useVhostConfig, useUpdateVhost, useReloadServer, type VhostConfig, type DomainOption } from '../../api/hooks/webserver';
 import { Icon } from '../../components/icons';
 import { toast } from '../../lib/toast';
 
@@ -19,6 +19,7 @@ export function WebserverPage() {
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const { data: vhostConfig } = useVhostConfig(selectedDomain || '');
   const updateVhost = useUpdateVhost();
+  const reloadServer = useReloadServer();
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [forceHttps, setForceHttps] = useState(false);
@@ -47,8 +48,8 @@ export function WebserverPage() {
 
   const handleReload = () => {
     if (!reloadTarget) return;
-    updateVhost.mutate(
-      { domain: reloadTarget, action: 'reload' } as any,
+    reloadServer.mutate(
+      reloadTarget,
       {
         onSuccess: () => {
           toast.success(`${reloadTarget.charAt(0).toUpperCase() + reloadTarget.slice(1)} reloaded`);

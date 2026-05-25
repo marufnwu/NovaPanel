@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 export const buckets = sqliteTable('buckets', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   name: text('name').notNull(),
   region: text('region').default('default'),
   publicAccess: integer('public_access', { mode: 'boolean' }).default(false).notNull(),
@@ -15,7 +15,7 @@ export const buckets = sqliteTable('buckets', {
 
 export const storageAccessKeys = sqliteTable('storage_access_keys', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   name: text('name').notNull(),
   accessKeyId: text('access_key_id').notNull().unique(),
   secretKeyHash: text('secret_key_hash').notNull(),

@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 export const tunnels = sqliteTable('tunnels', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   name: text('name').notNull(),
   type: text('type', { enum: ['cloudflare', 'ngrok', 'localtunnel'] }).notNull(),
   status: text('status', { enum: ['active', 'inactive', 'error'] }).default('inactive').notNull(),

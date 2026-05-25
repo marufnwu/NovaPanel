@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 export const backups = sqliteTable('backups', {
   id: text('id').primaryKey(),
-  projectId: text('project_id'),
+  orgId: text('org_id'),
   resourceType: text('resource_type', { enum: ['site', 'database', 'container', 'config'] }).notNull(),
   resourceId: text('resource_id'),
   type: text('type', { enum: ['full', 'incremental', 'snapshot'] }).default('full').notNull(),
@@ -19,7 +19,7 @@ export const backups = sqliteTable('backups', {
 
 export const backupSchedules = sqliteTable('backup_schedules', {
   id: text('id').primaryKey(),
-  projectId: text('project_id'),
+  orgId: text('org_id'),
   name: text('name').notNull(),
   resourceType: text('resource_type').notNull(),
   resourceId: text('resource_id'),

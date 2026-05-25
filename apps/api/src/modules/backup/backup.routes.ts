@@ -62,6 +62,23 @@ export default async function backupRoutes(fastify: FastifyInstance) {
     return { success: true, data: null };
   });
 
+  fastify.put('/backups/schedules/:id', async (req) => {
+    const { id } = req.params as { id: string };
+    const body = req.body as any;
+    return { success: true, data: await service.updateSchedule(id, {
+      name: body.name,
+      cronExpression: body.cronExpression,
+      retentionDays: body.retentionDays,
+      storageBackend: body.storageBackend,
+      enabled: body.enabled,
+    }, req.user.id, req.ip) };
+  });
+
+  fastify.post('/backups/schedules/:id/run', async (req) => {
+    const { id } = req.params as { id: string };
+    return { success: true, data: await service.runBackupNow(id, req.user.id, req.ip) };
+  });
+
   fastify.get('/backups/:id/download', async (req, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
     try {

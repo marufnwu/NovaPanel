@@ -112,13 +112,16 @@ export class TunnelService {
   async deleteRoute(routeId: string, userId?: string, _ipAddress?: string) {
     if (!env.CF_API_TOKEN) throw new AppError(400, 'CF_NOT_CONFIGURED', 'Cloudflare API token not configured');
 
+    // routeId is actually the domainId since routes are identified by their associated domain
     const [domain] = await db.select().from(domains).where(eq(domains.id, routeId)).limit(1);
     if (!domain) throw new AppError(404, 'NOT_FOUND', 'Route not found');
 
     const cf = new CloudflareClient(env.CF_API_TOKEN, env.CF_ACCOUNT_ID);
+    // Look up Cloudflare zone by domain name and find tunnel DNS records
     const zone = await cf.getZoneByName(domain.name);
     if (!zone) throw new AppError(404, 'CF_ZONE_NOT_FOUND', `Cloudflare zone not found for ${domain.name}`);
 
+    // List CNAME records and find ones pointing to cloudflaretunnel.com
     const { records } = await cf.listDnsRecords(zone.id, { name: domain.name, type: 'CNAME' });
     const record = records.find(r => r.content.includes('.cloudflaretunnel.com'));
     if (record) {

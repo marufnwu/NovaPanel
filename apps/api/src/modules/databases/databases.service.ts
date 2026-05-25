@@ -3,10 +3,13 @@ import { databases, databaseUsers } from '../../db/schema/index.js';
 import { eq, count } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { AppError } from '../../errors.js';
+import { mariadbService } from '../../services/mariadb.service.js';
+import { postgresService } from '../../services/postgres.service.js';
+import { logger } from '../../config/logger.js';
 
 export class DatabasesService {
-  async list(projectId?: string): Promise<{ items: typeof databases.$inferSelect[]; total: number }> {
-    const items = await db.select().from(databases).where(projectId ? eq(databases.projectId, projectId) : undefined);
+  async list(orgId?: string): Promise<{ items: typeof databases.$inferSelect[]; total: number }> {
+    const items = await db.select().from(databases).where(orgId ? eq(databases.orgId, orgId) : undefined);
     return { items, total: items.length };
   }
 
@@ -17,7 +20,7 @@ export class DatabasesService {
   }
 
   async create(data: {
-    projectId: string;
+    orgId: string;
     name: string;
     type: 'postgresql' | 'mysql' | 'mariadb' | 'mongodb' | 'redis' | 'sqlite';
     version?: string;
@@ -32,9 +35,9 @@ export class DatabasesService {
   }) {
     const [database] = await db.insert(databases).values({
       id: nanoid(),
-      projectId: data.projectId,
+      orgId: data.orgId,
       name: data.name,
-      type: data.type,
+      type: data.type as 'postgresql' | 'mysql' | 'mariadb' | 'mongodb' | 'redis' | 'sqlite',
       version: data.version || null,
       host: data.host || 'localhost',
       port: data.port || null,
@@ -115,6 +118,147 @@ export class DatabasesService {
   async updateUserPrivileges(id: string, privileges: string[]) {
     const [updated] = await db.update(databaseUsers).set({ privileges: JSON.stringify(privileges) }).where(eq(databaseUsers.id, id)).returning();
     return updated;
+  }
+
+  /**
+   * Get database service based on database type
+   */
+  private getDbService(type: string) {
+    switch (type) {
+      case 'postgresql':
+        return postgresService;
+      case 'mariadb':
+      case 'mysql':
+        return mariadbService;
+      default:
+        throw new AppError(400, 'UNSUPPORTED_DATABASE_TYPE', `Database type ${type} is not supported`);
+    }
+  }
+
+  /**
+   * Change password for database user
+   */
+  async changePassword(databaseId: string, password: string) {
+    const database = await this.get(databaseId);
+    const [user] = await db.select().from(databaseUsers).where(eq(databaseUsers.databaseId, databaseId)).limit(1);
+    if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'Database user not found');
+
+    const service = this.getDbService(database.type);
+    await service.changePassword(user.username, password);
+    logger.info({ databaseId, username: user.username }, 'Database user password changed');
+    return { success: true };
+  }
+
+  /**
+   * Change password for a specific database user
+   */
+  async changeUserPassword(databaseId: string, userId: string, password: string) {
+    const database = await this.get(databaseId);
+    const [user] = await db.select().from(databaseUsers).where(eq(databaseUsers.id, userId)).limit(1);
+    if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'Database user not found');
+
+    const service = this.getDbService(database.type);
+    await service.changePassword(user.username, password);
+    logger.info({ databaseId, userId, username: user.username }, 'Database user password changed');
+    return { success: true };
+  }
+
+  /**
+   * Export database to SQL
+   */
+  async exportDatabase(databaseId: string, outputPath?: string) {
+    const database = await this.get(databaseId);
+    const service = this.getDbService(database.type);
+    const sql = await service.exportDatabase(database.databaseName!);
+
+    // If output path specified, write to file
+    if (outputPath) {
+      const { writeFile } = await import('node:fs/promises');
+      await writeFile(outputPath, sql, 'utf-8');
+      logger.info({ databaseId, outputPath }, 'Database exported to file');
+    }
+
+    return { success: true, data: sql };
+  }
+
+  /**
+   * Import SQL into database
+   */
+  async importDatabase(databaseId: string, sql: string) {
+    const database = await this.get(databaseId);
+    const service = this.getDbService(database.type);
+    await service.importDatabase(database.databaseName!, sql);
+    logger.info({ databaseId }, 'Database imported');
+    return { success: true };
+  }
+
+  /**
+   * Repair database tables
+   */
+  async repairDatabase(databaseId: string) {
+    const database = await this.get(databaseId);
+    const service = this.getDbService(database.type);
+    const result = await service.repairDatabase(database.databaseName!);
+    logger.info({ databaseId }, 'Database repaired');
+    return { success: result.success, output: result.output };
+  }
+
+  /**
+   * Optimize database tables
+   */
+  async optimizeDatabase(databaseId: string) {
+    const database = await this.get(databaseId);
+    const service = this.getDbService(database.type);
+    const result = await service.optimizeDatabase(database.databaseName!);
+    logger.info({ databaseId }, 'Database optimized');
+    return { success: result.success, output: result.output };
+  }
+
+  /**
+   * Clone/duplicate database
+   */
+  async cloneDatabase(databaseId: string, targetName: string) {
+    const database = await this.get(databaseId);
+    const service = this.getDbService(database.type);
+    await service.cloneDatabase(database.databaseName!, targetName);
+    logger.info({ databaseId, targetName }, 'Database cloned');
+    return { success: true };
+  }
+
+  /**
+   * Run SQL query (with safety restrictions)
+   * [P3-3] Security note: LIMIT is applied in the query itself to prevent fetching
+   * excessive rows from the database when only a subset is needed.
+   */
+  async runQuery(databaseId: string, sql: string, limit: number = 1000) {
+    const database = await this.get(databaseId);
+
+    // Security: only allow SELECT statements for raw queries
+    const trimmedSql = sql.trim().toUpperCase();
+    if (!trimmedSql.startsWith('SELECT') && !trimmedSql.startsWith('SHOW') && !trimmedSql.startsWith('DESCRIBE') && !trimmedSql.startsWith('EXPLAIN')) {
+      throw new AppError(400, 'INVALID_QUERY', 'Only SELECT, SHOW, DESCRIBE, or EXPLAIN queries are allowed');
+    }
+
+    // [P3-3] Apply LIMIT directly in the query for efficiency
+    // Append LIMIT clause only if not already present in the query
+    let querySql = sql.trim();
+    const hasLimit = /LIMIT\s+\d+/i.test(querySql);
+    if (!hasLimit) {
+      // Remove any trailing semicolon and append LIMIT
+      querySql = querySql.replace(/;?\s*$/, '') + ` LIMIT ${limit}`;
+    }
+
+    const service = this.getDbService(database.type);
+    const result = await service.runQuery(database.databaseName!, querySql);
+
+    logger.info({ databaseId, rowCount: result.rows.length }, 'Query executed');
+    return {
+      columns: result.columns,
+      rows: result.rows,
+      rowCount: result.rows.length,
+      totalRows: result.rowCount,
+      truncated: hasLimit || result.rowCount > limit,
+    };
   }
 }
 

@@ -56,17 +56,6 @@ export class OrganizationsService {
       permissions: '[]',
     });
 
-    const defaultProjectId = nanoid();
-    const { projects } = await import('../../db/schema/organizations.js');
-    await db.insert(projects).values({
-      id: defaultProjectId,
-      orgId,
-      name: 'Default Project',
-      slug: 'default',
-      environment: 'production',
-      settings: '{}',
-    });
-
     return org;
   }
 

@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 export const containers = sqliteTable('containers', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   name: text('name').notNull(),
   type: text('type', { enum: ['compose', 'dockerfile', 'image'] }).notNull(),
   composeFile: text('compose_file'),
@@ -24,7 +24,7 @@ export const containers = sqliteTable('containers', {
 
 export const containerVolumes = sqliteTable('container_volumes', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   name: text('name').notNull(),
   size: integer('size'),
   mountPoint: text('mount_point'),

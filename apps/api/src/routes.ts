@@ -14,9 +14,8 @@ export async function registerRoutes(fastify: FastifyInstance) {
   // Phase 3: Auth
   await fastify.register(import('./modules/auth/auth.routes.js'), { prefix: '/api/v1/auth' });
 
-  // Organizations + Projects (v5 multi-tenant)
+  // Organizations
   await fastify.register(import('./modules/organizations/organizations.routes.js'), { prefix: '/api/v1/organizations' });
-  await fastify.register(import('./modules/projects/projects.routes.js'), { prefix: '/api/v1/projects' });
 
   // Phase 5: Stats
   await fastify.register(import('./modules/stats/stats.routes.js'), { prefix: '/api/v1/stats' });
@@ -37,6 +36,11 @@ export async function registerRoutes(fastify: FastifyInstance) {
 
   // Containers (v5 Docker runtime)
   await fastify.register(import('./modules/containers/containers.routes.js'), { prefix: '/api/v1/containers' });
+
+  // Container WebSocket endpoints
+  const { registerContainerExecWs, registerContainerLogsWs } = await import('./modules/containers/container.ws.js');
+  await registerContainerExecWs(fastify);
+  await registerContainerLogsWs(fastify);
 
   // Container Registries
   await fastify.register(import('./modules/registries/registries.routes.js'), { prefix: '/api/v1/registries' });
@@ -121,6 +125,9 @@ export async function registerRoutes(fastify: FastifyInstance) {
 
   // API Token Management
   await fastify.register(import('./modules/tokens/tokens.routes.js'), { prefix: '/api/v1' });
+
+  // Process Manager
+  await fastify.register(import('./modules/processes/processes.routes.js'), { prefix: '/api/v1' });
 
   // Cloudflare Full Integration
   await fastify.register(import('./modules/cloudflare/cloudflare.routes.js'), { prefix: '/api/v1' });

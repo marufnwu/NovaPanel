@@ -7,11 +7,11 @@ export default defineConfig({
   retries: 1,
   workers: 1,
   reporter: process.env.CI ? 'github' : 'html',
-  timeout: 180000,
+  timeout: 120000,
   use: {
     baseURL: 'http://192.168.0.212:8732',
-    actionTimeout: 45000,
-    navigationTimeout: 90000,
+    actionTimeout: 30000,
+    navigationTimeout: 60000,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -20,8 +20,13 @@ export default defineConfig({
   },
   projects: [
     {
+      name: 'setup',
+      testMatch: /.*\.setup\.ts/,
+    },
+    {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      dependencies: ['setup'],
     },
   ],
   webServer: process.env.CI ? {

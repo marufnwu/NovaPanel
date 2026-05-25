@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 export const dnsZones = sqliteTable('dns_zones', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   domainId: text('domain_id').notNull(),
   name: text('name').notNull(),
   soa: text('soa', { mode: 'json' }),

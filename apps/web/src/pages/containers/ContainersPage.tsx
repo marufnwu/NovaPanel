@@ -26,7 +26,7 @@ export function ContainersPage() {
   const activeOrgId = useAuthStore((s) => s.activeOrgId);
   const [deleteContainerId, setDeleteContainerId] = useState<string | null>(null);
 
-  const { data: containers, isLoading, isError, error, refetch } = useContainers(activeOrgId ?? 'default');
+  const { data: containers, isLoading, isError, error, refetch } = useContainers();
   const startContainer = useStartContainer();
   const stopContainer = useStopContainer();
   const restartContainer = useRestartContainer();

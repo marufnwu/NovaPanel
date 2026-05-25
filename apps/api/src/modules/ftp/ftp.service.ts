@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid';
 import { AppError } from '../../errors.js';
 import { logger } from '../../config/logger.js';
 import { auditService } from '../audit/audit.service.js';
+import { hashPassword } from '../../utils/crypto.js';
 
 export class FtpService {
   async listAccounts(domainId: string) {
@@ -18,12 +19,14 @@ export class FtpService {
   }
 
   async createAccount(domainId: string, data: { username: string; password: string; homeDir: string; readonly?: boolean }, userId?: string, ipAddress?: string) {
+    // [P3-6] Hash password before storing for security
+    const hashedPassword = await hashPassword(data.password);
     const [account] = await db.insert(ftpAccounts).values({
       id: nanoid(),
-      projectId: 'default',
+      orgId: undefined,
       siteId: domainId,
       username: data.username,
-      password: data.password,
+      password: hashedPassword,
       homeDir: data.homeDir,
       status: 'active',
     }).returning();
@@ -50,7 +53,9 @@ export class FtpService {
     const [existing] = await db.select().from(ftpAccounts).where(eq(ftpAccounts.id, ftpId)).limit(1);
     if (!existing) throw new AppError(404, 'FTP_NOT_FOUND', 'FTP account not found');
 
-    await db.update(ftpAccounts).set({ password: newPassword }).where(eq(ftpAccounts.id, ftpId));
+    // [P3-6] Hash password before storing for security
+    const hashedPassword = await hashPassword(newPassword);
+    await db.update(ftpAccounts).set({ password: hashedPassword }).where(eq(ftpAccounts.id, ftpId));
     auditService.log({ userId, action: 'ftp.password.update', resource: `ftp:${existing.username}`, ipAddress }).catch(() => {});
     return { success: true };
   }

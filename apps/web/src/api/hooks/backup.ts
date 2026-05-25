@@ -19,12 +19,17 @@ export interface Backup {
 
 export interface BackupSchedule {
   id: string;
+  name: string;
   cronExpression: string;
-  scope: string;
-  retentionCount: number;
-  storageType: string;
-  storageConfig?: Record<string, string>;
-  isActive: boolean;
+  resourceType: string;
+  resourceId?: string | null;
+  retentionDays: number;
+  storageBackend: string;
+  enabled: boolean;
+  lastRunAt?: string | null;
+  nextRunAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
 }
 
 export interface BackupVerifyResult {
@@ -132,8 +137,8 @@ export function useBackupSchedules() {
 export function useCreateBackupSchedule() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { cronExpression: string; scope: string; retentionCount: number; storageType: string; storageConfig?: Record<string, string> }) =>
-      api.post('/backups/schedules', data),
+    mutationFn: (data: { name: string; cronExpression: string; resourceType?: string; retentionDays?: number; storageBackend?: string; enabled?: boolean }) =>
+      api.post<BackupSchedule>('/backups/schedules', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['backup-schedules'] }),
   });
 }
@@ -150,6 +155,23 @@ export function useToggleBackupSchedule() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.post(`/backups/schedules/${id}/toggle`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['backup-schedules'] }),
+  });
+}
+
+export function useUpdateBackupSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string; name?: string; cronExpression?: string; retentionDays?: number; storageBackend?: string; enabled?: boolean }) =>
+      api.put(`/backups/schedules/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['backup-schedules'] }),
+  });
+}
+
+export function useRunBackupNow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<{ backupId: string; nextRunAt: string }>(`/backups/schedules/${id}/run`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['backup-schedules'] }),
   });
 }

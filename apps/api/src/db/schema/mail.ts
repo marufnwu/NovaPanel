@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 export const mailboxes = sqliteTable('mailboxes', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   domainId: text('domain_id').notNull(),
   username: text('username').notNull(),
   password: text('password'),

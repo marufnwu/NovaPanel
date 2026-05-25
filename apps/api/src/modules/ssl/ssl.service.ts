@@ -145,7 +145,7 @@ export class SslService {
         }
       }
     } else {
-      const webroot = `${env.VHOSTS_ROOT}/${domain.projectId || 'default'}/.well-known/acme-challenge`;
+      const webroot = `${env.VHOSTS_ROOT}/${domain.orgId || 'default'}/.well-known/acme-challenge`;
       await sudoFs.mkdir(webroot);
       const result = await certbotService.issueCertificate(domain.name, params.email, webroot);
       certPath = result.certPath;
@@ -413,15 +413,25 @@ export class SslService {
   }
 
   async updateOcspStapling(_domainId: string, _enabled: boolean): Promise<void> {
-    // OCSP stapling is a server-side nginx/OpenSSL configuration
-    // For now, no-op as it requires nginx reconfiguration
+    // OCSP stapling requires nginx configuration changes: ssl_stapling on; ssl_stapling_verify on;
+    // This would require regenerating nginx vhost config and reloading nginx
+    // Currently not implemented - tracked as a future enhancement
+    // To implement: update nginx vhost template to include OCSP stapling directives
+    // and run: nginx -s reload
+    logger.info('updateOcspStapling called - OCSP stapling configuration not yet implemented');
   }
 
   async deleteCert(id: string): Promise<void> {
     const [cert] = await db.select().from(sslCertificates).where(eq(sslCertificates.id, id)).limit(1);
     if (!cert) throw new AppError(404, 'CERT_NOT_FOUND', 'Certificate not found');
+    // [P3-4] Get the domain name to pass to certbot for proper certificate deletion
+    let domainName = '';
+    if (cert.domainId) {
+      const [domain] = await db.select().from(domains).where(eq(domains.id, cert.domainId)).limit(1);
+      if (domain) domainName = domain.name;
+    }
     if (cert.type === 'letsencrypt') {
-      try { await certbotService.deleteCertificate(''); } catch (err) { logger.warn({ err }, 'Failed to delete certificate'); }
+      try { await certbotService.deleteCertificate(domainName); } catch (err) { logger.warn({ err }, 'Failed to delete certificate'); }
     }
     await db.delete(sslCertificates).where(eq(sslCertificates.id, id));
   }
@@ -430,7 +440,10 @@ export class SslService {
     const [cert] = await db.select().from(sslCertificates).where(eq(sslCertificates.id, id)).limit(1);
     if (!cert) throw new AppError(404, 'CERT_NOT_FOUND', 'Certificate not found');
     if (cert.type !== 'letsencrypt') throw new AppError(400, 'NOT_LE', 'Only LetsEncrypt certificates can be renewed');
-    const renewed = await certbotService.renew('');
+    if (!cert.domainId) throw new AppError(400, 'NO_DOMAIN', 'Certificate has no associated domain');
+    const [domain] = await db.select().from(domains).where(eq(domains.id, cert.domainId)).limit(1);
+    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+    const renewed = await certbotService.renew(domain.name);
     if (!renewed) throw new AppError(422, 'RENEW_FAILED', 'Certificate renewal failed');
   }
 

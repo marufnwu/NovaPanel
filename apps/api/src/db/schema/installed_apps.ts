@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 export const installedApps = sqliteTable('installed_apps', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   siteId: text('site_id'),
   name: text('name').notNull(),
   type: text('type').notNull(),

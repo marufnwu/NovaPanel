@@ -1,8 +1,12 @@
 import * as TablerIcons from '@tabler/icons-react';
 
-type IconName =
+export type IconName =
   | 'icon-host'
+  | 'icon-sun'
+  | 'icon-moon'
   | 'icon-database'
+  | 'icon-undo'
+  | 'icon-document'
   | 'icon-clock'
   | 'icon-download'
   | 'icon-server'
@@ -57,11 +61,17 @@ type IconName =
   | 'icon-check-circle'
   | 'icon-x-circle'
   | 'icon-cloud'
-  | 'icon-users';
+  | 'icon-users'
+  | 'icon-activity'
+  | 'icon-trending-up';
 
 const iconMap: Record<IconName, React.FC<{ size?: number; className?: string }>> = {
   'icon-host': TablerIcons.IconWorld as any,
+  'icon-sun': TablerIcons.IconSun as any,
+  'icon-moon': TablerIcons.IconMoon as any,
   'icon-database': TablerIcons.IconDatabase as any,
+  'icon-undo': TablerIcons.IconArrowBackUp as any,
+  'icon-document': TablerIcons.IconFileText as any,
   'icon-clock': TablerIcons.IconClock as any,
   'icon-download': TablerIcons.IconDownload as any,
   'icon-server': TablerIcons.IconServer as any,
@@ -117,6 +127,8 @@ const iconMap: Record<IconName, React.FC<{ size?: number; className?: string }>>
   'icon-x-circle': TablerIcons.IconCircleX as any,
   'icon-cloud': TablerIcons.IconCloud as any,
   'icon-users': TablerIcons.IconUsers as any,
+  'icon-activity': TablerIcons.IconActivity as any,
+  'icon-trending-up': TablerIcons.IconTrendingUp as any,
 };
 
 interface IconProps {

@@ -23,7 +23,7 @@ export interface VhostContext {
   redirectHttpToHttps?: boolean;
   hsts?: boolean;
   upstreamPort?: number;
-  projectId?: string;
+  orgId?: string;
   ipAllow?: string[];
   ipBlock?: string[];
 }
@@ -86,7 +86,7 @@ export class NginxService implements SystemService {
     for (const domain of siteDomains) {
       await this.addVhost({
         domain: domain.name,
-        documentRoot: `${env.VHOSTS_ROOT}/${site.projectId}/${site.name}`,
+        documentRoot: `${env.VHOSTS_ROOT}/${site.orgId}/${site.name}`,
         ssl: await this.getSslPaths(domain.id),
         redirectHttpToHttps: domain.forceHttps,
         hsts: domain.hstsEnabled,
@@ -96,8 +96,8 @@ export class NginxService implements SystemService {
   }
 
   async addVhost(ctx: VhostContext): Promise<void> {
-    if (ctx.projectId) {
-      const { allow, block } = await this.getIpAllowlistForProject(ctx.projectId);
+    if (ctx.orgId) {
+      const { allow, block } = await this.getIpAllowlistForProject(ctx.orgId);
       ctx.ipAllow = allow;
       ctx.ipBlock = block;
     }
@@ -252,8 +252,8 @@ ${ipAllowDirectives}
     };
   }
 
-  private async getWafRulesForProject(projectId: string): Promise<string[]> {
-    const rules = await db.select().from(wafRules).where(eq(wafRules.projectId, projectId)).orderBy(wafRules.priority);
+  private async getWafRulesForProject(orgId: string): Promise<string[]> {
+    const rules = await db.select().from(wafRules).where(eq(wafRules.orgId, orgId)).orderBy(wafRules.priority);
     return rules.filter(r => r.enabled).map(r => {
       switch (r.type) {
         case 'rate_limit':
@@ -273,8 +273,8 @@ ${ipAllowDirectives}
     }).filter(Boolean);
   }
 
-  private async getIpAllowlistForProject(projectId: string): Promise<{ allow: string[]; block: string[] }> {
-    const lists = await db.select().from(ipAllowlists).where(eq(ipAllowlists.projectId, projectId));
+  private async getIpAllowlistForProject(orgId: string): Promise<{ allow: string[]; block: string[] }> {
+    const lists = await db.select().from(ipAllowlists).where(eq(ipAllowlists.orgId, orgId));
     const allow: string[] = [];
     const block: string[] = [];
 
@@ -290,9 +290,9 @@ ${ipAllowDirectives}
     return { allow, block };
   }
 
-  async applySecurityRules(projectId: string): Promise<void> {
-    const rules = await db.select().from(wafRules).where(eq(wafRules.projectId, projectId));
-    const allowlists = await db.select().from(ipAllowlists).where(eq(ipAllowlists.projectId, projectId));
+  async applySecurityRules(orgId: string): Promise<void> {
+    const rules = await db.select().from(wafRules).where(eq(wafRules.orgId, orgId));
+    const allowlists = await db.select().from(ipAllowlists).where(eq(ipAllowlists.orgId, orgId));
 
     const globalConfigPath = `${env.NGINX_SITES_AVAILABLE}/security-global.conf`;
     const enabledPath = `${env.NGINX_SITES_ENABLED}/security-global.conf`;
@@ -331,7 +331,7 @@ ${ipAllowDirectives}
     await sudoFs.writeFile(globalConfigPath, content);
     await run('ln', ['-sf', globalConfigPath, enabledPath], { sudo: true });
     await this.reloadNginx();
-    logger.info({ projectId }, 'Security rules applied to nginx');
+    logger.info({ orgId }, 'Security rules applied to nginx');
   }
 }
 

@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 export const databases = sqliteTable('databases', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   name: text('name').notNull(),
   type: text('type', { enum: ['postgresql', 'mysql', 'mariadb', 'mongodb', 'redis', 'sqlite'] }).notNull(),
   version: text('version'),

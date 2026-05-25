@@ -18,7 +18,7 @@ export class WebServerService {
     if (!domain) throw new AppError(404, 'NOT_FOUND', 'Domain not found');
     return nginxService.renderVhostConfig({
       domain: domain.name,
-      documentRoot: `/var/www/${domain.projectId}/${domain.siteId || 'default'}`,
+      documentRoot: `/var/www/${domain.orgId}/${domain.siteId || 'default'}`,
       phpVersion: '8.3',
       ssl: undefined,
       redirectHttpToHttps: domain.forceHttps,

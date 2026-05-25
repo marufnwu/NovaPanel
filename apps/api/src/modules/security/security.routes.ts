@@ -20,55 +20,59 @@ const ipAllowlistSchema = z.object({
 export default async function securityRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
-  fastify.get('/projects/:projectId/waf-rules', async (req) => {
-    const { projectId } = req.params as { projectId: string };
-    const rules = await securityService.listWafRules(projectId);
+  fastify.get('/waf-rules', async (req) => {
+    const orgId = req.orgId;
+    const rules = await securityService.listWafRules(orgId!);
     return { success: true, data: rules };
   });
 
-  fastify.post('/projects/:projectId/waf-rules', async (req, reply) => {
-    const { projectId } = req.params as { projectId: string };
+  fastify.post('/waf-rules', async (req, reply) => {
+    const orgId = req.orgId;
     const data = wafRuleSchema.parse(req.body);
-    const rule = await securityService.createWafRule(projectId, data);
+    const rule = await securityService.createWafRule(orgId!, data);
     return reply.status(201).send({ success: true, data: rule });
   });
 
   fastify.put('/waf-rules/:id', async (req) => {
     const { id } = req.params as { id: string };
+    const orgId = req.orgId;
     const data = wafRuleSchema.partial().parse(req.body);
-    const rule = await securityService.updateWafRule(id, data);
+    const rule = await securityService.updateWafRule(id, orgId!, data);
     return { success: true, data: rule };
   });
 
   fastify.delete('/waf-rules/:id', async (req) => {
     const { id } = req.params as { id: string };
-    await securityService.deleteWafRule(id);
+    const orgId = req.orgId;
+    await securityService.deleteWafRule(id, orgId!);
     return { success: true };
   });
 
-  fastify.get('/projects/:projectId/ip-allowlists', async (req) => {
-    const { projectId } = req.params as { projectId: string };
-    const allowlists = await securityService.listIpAllowlists(projectId);
+  fastify.get('/ip-allowlists', async (req) => {
+    const orgId = req.orgId;
+    const allowlists = await securityService.listIpAllowlists(orgId!);
     return { success: true, data: allowlists };
   });
 
-  fastify.post('/projects/:projectId/ip-allowlists', async (req, reply) => {
-    const { projectId } = req.params as { projectId: string };
+  fastify.post('/ip-allowlists', async (req, reply) => {
+    const orgId = req.orgId;
     const data = ipAllowlistSchema.parse(req.body);
-    const allowlist = await securityService.createIpAllowlist(projectId, data);
+    const allowlist = await securityService.createIpAllowlist(orgId!, data);
     return reply.status(201).send({ success: true, data: allowlist });
   });
 
   fastify.put('/ip-allowlists/:id', async (req) => {
     const { id } = req.params as { id: string };
+    const orgId = req.orgId;
     const data = ipAllowlistSchema.partial().parse(req.body);
-    const allowlist = await securityService.updateIpAllowlist(id, data);
+    const allowlist = await securityService.updateIpAllowlist(id, orgId!, data);
     return { success: true, data: allowlist };
   });
 
   fastify.delete('/ip-allowlists/:id', async (req) => {
     const { id } = req.params as { id: string };
-    await securityService.deleteIpAllowlist(id);
+    const orgId = req.orgId;
+    await securityService.deleteIpAllowlist(id, orgId!);
     return { success: true };
   });
 }

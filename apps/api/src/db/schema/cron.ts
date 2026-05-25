@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 export const cronJobs = sqliteTable('cron_jobs', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   siteId: text('site_id'),
   name: text('name').notNull(),
   command: text('command').notNull(),

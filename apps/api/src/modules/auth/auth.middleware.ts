@@ -15,7 +15,6 @@ declare module 'fastify' {
     authMethod?: 'session' | 'token';
     tokenPermissions?: string[];
     orgId?: string;
-    projectId?: string;
   }
 }
 
@@ -74,7 +73,6 @@ export async function requireAuth(req: FastifyRequest, _reply: FastifyReply) {
   req.tokenPermissions = tokenPermissions;
 
   req.orgId = (req.headers['x-organization-id'] as string) || undefined;
-  req.projectId = (req.headers['x-project-id'] as string) || undefined;
 
   if (sessionId) {
     req.sessionId = sessionId;

@@ -12,7 +12,6 @@ export const metrics = sqliteTable('metrics', {
 export const alertRules = sqliteTable('alert_rules', {
   id: text('id').primaryKey(),
   orgId: text('org_id').notNull(),
-  projectId: text('project_id'),
   name: text('name').notNull(),
   description: text('description'),
   metric: text('metric').notNull(),

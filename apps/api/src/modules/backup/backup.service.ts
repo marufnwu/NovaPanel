@@ -63,7 +63,7 @@ export class BackupService {
       if (data.resourceType === 'site') {
         const domainList = await db.select().from(domains);
         for (const domain of domainList) {
-          const domainDir = `${env.VHOSTS_ROOT}/${domain.projectId}`;
+          const domainDir = `${env.VHOSTS_ROOT}/${domain.orgId}`;
           try {
             await run('tar', [
               '-czf', `${stagingDir}/files_${domain.name}.tar.gz`,
@@ -174,7 +174,7 @@ export class BackupService {
         for (const domain of domainList) {
           const archivePath = `${stagingDir}/files_${domain.name}.tar.gz`;
           try {
-            const domainDir = `${env.VHOSTS_ROOT}/${domain.projectId}`;
+            const domainDir = `${env.VHOSTS_ROOT}/${domain.orgId}`;
             await run('tar', ['-xzf', archivePath, '-C', domainDir], {
               sudo: true, timeout: 300_000,
             });
@@ -327,6 +327,86 @@ export class BackupService {
       resource: `schedule:${scheduleId}`,
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
+  }
+
+  /**
+   * Update a backup schedule
+   */
+  async updateSchedule(scheduleId: string, data: {
+    name?: string;
+    cronExpression?: string;
+    retentionDays?: number;
+    storageBackend?: string;
+    enabled?: boolean;
+  }, userId?: string, ipAddress?: string) {
+    const [schedule] = await db.select().from(backupSchedules).where(eq(backupSchedules.id, scheduleId)).limit(1);
+    if (!schedule) throw new AppError(404, 'SCHEDULE_NOT_FOUND', 'Backup schedule not found');
+
+    const updateData: Record<string, unknown> = { updatedAt: new Date() };
+
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.cronExpression !== undefined) {
+      const parts = data.cronExpression.trim().split(/\s+/);
+      if (parts.length < 5 || parts.length > 6) {
+        throw new AppError(400, 'INVALID_CRON', 'Invalid cron expression: must have 5 or 6 fields');
+      }
+      updateData.cronExpression = data.cronExpression;
+      updateData.nextRunAt = this.calculateNextRun(data.cronExpression);
+    }
+    if (data.retentionDays !== undefined) updateData.retentionDays = data.retentionDays;
+    if (data.storageBackend !== undefined) updateData.storageBackend = data.storageBackend;
+    if (data.enabled !== undefined) updateData.enabled = data.enabled;
+
+    await db.update(backupSchedules).set(updateData).where(eq(backupSchedules.id, scheduleId));
+
+    auditService.log({
+      userId,
+      action: 'backup.schedule.update',
+      resource: `schedule:${scheduleId}`,
+      details: JSON.stringify(data),
+      ipAddress,
+    }).catch(err => logger.error({ err }, 'Audit log failed'));
+
+    return this.getSchedule(scheduleId);
+  }
+
+  /**
+   * Get a backup schedule by ID
+   */
+  async getSchedule(scheduleId: string) {
+    const [schedule] = await db.select().from(backupSchedules).where(eq(backupSchedules.id, scheduleId)).limit(1);
+    if (!schedule) throw new AppError(404, 'SCHEDULE_NOT_FOUND', 'Backup schedule not found');
+    return schedule;
+  }
+
+  /**
+   * Run a backup immediately for a schedule
+   */
+  async runBackupNow(scheduleId: string, userId?: string, ipAddress?: string) {
+    const [schedule] = await db.select().from(backupSchedules).where(eq(backupSchedules.id, scheduleId)).limit(1);
+    if (!schedule) throw new AppError(404, 'SCHEDULE_NOT_FOUND', 'Backup schedule not found');
+
+    // Trigger immediate backup
+    const backup = await this.createBackup({
+      resourceType: schedule.resourceType as 'site' | 'database' | 'container' | 'config',
+      type: 'full',
+    }, userId, ipAddress);
+
+    // Update schedule last run time
+    const nextRun = this.calculateNextRun(schedule.cronExpression);
+    await db.update(backupSchedules)
+      .set({ lastRunAt: new Date(), nextRunAt: nextRun })
+      .where(eq(backupSchedules.id, scheduleId));
+
+    auditService.log({
+      userId,
+      action: 'backup.schedule.run_now',
+      resource: `schedule:${scheduleId}`,
+      details: JSON.stringify({ backupId: backup.id }),
+      ipAddress,
+    }).catch(err => logger.error({ err }, 'Audit log failed'));
+
+    return { backupId: backup.id, nextRunAt: nextRun };
   }
 
   /**

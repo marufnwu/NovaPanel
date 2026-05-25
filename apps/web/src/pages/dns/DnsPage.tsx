@@ -177,9 +177,12 @@ export function DnsPage() {
             }
           />
         ) : (
-          <p className="text-small text-foreground-tertiary text-center py-8">
-            {selectedDomainId ? 'No DNS records for this domain' : 'Select a domain to manage DNS records'}
-          </p>
+          <EmptyState
+            icon="icon-dns"
+            title="No DNS records"
+            description="Add your first DNS record"
+            action={{ label: 'Add Record', onClick: () => setShowAddRecord(true) }}
+          />
         )}
       </Card>
 

@@ -27,10 +27,35 @@ export const createUserSchema = z.object({
   host: z.string().default('localhost'),
 });
 
-export const changePasswordSchema = z.object({
-  password: z.string().min(8),
-});
-
 export const importDbSchema = z.object({
   sql: z.string().min(1),
+});
+
+// Change password schema
+export const changePasswordSchema = z.object({
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
+// Export schema (no body needed, exports to file)
+export const exportSchema = z.object({
+  // Optional target file path, defaults to /tmp/{database}_{timestamp}.sql
+  outputPath: z.string().optional(),
+});
+
+// Repair schema (no body needed)
+export const repairSchema = z.object({});
+
+// Optimize schema (no body needed)
+export const optimizeSchema = z.object({});
+
+// Clone schema
+export const cloneSchema = z.object({
+  targetName: z.string().min(1).max(64).regex(/^[a-z0-9_]+$/, 'Only lowercase letters, numbers, and underscores allowed'),
+});
+
+// Query execution schema with read-only restrictions
+export const querySchema = z.object({
+  sql: z.string().min(1).max(10000, 'Query must be under 10000 characters'),
+  // Optional limit to prevent accidental large result sets
+  limit: z.number().int().min(1).max(10000).optional().default(1000),
 });

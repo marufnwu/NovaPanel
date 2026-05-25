@@ -8,7 +8,7 @@ import { logger } from '../../config/logger.js';
 import { auditService } from '../audit/audit.service.js';
 
 export class CronService {
-  async listJobs(_projectId?: string) {
+  async listJobs(_orgId?: string) {
     return db.select().from(cronJobs);
   }
 
@@ -42,7 +42,7 @@ export class CronService {
 
     await db.insert(cronJobs).values({
       id: jobId,
-      projectId: 'default',
+      orgId: undefined,
       siteId: data.siteId ?? undefined,
       command: data.command,
       schedule: data.schedule,
@@ -189,7 +189,7 @@ export class CronService {
       startedAt: startTime,
     });
 
-    const result = await run('su', ['-c', job.command, jobUser], { sudo: true, timeout: 60_000 });
+    const result = await run('bash', ['-c', job.command], { sudo: true, sudoUser: jobUser, timeout: 60_000 });
 
     const endTime = new Date();
 

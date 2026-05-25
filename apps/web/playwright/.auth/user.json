@@ -1,0 +1,25 @@
+{
+  "cookies": [
+    {
+      "name": "sf_session",
+      "value": "a210da0cd44de89c54096d285be43129c46c8eec439f4bd35a4e392aae1bb793",
+      "domain": "192.168.0.212",
+      "path": "/",
+      "expires": 1779711208.204826,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://192.168.0.212:8732",
+      "localStorage": [
+        {
+          "name": "sf-auth",
+          "value": "{\"state\":{\"user\":{\"id\":\"xZKMxCLLK1tQpV0hE1HFY\",\"username\":\"admin\",\"email\":\"admin@localhost.localdomain\",\"displayName\":\"Administrator\",\"role\":\"admin\",\"twoFactorEnabled\":false,\"mustChangePassword\":true},\"isAuthenticated\":true,\"pendingTwoFactor\":false,\"pendingUserId\":null,\"sessionHash\":\"52c4a03eee0d8205a27ccf2a3ca816f1e4d16e41cb6c945329c701d1276e28ec\",\"organizations\":[],\"activeOrgId\":null},\"version\":0}"
+        }
+      ]
+    }
+  ]
+}

@@ -24,21 +24,6 @@ export const organizationMembers = sqliteTable('organization_members', {
   joinedAt: integer('joined_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 });
 
-export const projects = sqliteTable('projects', {
-  id: text('id').primaryKey(),
-  orgId: text('org_id').notNull(),
-  name: text('name').notNull(),
-  slug: text('slug').notNull(),
-  description: text('description'),
-  environment: text('environment', { enum: ['production', 'staging', 'development'] }).default('production').notNull(),
-  settings: text('settings', { mode: 'json' }).default('{}').notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }),
-});
-
 export type Organization = typeof organizations.$inferSelect;
 export type NewOrganization = typeof organizations.$inferInsert;
-export type OrganizationMember = typeof organizationMembers.$inferSelect;
-export type NewOrganizationMember = typeof organizationMembers.$inferInsert;
-export type Project = typeof projects.$inferSelect;
-export type NewProject = typeof projects.$inferInsert;
+export type OrganizationMember = typeof organizationMembers.$inferInsert;

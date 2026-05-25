@@ -55,7 +55,7 @@ export function useDatabaseInfo(databaseId: string) {
 export function useCreateDatabase() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { projectId?: string; name: string; type: 'mariadb' | 'postgresql'; charset?: string }) =>
+    mutationFn: (data: { name: string; type: 'mariadb' | 'postgresql'; charset?: string }) =>
       api.post('/databases', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['databases'] }),
   });
@@ -96,7 +96,7 @@ export function useChangeDbPassword() {
 
 export function useExportDatabase() {
   return useMutation({
-    mutationFn: (id: string) => api.get<{ sql: string }>(`/databases/${id}/export`),
+    mutationFn: (id: string) => api.post<{ sql: string }>(`/databases/${id}/export`),
   });
 }
 

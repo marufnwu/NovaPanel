@@ -61,7 +61,7 @@ export class BuildService {
     try {
       const imageName = `novapanel/site-${siteId}:${deployment.id}`;
       await dockerService.buildSite(siteId, deployment.id);
-      await dockerService.deploySite(siteId, site.projectId, imageName, site.port || undefined);
+      await dockerService.deploySite(siteId, site.orgId, imageName, site.port || undefined);
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Pipeline failed';
       await deploymentsService.updateStatus(deployment.id, 'failed', error);

@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 export const activityLogs = sqliteTable('activity_logs', {
   id: text('id').primaryKey(),
-  projectId: text('project_id'),
+  orgId: text('org_id'),
   siteId: text('site_id'),
   userId: text('user_id'),
   action: text('action').notNull(),

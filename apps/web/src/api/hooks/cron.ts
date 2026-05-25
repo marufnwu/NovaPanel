@@ -37,7 +37,7 @@ export function useCronJob(jobId: string) {
 export function useCreateCronJob() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { schedule: string; command: string; systemUser?: string; domainId?: string }) =>
+    mutationFn: (data: { schedule: string; command: string; systemUser?: string; domainId?: string; siteId?: string }) =>
       api.post<CronJob>('/cron', data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cron'] }),
   });

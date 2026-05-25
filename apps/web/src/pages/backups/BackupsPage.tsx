@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button } from '../../components/ui/Button';
 import { DataTable } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -14,29 +14,62 @@ import {
   useRestoreBackup,
   useDeleteBackup,
   useDownloadBackup,
+  useBackupSchedules,
+  useDeleteBackupSchedule,
+  useToggleBackupSchedule,
+  useRunBackupNow,
   type Backup,
+  type BackupSchedule,
 } from '../../api/hooks/backup';
 import { toast } from '../../lib/toast';
 import { Icon } from '../../components/icons';
+import { BackupScheduleModal } from './BackupScheduleModal';
+import { describeCron } from './CronBuilder';
+
+type TabId = 'backups' | 'schedules';
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: 'backups', label: 'Backups' },
+  { id: 'schedules', label: 'Scheduled Backups' },
+];
 
 export function BackupsPage() {
-  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<TabId>('backups');
+
+  // Backup hooks
   const {
     data: backups,
-    isLoading,
-    isError,
-    error,
-    refetch,
+    isLoading: isLoadingBackups,
+    isError: isErrorBackups,
+    error: backupsError,
+    refetch: refetchBackups,
   } = useBackups();
   const createBackup = useCreateBackup();
   const restoreBackup = useRestoreBackup();
   const deleteBackup = useDeleteBackup();
   const downloadBackup = useDownloadBackup();
 
+  // Schedule hooks
+  const {
+    data: schedules,
+    isLoading: isLoadingSchedules,
+    isError: isErrorSchedules,
+    error: schedulesError,
+    refetch: refetchSchedules,
+  } = useBackupSchedules();
+  const deleteSchedule = useDeleteBackupSchedule();
+  const toggleSchedule = useToggleBackupSchedule();
+  const runBackupNow = useRunBackupNow();
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [backupType, setBackupType] = useState<'full' | 'files' | 'database'>('full');
   const [restoreTarget, setRestoreTarget] = useState<Backup | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Backup | null>(null);
+
+  // Schedule modal state
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [editSchedule, setEditSchedule] = useState<BackupSchedule | null>(null);
+  const [deleteScheduleTarget, setDeleteScheduleTarget] = useState<BackupSchedule | null>(null);
 
   const formatBytes = (bytes?: number | null) => {
     if (!bytes) return '—';
@@ -45,10 +78,12 @@ export function BackupsPage() {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
-  if (isLoading) return <PageSkeleton />;
-  if (isError) return <ErrorState message={error?.message} onRetry={refetch} />;
+  const formatDate = (dateStr?: string | null) => {
+    if (!dateStr) return '—';
+    return new Date(dateStr).toLocaleString();
+  };
 
-  const columns = [
+  const backupColumns = [
     {
       key: 'filename',
       label: 'Filename',
@@ -125,32 +160,210 @@ export function BackupsPage() {
     },
   ];
 
+  const scheduleColumns = [
+    {
+      key: 'name',
+      label: 'Name',
+      render: (s: BackupSchedule) => (
+        <div>
+          <div className="font-medium">{s.name}</div>
+          <div className="text-small text-foreground-secondary capitalize">{s.resourceType}</div>
+        </div>
+      ),
+    },
+    {
+      key: 'schedule',
+      label: 'Schedule',
+      render: (s: BackupSchedule) => (
+        <div>
+          <div className="font-mono text-small">{s.cronExpression}</div>
+          <div className="text-meta text-foreground-secondary">{describeCron(s.cronExpression)}</div>
+        </div>
+      ),
+    },
+    {
+      key: 'destination',
+      label: 'Destination',
+      render: (s: BackupSchedule) => (
+        <span className="text-small px-2 py-0.5 bg-background-secondary rounded capitalize">
+          {s.storageBackend}
+        </span>
+      ),
+    },
+    {
+      key: 'lastRun',
+      label: 'Last Run',
+      render: (s: BackupSchedule) => formatDate(s.lastRunAt),
+    },
+    {
+      key: 'nextRun',
+      label: 'Next Run',
+      render: (s: BackupSchedule) => formatDate(s.nextRunAt),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (s: BackupSchedule) => (
+        <StatusBadge status={s.enabled ? 'active' : 'inactive'} />
+      ),
+    },
+    {
+      key: 'actions',
+      label: '',
+      render: (s: BackupSchedule) => (
+        <div className="flex gap-1">
+          <Button
+            variant="ghost"
+            size="small"
+            icon={<Icon name="icon-play" size={15} />}
+            loading={runBackupNow.isPending}
+            onClick={(e) => {
+              e.stopPropagation();
+              runBackupNow.mutate(s.id, {
+                onSuccess: () => toast.success('Backup started'),
+                onError: (err) => toast.error(`Failed to run backup: ${err.message}`),
+              });
+            }}
+          >
+            Run
+          </Button>
+          <Button
+            variant="ghost"
+            size="small"
+            icon={<Icon name="icon-edit" size={15} />}
+            onClick={(e) => {
+              e.stopPropagation();
+              setEditSchedule(s);
+              setShowScheduleModal(true);
+            }}
+          >
+            Edit
+          </Button>
+          <Button
+            variant="ghost"
+            size="small"
+            icon={<Icon name="icon-refresh" size={15} />}
+            loading={toggleSchedule.isPending}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleSchedule.mutate(s.id, {
+                onSuccess: () => toast.success(`Schedule ${s.enabled ? 'disabled' : 'enabled'}`),
+                onError: (err) => toast.error(`Failed to toggle: ${err.message}`),
+              });
+            }}
+          >
+            {s.enabled ? 'Disable' : 'Enable'}
+          </Button>
+          <Button
+            variant="ghost"
+            size="small"
+            icon={<Icon name="icon-trash" size={15} />}
+            onClick={(e) => {
+              e.stopPropagation();
+              setDeleteScheduleTarget(s);
+            }}
+          >
+            Delete
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-page-title font-medium">Backups</h1>
-        <Button
-          icon={<Icon name="icon-backup" size={16} />}
-          onClick={() => setShowCreateModal(true)}
-        >
-          Create Backup
-        </Button>
+        {activeTab === 'backups' ? (
+          <Button
+            icon={<Icon name="icon-backup" size={16} />}
+            onClick={() => setShowCreateModal(true)}
+          >
+            Create Backup
+          </Button>
+        ) : (
+          <Button
+            icon={<Icon name="icon-plus" size={16} />}
+            onClick={() => {
+              setEditSchedule(null);
+              setShowScheduleModal(true);
+            }}
+          >
+            Add Schedule
+          </Button>
+        )}
       </div>
 
-      <DataTable
-        columns={columns}
-        data={backups || []}
-        rowKey={(b) => b.id}
-        emptyState={
-          <EmptyState
-            icon="icon-backup"
-            title="No backups yet"
-            description="Create your first backup to protect your data"
-            action={{ label: 'Create Backup', onClick: () => setShowCreateModal(true) }}
-          />
-        }
-      />
+      {/* Tabs */}
+      <div className="border-b border-border-tertiary">
+        <nav className="flex gap-1">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2.5 text-small transition-colors relative ${
+                activeTab === tab.id
+                  ? 'text-foreground-primary font-medium'
+                  : 'text-foreground-secondary hover:text-foreground-primary'
+              }`}
+            >
+              {tab.label}
+              {activeTab === tab.id && (
+                <span className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-foreground-primary" />
+              )}
+            </button>
+          ))}
+        </nav>
+      </div>
 
+      {/* Tab Content */}
+      {activeTab === 'backups' ? (
+        isLoadingBackups ? (
+          <PageSkeleton />
+        ) : isErrorBackups ? (
+          <ErrorState message={backupsError?.message} onRetry={refetchBackups} />
+        ) : (
+          <DataTable
+            columns={backupColumns}
+            data={backups || []}
+            rowKey={(b) => b.id}
+            emptyState={
+              <EmptyState
+                icon="icon-backup"
+                title="No backups yet"
+                description="Create your first backup to protect your data"
+                action={{ label: 'Create Backup', onClick: () => setShowCreateModal(true) }}
+              />
+            }
+          />
+        )
+      ) : isLoadingSchedules ? (
+        <PageSkeleton />
+      ) : isErrorSchedules ? (
+        <ErrorState message={schedulesError?.message} onRetry={refetchSchedules} />
+      ) : (
+        <DataTable
+          columns={scheduleColumns}
+          data={schedules || []}
+          rowKey={(s) => s.id}
+          emptyState={
+            <EmptyState
+              icon="icon-clock"
+              title="No backup schedules"
+              description="Create a schedule to automatically backup your data"
+              action={{
+                label: 'Add Schedule',
+                onClick: () => {
+                  setEditSchedule(null);
+                  setShowScheduleModal(true);
+                },
+              }}
+            />
+          }
+        />
+      )}
+
+      {/* Create Backup Modal */}
       <Modal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
@@ -210,6 +423,7 @@ export function BackupsPage() {
         </div>
       </Modal>
 
+      {/* Restore Backup Dialog */}
       <ConfirmDialog
         isOpen={!!restoreTarget}
         onClose={() => setRestoreTarget(null)}
@@ -232,6 +446,7 @@ export function BackupsPage() {
         impact="high"
       />
 
+      {/* Delete Backup Dialog */}
       <ConfirmDialog
         isOpen={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
@@ -247,6 +462,36 @@ export function BackupsPage() {
         }}
         title="Delete Backup"
         description="This backup will be permanently deleted."
+        confirmText="Delete"
+        impact="high"
+      />
+
+      {/* Schedule Modal */}
+      <BackupScheduleModal
+        isOpen={showScheduleModal}
+        onClose={() => {
+          setShowScheduleModal(false);
+          setEditSchedule(null);
+        }}
+        schedule={editSchedule}
+      />
+
+      {/* Delete Schedule Dialog */}
+      <ConfirmDialog
+        isOpen={!!deleteScheduleTarget}
+        onClose={() => setDeleteScheduleTarget(null)}
+        onConfirm={() => {
+          if (!deleteScheduleTarget) return;
+          deleteSchedule.mutate(deleteScheduleTarget.id, {
+            onSuccess: () => {
+              toast.success('Schedule deleted');
+              setDeleteScheduleTarget(null);
+            },
+            onError: (err) => toast.error(`Failed to delete schedule: ${err.message}`),
+          });
+        }}
+        title="Delete Schedule"
+        description={`Delete "${deleteScheduleTarget?.name}"? This cannot be undone.`}
         confirmText="Delete"
         impact="high"
       />

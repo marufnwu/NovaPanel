@@ -5,7 +5,6 @@ import { nanoid } from 'nanoid';
 
 interface AuditLogInput {
   orgId?: string;
-  projectId?: string;
   actorType?: 'user' | 'api_key' | 'system';
   actorId?: string;
   action: string;
@@ -24,7 +23,6 @@ export class AuditService {
     await db.insert(auditLogs).values({
       id: nanoid(),
       orgId: data.orgId || data.actorId || '',
-      projectId: data.projectId || null,
       actorType: data.actorType || 'user',
       actorId: data.actorId || data.userId || '',
       action: data.action,
@@ -38,7 +36,6 @@ export class AuditService {
 
   async list(filters: {
     orgId?: string;
-    projectId?: string;
     actorType?: string;
     action?: string;
     resourceType?: string;
@@ -51,9 +48,6 @@ export class AuditService {
     const conditions = [];
     if (filters.orgId) {
       conditions.push(eq(auditLogs.orgId, filters.orgId));
-    }
-    if (filters.projectId) {
-      conditions.push(eq(auditLogs.projectId, filters.projectId));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

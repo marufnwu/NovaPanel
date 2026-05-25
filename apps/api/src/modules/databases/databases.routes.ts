@@ -2,9 +2,17 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { databasesService } from './databases.service.js';
 import { requireAuth } from '../auth/auth.middleware.js';
+import {
+  changePasswordSchema,
+  exportSchema,
+  repairSchema,
+  optimizeSchema,
+  cloneSchema,
+  querySchema,
+} from './databases.schema.js';
 
 const createDatabaseSchema = z.object({
-  projectId: z.string().min(1),
+  orgId: z.string().min(1),
   name: z.string().min(1),
   type: z.enum(['postgresql', 'mysql', 'mariadb', 'mongodb', 'redis', 'sqlite']),
   version: z.string().optional(),
@@ -40,14 +48,15 @@ export default async function databaseRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
   fastify.get('/', async (req) => {
-    const projectId = (req.query as { projectId?: string }).projectId;
-    const result = await databasesService.list(projectId);
+    const orgId = (req.query as { orgId?: string }).orgId || req.orgId;
+    const result = await databasesService.list(orgId);
     return { success: true, data: result.items, meta: { total: result.total } };
   });
 
   fastify.post('/', async (req, reply) => {
     const data = createDatabaseSchema.parse(req.body);
-    const database = await databasesService.create(data);
+    const orgId = req.orgId;
+    const database = await databasesService.create({ ...data, orgId: orgId! });
     return reply.status(201).send({ success: true, data: database });
   });
 
@@ -112,5 +121,69 @@ export default async function databaseRoutes(fastify: FastifyInstance) {
     const { privileges } = updatePrivilegesSchema.parse(req.body);
     const user = await databasesService.updateUserPrivileges(userId, privileges);
     return { success: true, data: user };
+  });
+
+  // Change user password
+  fastify.put('/:id/users/:userId/password', async (req) => {
+    const { id, userId } = req.params as { id: string; userId: string };
+    const { password } = changePasswordSchema.parse(req.body);
+    const result = await databasesService.changeUserPassword(id, userId, password);
+    return { success: true, data: result };
+  });
+
+  // Change database password (for the database itself, not a specific user)
+  fastify.post('/:id/change-password', async (req) => {
+    const { id } = req.params as { id: string };
+    const { password } = changePasswordSchema.parse(req.body);
+    const result = await databasesService.changePassword(id, password);
+    return { success: true, data: result };
+  });
+
+  // Export database
+  fastify.post('/:id/export', async (req) => {
+    const { id } = req.params as { id: string };
+    const { outputPath } = exportSchema.parse(req.body || {});
+    const result = await databasesService.exportDatabase(id, outputPath);
+    return { success: true, data: result };
+  });
+
+  // Import database
+  fastify.post('/:id/import', async (req) => {
+    const { id } = req.params as { id: string };
+    const { sql } = z.object({ sql: z.string().min(1) }).parse(req.body);
+    const result = await databasesService.importDatabase(id, sql);
+    return { success: true, data: result };
+  });
+
+  // Repair database
+  fastify.post('/:id/repair', async (req) => {
+    const { id } = req.params as { id: string };
+    repairSchema.parse(req.body || {});
+    const result = await databasesService.repairDatabase(id);
+    return { success: true, data: result };
+  });
+
+  // Optimize database
+  fastify.post('/:id/optimize', async (req) => {
+    const { id } = req.params as { id: string };
+    optimizeSchema.parse(req.body || {});
+    const result = await databasesService.optimizeDatabase(id);
+    return { success: true, data: result };
+  });
+
+  // Clone database
+  fastify.post('/:id/clone', async (req) => {
+    const { id } = req.params as { id: string };
+    const { targetName } = cloneSchema.parse(req.body);
+    const result = await databasesService.cloneDatabase(id, targetName);
+    return { success: true, data: result };
+  });
+
+  // Execute query
+  fastify.post('/:id/query', async (req) => {
+    const { id } = req.params as { id: string };
+    const { sql, limit } = querySchema.parse(req.body);
+    const result = await databasesService.runQuery(id, sql, limit);
+    return { success: true, data: result };
   });
 }

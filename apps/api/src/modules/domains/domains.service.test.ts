@@ -8,7 +8,7 @@ vi.mock('../../db/index', () => ({
         where: vi.fn().mockReturnValue({
           limit: vi.fn().mockResolvedValue([{
             id: 'domain-id',
-            projectId: 'proj-1',
+            orgId: 'proj-1',
             siteId: 'site-1',
             name: 'example.com',
             type: 'apex',
@@ -30,7 +30,7 @@ vi.mock('../../db/index', () => ({
         limit: vi.fn().mockReturnValue({
           offset: vi.fn().mockResolvedValue([{
             id: 'domain-id',
-            projectId: 'proj-1',
+            orgId: 'proj-1',
             siteId: 'site-1',
             name: 'example.com',
             type: 'apex',
@@ -137,7 +137,7 @@ describe('Domains Service', () => {
 
   describe('create', () => {
     it('should create a domain and return it', async () => {
-      const result = await service.create({ name: 'new.com', projectId: 'proj-1', siteId: 'site-1' });
+      const result = await service.create({ name: 'new.com', orgId: 'proj-1', siteId: 'site-1' });
       expect(result).toBeTruthy();
     });
   });

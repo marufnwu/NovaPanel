@@ -87,7 +87,9 @@ export class Reconciler {
     const [site] = await db.select().from(sites).where(eq(sites.id, siteId)).limit(1);
     if (!site) return null;
 
-    const siteContainers = await db.select().from(containers).where(eq(containers.projectId, site.projectId));
+    const siteContainers = site.orgId
+      ? await db.select().from(containers).where(eq(containers.orgId, site.orgId))
+      : [];
     const siteDomains = await db.select().from(domains).where(eq(domains.siteId, siteId));
 
     return { site, containers: siteContainers, domains: siteDomains };
@@ -102,7 +104,7 @@ export class Reconciler {
       nginxStatus = 'missing';
     }
 
-    const siteContainers = await db.select().from(containers).where(eq(containers.projectId, siteId));
+    const siteContainers = await db.select().from(containers).where(eq(containers.orgId, siteId));
     const containersStatus: Record<string, 'running' | 'stopped' | 'error' | 'unknown'> = {};
 
     for (const c of siteContainers) {

@@ -68,9 +68,9 @@ export class DockerService {
     }
   }
 
-  async deploySite(siteId: string, projectId: string, imageName: string, port?: number): Promise<void> {
+  async deploySite(siteId: string, orgId: string | null | undefined, imageName: string, port?: number): Promise<void> {
     const cName = containerName(siteId);
-    const netName = networkName(projectId);
+    const netName = networkName(orgId || 'default');
     const volName = volumeName(siteId);
     const containerPort = port || 3000;
 
@@ -132,9 +132,9 @@ export class DockerService {
     return this.getLogs(siteId, 200);
   }
 
-  async removeNetwork(projectId: string): Promise<void> {
+  async removeNetwork(orgId: string): Promise<void> {
     try {
-      await execAsync('docker', ['network', 'rm', networkName(projectId)]);
+      await execAsync('docker', ['network', 'rm', networkName(orgId)]);
     } catch {}
   }
 

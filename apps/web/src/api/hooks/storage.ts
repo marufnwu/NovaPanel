@@ -3,7 +3,7 @@ import { api } from '../client';
 
 export interface Bucket {
   id: string;
-  projectId: string;
+  orgId: string;
   name: string;
   region?: string;
   publicAccess: boolean;
@@ -14,7 +14,7 @@ export interface Bucket {
 
 export interface AccessKey {
   id: string;
-  projectId: string;
+  orgId: string;
   name: string;
   accessKey: string;
   secretKey: string;
@@ -23,7 +23,6 @@ export interface AccessKey {
 }
 
 export interface CreateBucketPayload {
-  projectId: string;
   name: string;
   region?: string;
   publicAccess?: boolean;
@@ -39,16 +38,15 @@ export interface UpdateBucketPayload {
 }
 
 export interface CreateAccessKeyPayload {
-  projectId: string;
   name: string;
   permissions?: string[];
 }
 
-export function useBuckets(projectId: string) {
+export function useBuckets(orgId: string) {
   return useQuery({
-    queryKey: ['buckets', projectId],
-    queryFn: () => api.get<Bucket[]>(`/buckets?projectId=${projectId}`),
-    enabled: !!projectId,
+    queryKey: ['buckets', orgId],
+    queryFn: () => api.get<Bucket[]>(`/buckets`),
+    enabled: !!orgId,
   });
 }
 
@@ -91,11 +89,11 @@ export function useDeleteBucket() {
   });
 }
 
-export function useAccessKeys(projectId: string) {
+export function useAccessKeys(orgId: string) {
   return useQuery({
-    queryKey: ['access-keys', projectId],
-    queryFn: () => api.get<AccessKey[]>(`/access-keys?projectId=${projectId}`),
-    enabled: !!projectId,
+    queryKey: ['access-keys', orgId],
+    queryFn: () => api.get<AccessKey[]>(`/access-keys`),
+    enabled: !!orgId,
   });
 }
 

@@ -12,8 +12,8 @@ function containerName(name: string) {
 }
 
 export class ContainersService {
-  async list(projectId?: string) {
-    return db.select().from(containers).where(projectId ? eq(containers.projectId, projectId) : undefined);
+  async list(orgId?: string) {
+    return db.select().from(containers).where(orgId ? eq(containers.orgId, orgId) : undefined);
   }
 
   async get(id: string) {
@@ -22,7 +22,7 @@ export class ContainersService {
   }
 
   async create(data: {
-    projectId: string;
+    orgId: string;
     name: string;
     type: 'compose' | 'dockerfile' | 'image';
     composeFile?: string;
@@ -38,7 +38,7 @@ export class ContainersService {
   }) {
     const [container] = await db.insert(containers).values({
       id: nanoid(),
-      projectId: data.projectId,
+      orgId: data.orgId,
       name: data.name,
       type: data.type,
       composeFile: data.composeFile || null,
@@ -94,7 +94,9 @@ export class ContainersService {
       try {
         await run('docker', ['rm', '-f', container.containerId], { sudo: true });
       } catch (err) {
+        // [P3-5] Log the error but still throw AppError for proper error handling
         logger.warn({ err, containerId: container.containerId }, 'Failed to remove container');
+        throw new AppError(500, 'CONTAINER_DELETE_FAILED', `Failed to remove container: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
     }
     await db.delete(containers).where(eq(containers.id, id));
@@ -176,14 +178,105 @@ export class ContainersService {
     return updated;
   }
 
-  async getLogs(id: string) {
+  async getLogs(id: string, lines: number = 200) {
     const [container] = await db.select().from(containers).where(eq(containers.id, id)).limit(1);
     if (!container) throw new AppError(404, 'NOT_FOUND', 'Container not found');
 
     if (!container.containerId) return { logs: '', running: false };
 
-    const result = await run('docker', ['logs', '--tail', '200', container.containerId], { sudo: true }).catch(() => ({ stdout: '', stderr: '' }));
+    const result = await run('docker', ['logs', '--tail', lines.toString(), container.containerId], { sudo: true }).catch(() => ({ stdout: '', stderr: '' }));
     return { logs: result.stdout + result.stderr, running: container.status === 'running' };
+  }
+
+  async getStats(id: string) {
+    const [container] = await db.select().from(containers).where(eq(containers.id, id)).limit(1);
+    if (!container) throw new AppError(404, 'NOT_FOUND', 'Container not found');
+
+    if (!container.containerId || container.status !== 'running') {
+      return { cpu: 0, memory: 0, memoryLimit: 0, networkRx: 0, networkTx: 0, blockRead: 0, blockWrite: 0 };
+    }
+
+    try {
+      // Get CPU and memory stats
+      const statsResult = await run('docker', ['stats', '--no-stream', '--format', '{{.CPUPerc}}|{{.MemPerc}}|{{.NetIO}}|{{.BlockIO}}', container.containerId], { sudo: true });
+      const output = statsResult.stdout.trim();
+      
+      if (!output) {
+        return { cpu: 0, memory: 0, memoryLimit: 0, networkRx: 0, networkTx: 0, blockRead: 0, blockWrite: 0 };
+      }
+
+      // Parse output: CPUPerc|MemPerc|NetIO|BlockIO
+      // e.g., "0.50%|1.23%|1.5MB / 2MB|10MB / 20MB"
+      const parts = output.split('|');
+      const cpuStr = parts[0]?.replace('%', '') || '0';
+      const memStr = parts[1]?.replace('%', '') || '0';
+      
+      // Parse network I/O: "1.5MB / 2MB" -> rx: 1.5, tx: 2
+      const netParts = (parts[2] || '0 / 0').split('/').map(s => s.trim());
+      const networkRx = this.parseSize(netParts[0] || '0');
+      const networkTx = this.parseSize(netParts[1] || '0');
+      
+      // Parse block I/O: "10MB / 20MB" -> read: 10, write: 20
+      const blockParts = (parts[3] || '0 / 0').split('/').map(s => s.trim());
+      const blockRead = this.parseSize(blockParts[0] || '0');
+      const blockWrite = this.parseSize(blockParts[1] || '0');
+
+      return {
+        cpu: parseFloat(cpuStr) || 0,
+        memory: parseFloat(memStr) || 0,
+        memoryLimit: 0,
+        networkRx,
+        networkTx,
+        blockRead,
+        blockWrite,
+      };
+    } catch {
+      return { cpu: 0, memory: 0, memoryLimit: 0, networkRx: 0, networkTx: 0, blockRead: 0, blockWrite: 0 };
+    }
+  }
+
+  private parseSize(sizeStr: string): number {
+    const match = sizeStr.match(/^([\d.]+)\s*([KMGT]?B?)/i);
+    if (!match) return 0;
+    const value = parseFloat(match[1]);
+    const unit = (match[2] || 'B').toUpperCase();
+    const multipliers: Record<string, number> = { 'B': 1, 'K': 1024, 'KB': 1024, 'M': 1024 * 1024, 'MB': 1024 * 1024, 'G': 1024 * 1024 * 1024, 'GB': 1024 * 1024 * 1024, 'T': 1024 * 1024 * 1024 * 1024, 'TB': 1024 * 1024 * 1024 * 1024 };
+    return Math.round(value * (multipliers[unit] || 1));
+  }
+
+  async getPortMappings(id: string) {
+    const [container] = await db.select().from(containers).where(eq(containers.id, id)).limit(1);
+    if (!container) throw new AppError(404, 'NOT_FOUND', 'Container not found');
+
+    if (!container.containerId) return { portMappings: [], exposedPorts: [] };
+
+    try {
+      // Get port mappings from docker inspect
+      const inspectResult = await run('docker', ['inspect', container.containerId], { sudo: true });
+      const inspect = JSON.parse(inspectResult.stdout)[0];
+      
+      const hostBindings = inspect.HostConfig?.PortBindings || {};
+      const exposedPorts = inspect.Config?.ExposedPorts || {};
+      
+      const portMappings = Object.entries(hostBindings).map(([containerPort, bindings]: [string, any]) => {
+        const hostPort = bindings?.[0]?.HostPort || 'not mapped';
+        const protocol = containerPort.includes('/tcp') ? 'tcp' : 'udp';
+        return {
+          containerPort: containerPort.replace(/\/(tcp|udp)/i, ''),
+          hostPort,
+          protocol,
+        };
+      });
+
+      const exposedPortsList = Object.keys(exposedPorts).map(port => ({
+        port: port.replace(/\/(tcp|udp)/i, ''),
+        protocol: port.includes('/tcp') ? 'tcp' : 'udp',
+      }));
+
+      return { portMappings, exposedPorts: exposedPortsList };
+    } catch {
+      return { portMappings: [], exposedPorts: [] };
+    }
   }
 }
 

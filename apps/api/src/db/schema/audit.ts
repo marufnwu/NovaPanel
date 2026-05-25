@@ -4,7 +4,6 @@ import { sql } from 'drizzle-orm';
 export const auditLogs = sqliteTable('audit_logs', {
   id: text('id').primaryKey(),
   orgId: text('org_id').notNull(),
-  projectId: text('project_id'),
   actorType: text('actor_type', { enum: ['user', 'api_key', 'system'] }).notNull(),
   actorId: text('actor_id').notNull(),
   action: text('action').notNull(),

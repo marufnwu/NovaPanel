@@ -1,8 +1,11 @@
 import { createRoot } from 'react-dom/client';
-import { Component, ReactNode } from 'react';
+import { Component, ReactNode, useEffect } from 'react';
 import { RouterProvider } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router } from './router';
+import { ThemeProvider } from './lib/theme-provider';
+import { CommandPalette } from './components/ui/CommandPalette';
+import { useCommandPaletteStore } from './store/command-palette-store';
 import './index.css';
 
 const showError = (msg: string, stack: string) => {
@@ -75,11 +78,36 @@ const queryClient = new QueryClient({
   },
 });
 
+const AppContent = () => {
+  const { isOpen, toggle } = useCommandPaletteStore();
+
+  // Listen for Ctrl+K or Cmd+K to open command palette
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        toggle();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [toggle]);
+
+  return (
+    <>
+      <RouterProvider router={router} />
+      <CommandPalette isOpen={isOpen} onClose={toggle} />
+    </>
+  );
+};
+
 const App = () => (
   <ErrorBoundary>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <AppContent />
+      </QueryClientProvider>
+    </ThemeProvider>
   </ErrorBoundary>
 );
 

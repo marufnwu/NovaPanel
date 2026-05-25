@@ -1,13 +1,12 @@
 import { db } from '../../db/index.js';
 import { buckets, storageAccessKeys } from '../../db/schema/index.js';
 import { eq } from 'drizzle-orm';
-import { AppError } from '../../errors.js';
 import { nanoid } from 'nanoid';
 import { randomBytes, createHash } from 'node:crypto';
 
 export class StorageService {
-  async listBuckets(projectId?: string) {
-    return db.select().from(buckets).where(projectId ? eq(buckets.projectId, projectId) : undefined);
+  async listBuckets(orgId?: string) {
+    return db.select().from(buckets).where(orgId ? eq(buckets.orgId, orgId) : undefined);
   }
 
   async getBucket(id: string) {
@@ -16,7 +15,7 @@ export class StorageService {
   }
 
   async createBucket(data: {
-    projectId: string;
+    orgId: string;
     name: string;
     region?: string;
     publicAccess?: boolean;
@@ -25,7 +24,7 @@ export class StorageService {
   }) {
     const [bucket] = await db.insert(buckets).values({
       id: nanoid(),
-      projectId: data.projectId,
+      orgId: data.orgId,
       name: data.name,
       region: data.region || 'default',
       publicAccess: data.publicAccess ?? false,
@@ -52,24 +51,24 @@ export class StorageService {
   }
 
   async deleteBucket(id: string) {
-    await db.delete(storageAccessKeys).where(eq(storageAccessKeys.projectId, id));
+    await db.delete(storageAccessKeys).where(eq(storageAccessKeys.orgId, id));
     await db.delete(buckets).where(eq(buckets.id, id));
     return { success: true };
   }
 
-  async listAccessKeys(projectId: string) {
-    const keys = await db.select().from(storageAccessKeys).where(eq(storageAccessKeys.projectId, projectId));
+  async listAccessKeys(orgId: string) {
+    const keys = await db.select().from(storageAccessKeys).where(eq(storageAccessKeys.orgId, orgId));
     return keys.map(k => ({ ...k, secretKeyHash: undefined }));
   }
 
-  async createAccessKey(data: { projectId: string; name: string; permissions?: string[] }) {
+  async createAccessKey(data: { orgId: string; name: string; permissions?: string[] }) {
     const accessKeyId = `np_${randomBytes(16).toString('hex')}`;
     const secretKey = randomBytes(32).toString('hex');
     const secretKeyHash = createHash('sha256').update(secretKey).digest('hex');
 
     const [key] = await db.insert(storageAccessKeys).values({
       id: nanoid(),
-      projectId: data.projectId,
+      orgId: data.orgId,
       name: data.name,
       accessKeyId,
       secretKeyHash,

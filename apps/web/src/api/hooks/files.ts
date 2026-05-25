@@ -175,3 +175,78 @@ export function useFileOwnership(path: string, domainId?: string, websiteId?: st
     enabled: !!path,
   });
 }
+
+export function useUploadFile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      file: File;
+      path: string;
+      domainId?: string;
+      websiteId?: string;
+      onProgress?: (percent: number) => void;
+    }) => {
+      const formData = new FormData();
+      formData.append('file', data.file);
+
+      // Build query params
+      const params = new URLSearchParams();
+      params.append('path', data.path);
+      if (data.domainId) params.append('domainId', data.domainId);
+      if (data.websiteId) params.append('websiteId', data.websiteId);
+
+      const url = `/files/upload?${params.toString()}`;
+
+      // Use XMLHttpRequest for upload progress tracking
+      return new Promise<{ name: string }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable && data.onProgress) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            data.onProgress(percent);
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const response = JSON.parse(xhr.responseText);
+              if (response.success) {
+                resolve(response.data);
+              } else {
+                reject(new Error(response.error?.message || 'Upload failed'));
+              }
+            } catch {
+              reject(new Error('Invalid response'));
+            }
+          } else {
+            reject(new Error(`Upload failed: ${xhr.statusText}`));
+          }
+        });
+
+        xhr.addEventListener('error', () => {
+          reject(new Error('Upload failed'));
+        });
+
+        // Include auth headers
+        try {
+          const stored = localStorage.getItem('sf-auth');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (parsed.token) {
+              xhr.setRequestHeader('Authorization', `Bearer ${parsed.token}`);
+            }
+            if (parsed.state?.activeOrgId) {
+              xhr.setRequestHeader('x-organization-id', parsed.state.activeOrgId);
+            }
+          }
+        } catch {}
+
+        xhr.open('POST', `/api/v1${url}`);
+        xhr.send(formData);
+      });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['files'] }),
+  });
+}

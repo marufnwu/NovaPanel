@@ -3,7 +3,7 @@ import { StorageService } from './storage.service.js';
 
 const mockBucket = {
   id: 'bucket-1',
-  projectId: 'proj-1',
+  orgId: 'proj-1',
   name: 'my-bucket',
   region: 'default',
   publicAccess: false,
@@ -107,7 +107,7 @@ describe('Storage Service', () => {
   describe('createBucket', () => {
     it('should create bucket and return it', async () => {
       const result = await service.createBucket({
-        projectId: 'proj-1',
+        orgId: 'proj-1',
         name: 'new-bucket',
         region: 'us-east-1',
         publicAccess: true,
@@ -134,7 +134,7 @@ describe('Storage Service', () => {
   describe('listAccessKeys', () => {
     it('should return access keys without secretKeyHash', async () => {
       const { db } = await import('../../db/index');
-      const mockKey = { id: 'key-1', projectId: 'proj-1', name: 'my-key', accessKeyId: 'np_abc', secretKeyHash: 'hash123', permissions: '[]' };
+      const mockKey = { id: 'key-1', orgId: 'proj-1', name: 'my-key', accessKeyId: 'np_abc', secretKeyHash: 'hash123', permissions: '[]' };
       vi.mocked(db.select).mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([mockKey]),
@@ -151,11 +151,11 @@ describe('Storage Service', () => {
       const { db } = await import('../../db/index');
       vi.mocked(db.insert).mockReturnValue({
         values: vi.fn().mockReturnValue({
-          returning: vi.fn().mockResolvedValue([{ id: 'key-1', projectId: 'proj-1', name: 'new-key', accessKeyId: 'np_test123', secretKeyHash: 'hash', permissions: '[]' }]),
+          returning: vi.fn().mockResolvedValue([{ id: 'key-1', orgId: 'proj-1', name: 'new-key', accessKeyId: 'np_test123', secretKeyHash: 'hash', permissions: '[]' }]),
         }),
       } as any);
       const result = await service.createAccessKey({
-        projectId: 'proj-1',
+        orgId: 'proj-1',
         name: 'new-key',
         permissions: ['read'],
       });

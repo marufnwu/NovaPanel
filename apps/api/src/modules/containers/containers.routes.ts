@@ -4,7 +4,7 @@ import { containersService } from './containers.service.js';
 import { requireAuth } from '../auth/auth.middleware.js';
 
 const createContainerSchema = z.object({
-  projectId: z.string().min(1),
+  orgId: z.string().min(1),
   name: z.string().min(1),
   type: z.enum(['compose', 'dockerfile', 'image']),
   composeFile: z.string().optional(),
@@ -37,14 +37,15 @@ export default async function containerRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
   fastify.get('/', async (req) => {
-    const projectId = (req.query as { projectId?: string }).projectId;
-    const items = await containersService.list(projectId);
+    const orgId = (req.query as { orgId?: string }).orgId || req.orgId;
+    const items = await containersService.list(orgId);
     return { success: true, data: items };
   });
 
   fastify.post('/', async (req, reply) => {
     const data = createContainerSchema.parse(req.body);
-    const container = await containersService.create(data);
+    const orgId = req.orgId;
+    const container = await containersService.create({ ...data, orgId: orgId! });
     return reply.status(201).send({ success: true, data: container });
   });
 
@@ -88,7 +89,20 @@ export default async function containerRoutes(fastify: FastifyInstance) {
 
   fastify.get('/:id/logs', async (req) => {
     const { id } = req.params as { id: string };
-    const result = await containersService.getLogs(id);
+    const lines = parseInt((req.query as { lines?: string }).lines || '200', 10);
+    const result = await containersService.getLogs(id, lines);
+    return { success: true, data: result };
+  });
+
+  fastify.get('/:id/stats', async (req) => {
+    const { id } = req.params as { id: string };
+    const result = await containersService.getStats(id);
+    return { success: true, data: result };
+  });
+
+  fastify.get('/:id/ports', async (req) => {
+    const { id } = req.params as { id: string };
+    const result = await containersService.getPortMappings(id);
     return { success: true, data: result };
   });
 }

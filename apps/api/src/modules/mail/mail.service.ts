@@ -38,7 +38,7 @@ export class MailService {
 
     const [mailbox] = await db.insert(mailboxes).values({
       id: nanoid(),
-      projectId: domain.projectId,
+      orgId: domain.orgId,
       domainId,
       username: data.username,
       password: data.password,
@@ -69,6 +69,9 @@ export class MailService {
     const existing = await db.select().from(mailboxes).where(eq(mailboxes.domainId, domainId)).limit(1);
     if (!existing.length) throw new AppError(400, 'NO_MAILBOX', 'Create a mailbox first');
 
+    // [P3-7] By design: forward-only aliases are stored on the first mailbox.
+    // This is because aliases forward to mailboxes and don't have their own
+    // storage - they reference the destination mailbox's aliases array.
     const [mb] = existing;
     const aliases = JSON.parse(mb.aliases as string || '[]');
     aliases.push({ source: data.source, destination: data.destination });

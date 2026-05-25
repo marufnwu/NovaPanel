@@ -150,7 +150,7 @@ export const deploymentBuildHandler: JobHandler = async (payload: JobPayload): P
     });
 
     await deploymentsService.updateStatus(deploymentId, 'deploying');
-    await dockerService.deploySite(siteId, site.projectId, imageName, site.port || undefined);
+    await dockerService.deploySite(siteId, site.orgId, imageName, site.port || undefined);
     await deploymentsService.updateStatus(deploymentId, 'success');
     await db.update(sites).set({ status: 'active', lastDeploymentId: deploymentId }).where(eq(sites.id, siteId)).returning();
 
@@ -242,7 +242,7 @@ export const deploymentRollbackHandler: JobHandler = async (payload: JobPayload)
     });
 
     const rollbackImage = `novapanel/site-${siteId}:${targetDeploymentId}`;
-    await dockerService.deploySite(siteId, site.projectId, rollbackImage, site.port || undefined);
+    await dockerService.deploySite(siteId, site.orgId, rollbackImage, site.port || undefined);
     await db.update(sites).set({ status: 'active', lastDeploymentId: targetDeploymentId }).where(eq(sites.id, siteId)).returning();
 
     jobEventBus.emitJob({

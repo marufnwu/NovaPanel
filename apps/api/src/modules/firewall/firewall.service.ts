@@ -1,6 +1,7 @@
 import { run } from '../../services/executor.js';
 import { logger } from '../../config/logger.js';
 import { auditService } from '../audit/audit.service.js';
+import { AppError } from '../../errors.js';
 
 export interface UfwRule {
   number: number;
@@ -24,6 +25,9 @@ export interface FirewallStatus {
 }
 
 export class FirewallService {
+  // [P3-8] By design: Firewall rules are managed directly by UFW on the server.
+  // Rules are NOT persisted to a database - UFW is the source of truth.
+  // This avoids synchronization issues between database state and actual firewall state.
   async getStatus(retries = 2): Promise<FirewallStatus> {
     const result = await run('ufw', ['status', 'verbose'], { sudo: true });
     const output = result.stdout.toLowerCase();
@@ -229,8 +233,21 @@ export class FirewallService {
 
   async toggleRule(ruleNumber: number, enabled: boolean) {
     if (enabled) {
-      // Re-add the rule by reading current rules and re-adding
-      logger.info({ ruleNumber, enabled }, 'Firewall rule toggled');
+      // Re-enabling a rule requires knowing the original rule specification
+      // UFW doesn't have a simple "enable rule N" command - you need to delete and re-add
+      // Get current status to see what rule N was, then re-add it
+      const statusResult = await run('ufw', ['status', 'verbose'], { sudo: true });
+      const rules = this.parseUfwStatus(statusResult.stdout || '');
+      const rule = rules.find(r => r.number === ruleNumber);
+      if (rule) {
+        // Re-add the rule - extract the action and direction from parsed rule
+        const actionWord = rule.action.toLowerCase();
+        await run('ufw', ['allow', rule.rule], { sudo: true });
+        logger.info({ ruleNumber, rule: rule.rule }, 'Firewall rule re-added');
+      } else {
+        logger.warn({ ruleNumber }, 'Firewall rule not found for re-enabling');
+        throw new AppError(404, 'RULE_NOT_FOUND', `Rule ${ruleNumber} not found in current firewall rules`);
+      }
       return { success: true };
     } else {
       // Delete the rule

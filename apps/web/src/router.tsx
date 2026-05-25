@@ -37,6 +37,7 @@ import { ServerSettingsPage } from './pages/settings/ServerSettingsPage';
 import { ProfilePage } from './pages/settings/ProfilePage';
 import { ApiTokensPage } from './pages/settings/ApiTokensPage';
 import { ServicesPage } from './pages/services/ServicesPage';
+import { ProcessesPage } from './pages/processes/ProcessesPage';
 import { Navigate } from '@tanstack/react-router';
 
 const rootRoute = createRootRoute({
@@ -277,6 +278,12 @@ const servicesRoute = createRoute({
   component: ServicesPage,
 });
 
+const processesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/processes',
+  component: ProcessesPage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   indexRoute,
@@ -316,6 +323,7 @@ const routeTree = rootRoute.addChildren([
     profileRoute,
     apiTokensRoute,
     servicesRoute,
+    processesRoute,
   ]),
   terminalRoute,
 ]);

@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 
 export const wafRules = sqliteTable('waf_rules', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   name: text('name').notNull(),
   type: text('type', { enum: ['owasp', 'custom', 'rate_limit', 'geo_block', 'bot'] }).notNull(),
   enabled: integer('enabled', { mode: 'boolean' }).default(true).notNull(),
@@ -15,7 +15,7 @@ export const wafRules = sqliteTable('waf_rules', {
 
 export const ipAllowlists = sqliteTable('ip_allowlists', {
   id: text('id').primaryKey(),
-  projectId: text('project_id').notNull(),
+  orgId: text('org_id'),
   name: text('name').notNull(),
   ips: text('ips', { mode: 'json' }).default('[]').notNull(),
   type: text('type', { enum: ['allow', 'block'] }).notNull(),

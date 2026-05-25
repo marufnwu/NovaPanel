@@ -30,6 +30,8 @@ export function DatabasesPage() {
 
   const handleCreate = async () => {
     if (!newDbName) return;
+    // Get orgId from URL or default - in real app this would come from context
+    const orgId = new URLSearchParams(window.location.search).get('orgId') || 'default-org';
     createDatabase.mutateAsync(
       { name: newDbName, type: newDbEngine },
       {

@@ -30,7 +30,7 @@ export class DnsService {
 
     const [zone] = await db.insert(dnsZones).values({
       id: nanoid(),
-      projectId: domain.projectId,
+      orgId: domain.orgId,
       domainId,
       name: domain.name,
       dnssecEnabled: false,
@@ -200,7 +200,11 @@ export class DnsService {
     lines.push(`$ORIGIN ${domain.name}.`);
     lines.push(`$TTL 3600`);
     lines.push(`@  IN  SOA  ns1.${domain.name}.  admin.${domain.name}.  (`);
-    lines.push(`  ${Date.now()}  ; Serial`);
+    // Use format: YYYYMMDDNN (year-month-day-sequence) for proper DNS serial
+    const now = new Date();
+    const serialBase = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const serial = `${serialBase}01`; // Base serial with 01 as sequence
+    lines.push(`  ${serial}  ; Serial`);
     lines.push(`  7200  ; Refresh`);
     lines.push(`  3600  ; Retry`);
     lines.push(`  1209600  ; Expire`);
@@ -234,6 +238,12 @@ export class DnsService {
     return this.exportZone(domainId);
   }
 
+  /**
+   * [P3-10] TODO: Implement actual DNS propagation checking.
+   * Currently returns stub data - production should query
+   * multiple DNS servers (Cloudflare, Google, etc.) to verify
+   * record propagation across the internet.
+   */
   async checkPropagation(domainId: string): Promise<{ checks: Array<{ nameserver: string; ip: string; resolves: boolean }> }> {
     const checks = [
       { nameserver: 'ns1.cloudflare.com', ip: '162.159.1.1', resolves: false },

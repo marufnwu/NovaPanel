@@ -34,7 +34,7 @@ describe('Security Service', () => {
 
   const mockWafRule = {
     id: 'waf-1',
-    projectId: 'proj-1',
+    orgId: 'org-1',
     name: 'Block SQL Injection',
     type: 'sql_injection' as const,
     enabled: true,
@@ -46,7 +46,7 @@ describe('Security Service', () => {
 
   const mockIpAllowlist = {
     id: 'allow-1',
-    projectId: 'proj-1',
+    orgId: 'org-1',
     name: 'Office IPs',
     ips: ['192.168.1.1', '192.168.1.2'],
     type: 'allow' as const,
@@ -69,7 +69,7 @@ describe('Security Service', () => {
           }),
         }),
       } as any);
-      const result = await service.listWafRules('proj-1');
+      const result = await service.listWafRules('org-1');
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe('Block SQL Injection');
     });
@@ -119,7 +119,7 @@ describe('Security Service', () => {
           }),
         }),
       } as any);
-      const result = await service.updateWafRule('waf-1', { name: 'Updated Rule' });
+      const result = await service.updateWafRule('waf-1', 'org-1', { name: 'Updated Rule' });
       expect(result.name).toBe('Updated Rule');
     });
 
@@ -132,7 +132,7 @@ describe('Security Service', () => {
           }),
         }),
       } as any);
-      await expect(service.updateWafRule('nonexistent', { name: 'x' })).rejects.toThrow('WAF rule not found');
+      await expect(service.updateWafRule('nonexistent', 'org-1', { name: 'x' })).rejects.toThrow('WAF rule not found');
     });
   });
 
@@ -146,7 +146,7 @@ describe('Security Service', () => {
           }),
         }),
       } as any);
-      await service.deleteWafRule('waf-1');
+      await service.deleteWafRule('waf-1', 'org-1');
       expect(db.delete).toHaveBeenCalled();
     });
   });
@@ -161,7 +161,7 @@ describe('Security Service', () => {
           }),
         }),
       } as any);
-      const result = await service.listIpAllowlists('proj-1');
+      const result = await service.listIpAllowlists('org-1');
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe('Office IPs');
     });
@@ -177,7 +177,7 @@ describe('Security Service', () => {
           }),
         }),
       } as any);
-      const result = await service.createIpAllowlist('proj-1', {
+      const result = await service.createIpAllowlist('org-1', {
         name: 'New Allowlist',
         ips: ['10.0.0.1'],
         type: 'allow' as const,
@@ -196,7 +196,7 @@ describe('Security Service', () => {
           }),
         }),
       } as any);
-      const result = await service.updateIpAllowlist('allow-1', { name: 'Updated Allowlist' });
+      const result = await service.updateIpAllowlist('allow-1', 'org-1', { name: 'Updated Allowlist' });
       expect(result.name).toBe('Updated Allowlist');
     });
 
@@ -209,7 +209,7 @@ describe('Security Service', () => {
           }),
         }),
       } as any);
-      await expect(service.updateIpAllowlist('nonexistent', { name: 'x' })).rejects.toThrow('IP allowlist not found');
+      await expect(service.updateIpAllowlist('nonexistent', 'org-1', { name: 'x' })).rejects.toThrow('IP allowlist not found');
     });
   });
 
@@ -223,7 +223,7 @@ describe('Security Service', () => {
           }),
         }),
       } as any);
-      await service.deleteIpAllowlist('allow-1');
+      await service.deleteIpAllowlist('allow-1', 'org-1');
       expect(db.delete).toHaveBeenCalled();
     });
   });

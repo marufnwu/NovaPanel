@@ -4,7 +4,6 @@ import { storageService } from './storage.service.js';
 import { requireAuth } from '../auth/auth.middleware.js';
 
 const createBucketSchema = z.object({
-  projectId: z.string().min(1),
   name: z.string().min(1),
   region: z.string().optional(),
   publicAccess: z.boolean().optional(),
@@ -20,7 +19,6 @@ const updateBucketSchema = z.object({
 });
 
 const createAccessKeySchema = z.object({
-  projectId: z.string().min(1),
   name: z.string().min(1),
   permissions: z.array(z.string()).optional(),
 });
@@ -29,14 +27,15 @@ export default async function storageRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
   fastify.get('/buckets', async (req) => {
-    const projectId = (req.query as { projectId?: string }).projectId;
-    const items = await storageService.listBuckets(projectId);
+    const orgId = req.orgId;
+    const items = await storageService.listBuckets(orgId);
     return { success: true, data: items };
   });
 
   fastify.post('/buckets', async (req, reply) => {
     const data = createBucketSchema.parse(req.body);
-    const bucket = await storageService.createBucket(data);
+    const orgId = req.orgId;
+    const bucket = await storageService.createBucket({ ...data, orgId: orgId! });
     return reply.status(201).send({ success: true, data: bucket });
   });
 
@@ -61,15 +60,16 @@ export default async function storageRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get('/access-keys', async (req) => {
-    const projectId = (req.query as { projectId?: string }).projectId;
-    if (!projectId) return { success: false, error: 'projectId required' };
-    const items = await storageService.listAccessKeys(projectId);
+    const orgId = req.orgId;
+    if (!orgId) return { success: false, error: 'orgId required' };
+    const items = await storageService.listAccessKeys(orgId);
     return { success: true, data: items };
   });
 
   fastify.post('/access-keys', async (req, reply) => {
     const data = createAccessKeySchema.parse(req.body);
-    const key = await storageService.createAccessKey(data);
+    const orgId = req.orgId;
+    const key = await storageService.createAccessKey({ ...data, orgId: orgId! });
     return reply.status(201).send({ success: true, data: key });
   });
 

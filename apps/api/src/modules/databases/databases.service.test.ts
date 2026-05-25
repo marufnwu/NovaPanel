@@ -3,7 +3,7 @@ import { DatabasesService } from './databases.service.js';
 
 const mockDatabase = {
   id: 'db-1',
-  projectId: 'proj-1',
+  orgId: 'proj-1',
   name: 'my-db',
   type: 'postgresql' as const,
   version: '15',
@@ -122,7 +122,7 @@ describe('Databases Service', () => {
   describe('create', () => {
     it('should create database and return it', async () => {
       const result = await service.create({
-        projectId: 'proj-1',
+        orgId: 'proj-1',
         name: 'new-db',
         type: 'postgresql',
       });
