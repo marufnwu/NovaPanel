@@ -1352,7 +1352,7 @@ SUDOERS
         chmod 777 "$TURBO_LOG_DIR" 2>/dev/null || true
 
         log "Installing dependencies..."
-        pnpm install --yes 2>&1 | tee /tmp/novapanel-pnpm-install.log
+        pnpm install 2>&1 | tee /tmp/novapanel-pnpm-install.log
 
         log "Building schemas, API, and web..."
         # Build shared schemas package first (required by API)
