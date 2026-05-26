@@ -8,20 +8,19 @@
 # ║  Usage:                                                              ║
 # ║    sudo bash scripts/install.sh                                      ║
 # ║    sudo ADMIN_EMAIL=you@example.com bash scripts/install.sh          ║
-# ║    sudo ./install.sh --force                                         ║
-# ║                                                                      ║
-# ║  Command line flags:                                                 ║
-# ║    --force, --wipe  Skip confirmation (for reinstall/wipe)          ║
 # ║                                                                      ║
 # ║  Environment variables (all optional with sensible defaults):        ║
 # ║    ADMIN_EMAIL     — Admin email (default: admin@$(hostname -f))     ║
-# ║    ADMIN_PASSWORD  — Admin password (default: auto-generated)        ║
+# ║    ADMIN_PASSWORD  — Admin password (default: auto-generated)      ║
 # ║    PANEL_URL       — Panel URL (default: http://$(hostname -f):8732) ║
 # ║    PANEL_USER      — System user (default: novapanel)                ║
 # ║    PANEL_HOME      — Install dir (default: /opt/novapanel)           ║
 # ║    MAIL_HOSTNAME   — Mail hostname (default: mail.$(hostname -d))    ║
-# ║    LE_EMAIL        — Let's Encrypt email (default: $ADMIN_EMAIL)     ║
+# ║    LE_EMAIL        — Let's Encrypt email (default: $ADMIN_EMAIL)    ║
 # ║    DB_PASSWORD     — MariaDB root password (default: auto-generated) ║
+# ║                                                                      ║
+# ║  NOTE: If existing installation is found, it will be automatically   ║
+# ║  wiped and fresh install will proceed. No confirmation needed.      ║
 # ║                                                                      ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 set -euo pipefail
@@ -29,21 +28,11 @@ set -euo pipefail
 # ─── Prevent interactive apt-get prompts ────────────────────────────────
 export DEBIAN_FRONTEND=noninteractive
 
-# ─── Command Line Argument Parsing ─────────────────────────────────────
-FORCE_WIPE=false
-for arg in "$@"; do
-    case "$arg" in
-        --force|--wipe)
-            FORCE_WIPE=true
-            ;;
-    esac
-done
-
 # ─── Error trapping for visibility ─────────────────────────────────────
 trap 'echo ""; echo "[✗] INSTALL FAILED at line $LINENO"; echo "    Command that failed: $BASH_COMMAND"; echo "    Check /tmp/novapanel-install.log for details"; echo ""' ERR
 
 # ─── Constants ────────────────────────────────────────────────────────
-readonly SCRIPT_VERSION="2.1.0"
+readonly SCRIPT_VERSION="2.2.0"
 readonly NODE_MAJOR="20"
 readonly PG_MAJOR="16"
 readonly MARIADB_MAJOR="11.4"
@@ -61,23 +50,6 @@ MAIL_HOSTNAME="${MAIL_HOSTNAME:-}"
 LE_EMAIL="${LE_EMAIL:-}"
 DB_PASSWORD="${DB_PASSWORD:-}"
 LOG_LEVEL="${LOG_LEVEL:-info}"
-
-# ─── Existing Installation Detection ─────────────────────────────────
-EXISTING_INSTALL=false
-
-is_interactive() {
-    [ -t 0 ]
-}
-
-check_existing_installation() {
-    local PANEL_HOME_CHECK="${PANEL_HOME:-/opt/novapanel}"
-    
-    if [ -d "$PANEL_HOME_CHECK" ] && [ -f "${PANEL_HOME_CHECK}/package.json" ]; then
-        EXISTING_INSTALL=true
-        return 0
-    fi
-    return 1
-}
 
 # ─── Colors ───────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -212,80 +184,12 @@ detect_public_ip() {
 phase_preflight() {
     section "Phase 0: Pre-flight Checks"
 
-    # Check for existing installation
-    if check_existing_installation; then
+    # Check for existing installation and auto-wipe
+    if [ -d "${PANEL_HOME:-/opt/novapanel}" ] && [ -f "${PANEL_HOME:-/opt/novapanel}/package.json" ]; then
         echo ""
-        echo -e "${RED}╔══════════════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${RED}║                                                                      ║${NC}"
-        echo -e "${RED}║     ⚠️  WARNING: EXISTING NovaPanel INSTALLATION FOUND!             ║${NC}"
-        echo -e "${RED}║                                                                      ║${NC}"
-        echo -e "${RED}╚══════════════════════════════════════════════════════════════════════╝${NC}"
-        echo ""
-        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${RED}  THIS WILL DELETE ALL DATA INCLUDING:                                 ${NC}"
-        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo ""
-        echo "  • All websites and their files in /var/www/vhosts"
-        echo "  • All databases (MariaDB, PostgreSQL)"
-        echo "  • All mailboxes and emails"
-        echo "  • All FTP accounts"
-        echo "  • All DNS records and configurations"
-        echo "  • All panel configurations and settings"
-        echo "  • All SSL certificates"
-        echo ""
-        echo -e "${RED}  ⚠️  EVERYTHING will be PERMANENTLY DELETED!${NC}"
-        echo ""
-        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo ""
-        echo -e "${CYAN}  To confirm deletion, type:  ${BOLD}YES${NC}"
-        echo -e "${CYAN}  To cancel, press:          ${BOLD}Enter${NC} or ${BOLD}Ctrl+C${NC}"
-        echo ""
-        
-        # Check for --force/--wipe flag or CONFIRM_DELETE environment variable (for pipe usage: curl | sudo bash)
-        if [ "$FORCE_WIPE" = true ] || [ "${CONFIRM_DELETE:-}" = "YES" ]; then
-            if [ "$FORCE_WIPE" = true ]; then
-                echo "  [--force/--wipe flag detected - proceeding with wipe]"
-            else
-                echo "  [Environment variable CONFIRM_DELETE=YES detected - proceeding]"
-            fi
-        elif [ -t 0 ]; then
-            # Terminal is available - prompt user with 60s timeout
-            echo -n "  Type YES to confirm: "
-            read -r -t 60 CONFIRM_DELETE || true
-            
-            if [ "$CONFIRM_DELETE" != "YES" ]; then
-                echo ""
-                echo "  Cancellation confirmed. No changes made."
-                echo "  If you want to update an existing installation, use:"
-                echo "    sudo bash scripts/update.sh"
-                exit 0
-            fi
-        else
-            # stdin is not a terminal and no force flag or CONFIRM_DELETE set
-            echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            echo -e "${RED}  ERROR: Cannot prompt for confirmation in non-interactive mode${NC}"
-            echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            echo ""
-            echo "  When running via pipe (curl | sudo bash), stdin is not a terminal."
-            echo "  Use the --force or --wipe flag to confirm deletion:"
-            echo ""
-            echo -e "    ${BOLD}Option 1 (Recommended):${NC} Download script, then run with --force:"
-            echo "      curl -fsSL URL -o install.sh"
-            echo "      chmod +x install.sh"
-            echo "      sudo ./install.sh --force"
-            echo ""
-            echo -e "    ${BOLD}Option 2:${NC} Pipe with --force flag:"
-            echo "      curl -fsSL URL | sudo bash -s -- --force"
-            echo ""
-            echo -e "    ${BOLD}Option 3:${NC} Use CONFIRM_DELETE environment variable:"
-            echo "      curl -fsSL URL | CONFIRM_DELETE=YES sudo bash"
-            echo ""
-            echo "  To cancel this installation, press Ctrl+C now."
-            exit 1
-        fi
-        
-        echo ""
-        echo -e "${YELLOW}  Confirming deletion...${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        log "Existing NovaPanel installation found - automatically wiping for fresh install..."
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo ""
         
         log "Stopping novapanel service..."
@@ -303,7 +207,7 @@ phase_preflight() {
         log "Deleting backups at /var/lib/novapanel/backups..."
         rm -rf /var/lib/novapanel/backups/* 2>/dev/null || true
         
-        ok "All existing data deleted - proceeding with fresh installation"
+        ok "Existing installation wiped - proceeding with fresh install"
     fi
 
     if [ "$EUID" -ne 0 ]; then
@@ -414,7 +318,7 @@ phase_preflight() {
     if [ "$IS_LOCAL_SERVER" = true ]; then
         echo ""
         echo "============================================================"
-        echo "⚠️  LOCAL SERVER DETECTED"
+        echo -e "${YELLOW}⚠️  LOCAL SERVER DETECTED${NC}"
         echo "============================================================"
         echo ""
         echo "Your server appears to be on a local network (IP: $SERVER_IP)"
@@ -436,16 +340,7 @@ phase_preflight() {
         echo "============================================================"
         echo ""
         
-        if is_interactive; then
-            read -p "Continue with installation? [Y/n] " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]] && [ -n "$REPLY" ]; then
-                echo "Installation cancelled."
-                exit 0
-            fi
-        else
-            ok "Non-interactive mode: continuing..."
-        fi
+        ok "Continuing with installation for local server..."
     fi
 
     ok "Configuration collected"
