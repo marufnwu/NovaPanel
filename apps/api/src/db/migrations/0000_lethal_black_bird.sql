@@ -83,18 +83,6 @@ CREATE TABLE `organizations` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `organizations_slug_unique` ON `organizations` (`slug`);--> statement-breakpoint
-CREATE TABLE `projects` (
-	`id` text PRIMARY KEY NOT NULL,
-	`org_id` text NOT NULL,
-	`name` text NOT NULL,
-	`slug` text NOT NULL,
-	`description` text,
-	`environment` text DEFAULT 'production' NOT NULL,
-	`settings` text DEFAULT '{}' NOT NULL,
-	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
-	`updated_at` integer
-);
---> statement-breakpoint
 CREATE TABLE `roles` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,
@@ -164,7 +152,7 @@ CREATE TABLE `site_health_checks` (
 --> statement-breakpoint
 CREATE TABLE `sites` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`name` text NOT NULL,
 	`slug` text NOT NULL,
 	`description` text,
@@ -192,7 +180,7 @@ CREATE TABLE `sites` (
 --> statement-breakpoint
 CREATE TABLE `domains` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`site_id` text,
 	`name` text NOT NULL,
 	`type` text DEFAULT 'apex' NOT NULL,
@@ -239,7 +227,7 @@ CREATE TABLE `database_users` (
 --> statement-breakpoint
 CREATE TABLE `databases` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`name` text NOT NULL,
 	`type` text NOT NULL,
 	`version` text,
@@ -275,7 +263,7 @@ CREATE TABLE `dns_records` (
 --> statement-breakpoint
 CREATE TABLE `dns_zones` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`domain_id` text NOT NULL,
 	`name` text NOT NULL,
 	`soa` text,
@@ -288,7 +276,7 @@ CREATE TABLE `dns_zones` (
 --> statement-breakpoint
 CREATE TABLE `ftp_accounts` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`database_id` text,
 	`site_id` text,
 	`username` text NOT NULL,
@@ -312,7 +300,7 @@ CREATE TABLE `cron_history` (
 --> statement-breakpoint
 CREATE TABLE `cron_jobs` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`site_id` text,
 	`name` text NOT NULL,
 	`command` text NOT NULL,
@@ -329,7 +317,7 @@ CREATE TABLE `cron_jobs` (
 --> statement-breakpoint
 CREATE TABLE `container_volumes` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`name` text NOT NULL,
 	`size` integer,
 	`mount_point` text,
@@ -339,7 +327,7 @@ CREATE TABLE `container_volumes` (
 --> statement-breakpoint
 CREATE TABLE `containers` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`name` text NOT NULL,
 	`type` text NOT NULL,
 	`compose_file` text,
@@ -372,7 +360,7 @@ CREATE TABLE `registries` (
 --> statement-breakpoint
 CREATE TABLE `buckets` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`name` text NOT NULL,
 	`region` text DEFAULT 'default',
 	`public_access` integer DEFAULT false NOT NULL,
@@ -384,7 +372,7 @@ CREATE TABLE `buckets` (
 --> statement-breakpoint
 CREATE TABLE `storage_access_keys` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`name` text NOT NULL,
 	`access_key_id` text NOT NULL,
 	`secret_key_hash` text NOT NULL,
@@ -396,7 +384,7 @@ CREATE TABLE `storage_access_keys` (
 CREATE UNIQUE INDEX `storage_access_keys_access_key_id_unique` ON `storage_access_keys` (`access_key_id`);--> statement-breakpoint
 CREATE TABLE `ip_allowlists` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`name` text NOT NULL,
 	`ips` text DEFAULT '[]' NOT NULL,
 	`type` text NOT NULL,
@@ -406,7 +394,7 @@ CREATE TABLE `ip_allowlists` (
 --> statement-breakpoint
 CREATE TABLE `waf_rules` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`name` text NOT NULL,
 	`type` text NOT NULL,
 	`enabled` integer DEFAULT true NOT NULL,
@@ -418,7 +406,7 @@ CREATE TABLE `waf_rules` (
 --> statement-breakpoint
 CREATE TABLE `backup_schedules` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text,
+	`org_id` text,
 	`name` text NOT NULL,
 	`resource_type` text NOT NULL,
 	`resource_id` text,
@@ -434,7 +422,7 @@ CREATE TABLE `backup_schedules` (
 --> statement-breakpoint
 CREATE TABLE `backups` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text,
+	`org_id` text,
 	`resource_type` text NOT NULL,
 	`resource_id` text,
 	`type` text DEFAULT 'full' NOT NULL,
@@ -498,7 +486,6 @@ CREATE TABLE `alert_history` (
 CREATE TABLE `alert_rules` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,
-	`project_id` text,
 	`name` text NOT NULL,
 	`description` text,
 	`metric` text NOT NULL,
@@ -560,7 +547,7 @@ CREATE TABLE `webhooks` (
 --> statement-breakpoint
 CREATE TABLE `firewall_rules` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`name` text NOT NULL,
 	`action` text NOT NULL,
 	`protocol` text DEFAULT 'tcp' NOT NULL,
@@ -575,7 +562,7 @@ CREATE TABLE `firewall_rules` (
 --> statement-breakpoint
 CREATE TABLE `mailboxes` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`domain_id` text NOT NULL,
 	`username` text NOT NULL,
 	`password` text,
@@ -612,7 +599,7 @@ CREATE TABLE `cloudflare_tunnels` (
 --> statement-breakpoint
 CREATE TABLE `tunnels` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`name` text NOT NULL,
 	`type` text NOT NULL,
 	`status` text DEFAULT 'inactive' NOT NULL,
@@ -644,7 +631,6 @@ CREATE TABLE `notifications` (
 CREATE TABLE `audit_logs` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,
-	`project_id` text,
 	`actor_type` text NOT NULL,
 	`actor_id` text NOT NULL,
 	`action` text NOT NULL,
@@ -658,7 +644,7 @@ CREATE TABLE `audit_logs` (
 --> statement-breakpoint
 CREATE TABLE `installed_apps` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
+	`org_id` text,
 	`site_id` text,
 	`name` text NOT NULL,
 	`type` text NOT NULL,
@@ -701,7 +687,7 @@ CREATE TABLE `server_stats` (
 --> statement-breakpoint
 CREATE TABLE `activity_logs` (
 	`id` text PRIMARY KEY NOT NULL,
-	`project_id` text,
+	`org_id` text,
 	`site_id` text,
 	`user_id` text,
 	`action` text NOT NULL,

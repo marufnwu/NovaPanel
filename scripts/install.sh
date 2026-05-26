@@ -1356,7 +1356,7 @@ phase_verification() {
         FAILURES=$((FAILURES + 1))
     fi
 
-    if ss -tlnp | grep -q ':8732'; then
+    if wait_for_port 127.0.0.1 8732 30; then
         ok "NovaPanel: listening on port 8732"
     else
         fail "NovaPanel: NOT listening on port 8732"
