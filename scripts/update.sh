@@ -203,9 +203,162 @@ create_backup() {
     echo ""
 }
 
+# ─── Perform fresh reinstall (for non-git installations) ──────────────────
+perform_fresh_reinstall() {
+    section "Performing Fresh Reinstall"
+
+    # This is used when /opt/novapanel exists but is NOT a git repository
+    # (e.g., installed via install.sh with shallow clone, or manual extraction)
+    # We preserve the .env file and user data, but re-clone the code
+
+    log "Detected non-git installation at ${PANEL_HOME}"
+    log "Will perform fresh install while preserving .env and data"
+
+    # Save critical files
+    local env_backup=""
+    local env_template_backup=""
+
+    if [ -f "${PANEL_HOME}/.env" ]; then
+        env_backup="/tmp/novapanel-env-backup-$(date +%Y%m%d-%H%M%S)"
+        cp "${PANEL_HOME}/.env" "$env_backup"
+        ok "Backed up .env file to $env_backup"
+    fi
+
+    # Save any custom data directories that should be preserved
+    local data_dirs=()
+    for dir in data databases; do
+        if [ -d "${PANEL_HOME}/${dir}" ]; then
+            data_dirs+=("${dir}")
+            rsync -a "${PANEL_HOME}/${dir}/" "/tmp/novapanel-${dir}-backup/" 2>/dev/null || true
+            ok "Backed up ${dir} directory"
+        fi
+    done
+
+    # Remove old installation
+    log "Removing old installation..."
+    rm -rf "${PANEL_HOME}"
+    ok "Old installation removed"
+
+    # Clone fresh
+    log "Cloning fresh installation from ${UPDATE_BRANCH} branch..."
+    cd /opt
+    if ! git clone --branch "${UPDATE_BRANCH}" --depth 1 \
+        "https://github.com/marufnwu/NovaPanel.git" novapanel 2>&1; then
+        fail "Failed to clone NovaPanel repository"
+        # Try to restore backups
+        if [ -n "$env_backup" ] && [ -f "$env_backup" ]; then
+            mkdir -p "${PANEL_HOME}"
+            cp "$env_backup" "${PANEL_HOME}/.env"
+        fi
+        exit 2
+    fi
+    ok "Fresh code cloned"
+
+    # Restore .env file
+    if [ -n "$env_backup" ] && [ -f "$env_backup" ]; then
+        cp "$env_backup" "${PANEL_HOME}/.env"
+        chmod 600 "${PANEL_HOME}/.env"
+        ok "Restored .env file"
+        rm -f "$env_backup"
+    fi
+
+    # Restore data directories
+    for dir in "${data_dirs[@]}"; do
+        if [ -d "/tmp/novapanel-${dir}-backup" ]; then
+            mkdir -p "${PANEL_HOME}/${dir}"
+            rsync -a "/tmp/novapanel-${dir}-backup/" "${PANEL_HOME}/${dir}/"
+            rm -rf "/tmp/novapanel-${dir}-backup"
+            ok "Restored ${dir} directory"
+        fi
+    done
+
+    # Build
+    log "Building NovaPanel..."
+    cd "${PANEL_HOME}"
+    ensure_pnpm
+    pnpm install 2>&1 | tail -5
+    ok "Dependencies installed"
+
+    log "Building schemas..."
+    pnpm --filter @serverforge/schemas build 2>&1 | tail -5
+    ok "Schemas built"
+
+    log "Building API..."
+    cd "${PANEL_HOME}/apps/api"
+    rm -rf dist
+    mkdir -p dist
+    pnpm exec tsc --build --force 2>&1 || {
+        warn "tsc --build failed, trying alternatives..."
+        /usr/bin/npx tsc --build --force 2>&1 || \
+            node /opt/novapanel/node_modules/.bin/tsc --build --force 2>&1
+    }
+    cp -r "${PANEL_HOME}/apps/api/src/db/migrations" "${PANEL_HOME}/apps/api/dist/db/" 2>/dev/null || true
+    ok "API built"
+
+    log "Building Web frontend..."
+    cd "${PANEL_HOME}/apps/web"
+    rm -rf dist
+    pnpm exec vite build 2>&1 | tail -10
+    ok "Web frontend built"
+
+    # Run migrations
+    section "Running Database Migrations"
+    cd "${PANEL_HOME}/apps/api"
+    if [ -f "dist/db/migrate.js" ]; then
+        log "Applying pending migrations..."
+        set -a
+        # shellcheck source=/dev/null
+        source "${PANEL_HOME}/.env"
+        set +a
+        NODE_ENV=production node dist/db/migrate.js || warn "Migration failed"
+        ok "Migrations applied"
+    else
+        warn "Migration script not found — will run on next start"
+    fi
+
+    # Fix permissions
+    log "Fixing permissions..."
+    chown -R novapanel:novapanel "${PANEL_HOME}"
+    ok "Permissions fixed"
+
+    # Restart service
+    section "Restarting NovaPanel"
+    log "Restarting novapanel service..."
+    systemctl stop novapanel 2>/dev/null || true
+    sleep 2
+    systemctl start novapanel 2>&1 || {
+        warn "Failed to start novapanel. Checking status..."
+        systemctl status novapanel || true
+        journalctl -u novapanel --no-pager -n 20 || true
+    }
+
+    local waited=0
+    while [ $waited -lt 30 ]; do
+        if systemctl is-active --quiet novapanel 2>/dev/null; then
+            ok "NovaPanel is running"
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    if [ $waited -ge 30 ]; then
+        warn "NovaPanel may not have started successfully"
+        warn "Check status with: systemctl status novapanel"
+        warn "Check logs with: journalctl -u novapanel -n 50"
+    fi
+}
+
 # ─── Perform the actual update ───────────────────────────────────────────
 perform_update() {
     section "Updating NovaPanel"
+
+    # Check if this is a git repository
+    if [ ! -d "${PANEL_HOME}/.git" ]; then
+        warn "Not a git repository — performing fresh reinstall instead"
+        perform_fresh_reinstall
+        return $?
+    fi
 
     # Stash current version info for changelog
     local current_version
@@ -215,11 +368,6 @@ perform_update() {
     # Pull latest code
     log "Pulling latest code from ${UPDATE_BRANCH} branch..."
     cd "${PANEL_HOME}"
-
-    # Configure git if needed
-    if [ ! -d "${PANEL_HOME}/.git" ]; then
-        die "Not a git repository. Please re-install using install.sh"
-    fi
 
     git fetch origin "${UPDATE_BRANCH}"
 
