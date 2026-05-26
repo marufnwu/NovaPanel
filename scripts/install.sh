@@ -899,7 +899,24 @@ phase_panel_deploy() {
     ok "Panel user: ${PANEL_USER}"
 
     log "Configuring sudo access for ${PANEL_USER}..."
-    # SECURITY FIX: Narrow down sudoers rules to only specific services needed
+    # SECURITY FIX: First, remove any existing broken sudoers file to avoid syntax errors
+    # from previous failed installations
+    if [ -f /etc/sudoers.d/novapanel ]; then
+        log "Removing any existing broken sudoers file..."
+        rm -f /etc/sudoers.d/novapanel
+    fi
+
+    # Create wrapper script for chown operations (avoids colon syntax issues in sudoers)
+    mkdir -p /opt/novapanel/bin
+    cat > /opt/novapanel/bin/chown-vhosts.sh << 'CHOWN_WRAPPER'
+#!/bin/bash
+# Wrapper script for vhosts directory ownership changes
+# This avoids colon syntax issues in sudoers rules
+chown -R novapanel:novapanel /var/www/vhosts/
+CHOWN_WRAPPER
+    chmod 755 /opt/novapanel/bin/chown-vhosts.sh
+
+    # Write sudoers rules with proper validation
     cat > /etc/sudoers.d/novapanel << 'SUDOERS'
 # Panel service control - limited to specific services only
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nginx, /usr/bin/systemctl restart php*-fpm, /usr/bin/systemctl restart mariadb, /usr/bin/systemctl restart postgresql, /usr/bin/systemctl restart redis-server, /usr/bin/systemctl restart apache2, /usr/bin/systemctl restart named, /usr/bin/systemctl restart postfix, /usr/bin/systemctl restart dovecot, /usr/bin/systemctl restart proftpd, /usr/bin/systemctl restart fail2ban
@@ -921,8 +938,8 @@ novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/nginx/sites-available/novapanel-
 # PHP-FPM pool configuration
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/php/*/fpm/pool.d/novapanel-*
 
-# Web file permissions - fixed wildcard issue by using specific chmod commands
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/chown -R novapanel:novapanel /var/www/vhosts/
+# Web file permissions - use wrapper script to avoid colon syntax issues in sudoers
+novapanel ALL=(ALL) NOPASSWD: /opt/novapanel/bin/chown-vhosts.sh
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/chmod 644 /var/www/vhosts/*/wp-config.php
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/chmod 755 /var/www/vhosts/*/uploads/
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/chmod 644 /var/www/vhosts/*/.htaccess
@@ -951,8 +968,16 @@ novapanel ALL=(ALL) NOPASSWD: /usr/sbin/ufw allow 8732/tcp, /usr/sbin/ufw delete
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/crontab -u novapanel *
 SUDOERS
     chmod 440 /etc/sudoers.d/novapanel
+    
+    # Validate sudoers syntax
     if command -v visudo &>/dev/null; then
-        visudo -c 2>/dev/null || warn "sudoers syntax check failed"
+        if ! visudo -c -f /etc/sudoers.d/novapanel 2>&1; then
+            warn "sudoers syntax check failed - removing invalid file"
+            rm -f /etc/sudoers.d/novapanel
+            fail "Sudoers configuration failed. Please manually run: sudo visudo -f /etc/sudoers.d/novapanel"
+        else
+            ok "sudoers syntax validated"
+        fi
     fi
     ok "Sudo access configured for ${PANEL_USER}"
 
