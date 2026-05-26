@@ -226,16 +226,45 @@ phase_preflight() {
         echo -e "${CYAN}  To confirm deletion, type:  ${BOLD}YES${NC}"
         echo -e "${CYAN}  To cancel, press:          ${BOLD}Enter${NC} or ${BOLD}Ctrl+C${NC}"
         echo ""
-        echo -n "  Type YES to confirm: "
         
-        read -r CONFIRM_DELETE || true
-        
-        if [ "$CONFIRM_DELETE" != "YES" ]; then
+        # Check for CONFIRM_DELETE environment variable first (for pipe usage: curl | sudo bash)
+        if [ "${CONFIRM_DELETE:-}" = "YES" ]; then
+            echo "  [Environment variable CONFIRM_DELETE=YES detected - proceeding]"
+        elif [ -t 0 ]; then
+            # Terminal is available - prompt user with 60s timeout
+            echo -n "  Type YES to confirm: "
+            read -r -t 60 CONFIRM_DELETE || true
+            
+            if [ "$CONFIRM_DELETE" != "YES" ]; then
+                echo ""
+                echo "  Cancellation confirmed. No changes made."
+                echo "  If you want to update an existing installation, use:"
+                echo "    sudo bash scripts/update.sh"
+                exit 0
+            fi
+        else
+            # stdin is not a terminal and CONFIRM_DELETE is not set
+            echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "${RED}  ERROR: Cannot prompt for confirmation in non-interactive mode${NC}"
+            echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo ""
-            echo "  Cancellation confirmed. No changes made."
-            echo "  If you want to update an existing installation, use:"
-            echo "    sudo bash scripts/update.sh"
-            exit 0
+            echo "  When running via pipe (curl | sudo bash), stdin is not a terminal."
+            echo "  Use the CONFIRM_DELETE environment variable to confirm deletion:"
+            echo ""
+            echo -e "    ${BOLD}Option 1:${NC} Pipe with env var on same line:"
+            echo "      curl -fsSL URL | CONFIRM_DELETE=YES sudo bash"
+            echo ""
+            echo -e "    ${BOLD}Option 2:${NC} Export first, then pipe:"
+            echo "      export CONFIRM_DELETE=YES"
+            echo "      curl -fsSL URL | sudo bash"
+            echo ""
+            echo -e "    ${BOLD}Option 3:${NC} Download script, then run:"
+            echo "      curl -fsSL URL -o install.sh"
+            echo "      chmod +x install.sh"
+            echo "      sudo CONFIRM_DELETE=YES ./install.sh"
+            echo ""
+            echo "  To cancel this installation, press Ctrl+C now."
+            exit 1
         fi
         
         echo ""
