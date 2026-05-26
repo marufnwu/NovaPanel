@@ -57,6 +57,69 @@ BEHIND_NAT=false
 PUBLIC_IP=""
 SERVER_IP=""
 
+# ─── Existing Installation Detection ──────────────────────────────────
+IS_UPDATE=false
+EXISTING_INSTALL=false
+
+# Helper: Check if running interactively
+is_interactive() {
+    # Return true if stdin is a terminal AND not running with FORCE=1
+    if [ -t 0 ] && [ "${FORCE:-0}" != "1" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Helper: Check for existing installation
+check_existing_installation() {
+    local PANEL_HOME_CHECK="${PANEL_HOME:-/opt/novapanel}"
+    
+    if [ -d "$PANEL_HOME_CHECK" ] && [ -f "${PANEL_HOME_CHECK}/package.json" ]; then
+        EXISTING_INSTALL=true
+        IS_UPDATE=true
+        return 0
+    fi
+    return 1
+}
+
+# Prompt for update confirmation
+ask_update_confirmation() {
+    local PANEL_HOME_CHECK="${PANEL_HOME:-/opt/novapanel}"
+    
+    echo ""
+    echo "============================================================"
+    echo -e "${YELLOW}⚠️  EXISTING INSTALLATION DETECTED${NC}"
+    echo "============================================================"
+    echo ""
+    echo -e "Found existing NovaPanel installation at: ${BOLD}${PANEL_HOME_CHECK}${NC}"
+    echo ""
+    echo "This will:"
+    echo "  • Update existing code to the latest version"
+    echo "  • Keep your current database and settings"
+    echo "  • Restart all services"
+    echo ""
+    echo -e "${GREEN}Your data will NOT be lost.${NC}"
+    echo ""
+    read -p "Do you want to continue? [Y/n]: " -n 1 -r REPLY
+    echo
+    
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        echo ""
+        echo "Installation cancelled."
+        echo ""
+        echo "To update NovaPanel, use the update script or run:"
+        echo "  curl -fsSL <update-url> | sudo bash"
+        echo ""
+        echo "Or set FORCE=1 to skip this prompt:"
+        echo "  FORCE=1 sudo bash $0"
+        echo ""
+        exit 0
+    fi
+    
+    echo -e "${GREEN}Continuing with update...${NC}"
+}
+
 # ─── Colors ──────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -206,6 +269,18 @@ detect_public_ip() {
 phase_preflight() {
     section "Phase 0: Pre-flight Checks"
 
+    # ─── Existing Installation Check ──────────────────────────────────
+    # Check BEFORE any system modifications to give user a chance to cancel
+    if check_existing_installation; then
+        log "Existing NovaPanel installation detected at ${PANEL_HOME}"
+        
+        if is_interactive; then
+            ask_update_confirmation
+        else
+            ok "Non-interactive mode: proceeding with update automatically"
+        fi
+    fi
+
     # Root check
     if [ "$EUID" -ne 0 ]; then
         die "This script must be run as root. Use: sudo bash $0"
@@ -323,7 +398,19 @@ phase_preflight() {
     if [ -z "$DB_PASSWORD" ]; then
         DB_PASSWORD="$(gen_secret 24)"
     fi
-    if [ -z "$ADMIN_PASSWORD" ]; then
+    
+    # On update with existing .env, preserve existing admin credentials
+    if [ "$IS_UPDATE" = true ] && [ -f "${PANEL_HOME}/.env" ]; then
+        log "Preserving existing admin credentials on update"
+        set -a
+        # shellcheck source=/dev/null
+        source "${PANEL_HOME}/.env"
+        set +a
+        
+        # Use existing values if available
+        ADMIN_EMAIL="${ADMIN_EMAIL:-$ADMIN_EMAIL}"
+        ADMIN_PASSWORD="${ADMIN_PASSWORD:-$ADMIN_PASSWORD}"
+    elif [ -z "$ADMIN_PASSWORD" ]; then
         ADMIN_PASSWORD="$(gen_password)"
     fi
 
@@ -354,7 +441,7 @@ phase_preflight() {
         echo ""
         
         # Ask if user wants to continue (skip in non-interactive mode or with FORCE=1)
-        if [ -t 0 ] && [ "${FORCE:-0}" != "1" ]; then
+        if is_interactive; then
             read -p "Continue with installation? [Y/n] " -n 1 -r
             echo
             if [[ ! $REPLY =~ ^[Yy]$ ]] && [ -n "$REPLY" ]; then
@@ -362,7 +449,7 @@ phase_preflight() {
                 exit 0
             fi
         else
-            ok "Continuing in non-interactive mode..."
+            ok "Non-interactive mode: continuing..."
         fi
     fi
 
@@ -1079,7 +1166,7 @@ SUDOERS
 
         if [ -d "${CLONE_DIR}/.git" ]; then
             log "Updating existing clone at ${CLONE_DIR}..."
-            cd "${CLONE_DIR}" && git pull --ff-only || warn "Git pull failed, using existing code"
+            cd "${CLONE_DIR}" && git fetch origin && git checkout "${REPO_BRANCH}" && git pull --ff-only origin "${REPO_BRANCH}" || warn "Git pull failed, using existing code"
         else
             log "Cloning ${REPO_URL} (branch: ${REPO_BRANCH})..."
             git clone --depth 1 --branch "${REPO_BRANCH}" "${REPO_URL}" "${CLONE_DIR}"
@@ -1208,7 +1295,7 @@ SUDOERS
         ok "Panel built successfully"
     fi
 
-    # 3e. Generate environment file
+    # 3e. Generate environment file (preserve existing values on update)
     local ENV_FILE="${PANEL_HOME}/.env"
     if [ ! -f "$ENV_FILE" ]; then
         log "Generating environment configuration..."
@@ -1264,7 +1351,23 @@ ENVEOF
         chmod 600 "$ENV_FILE"
         ok "Environment file generated at ${ENV_FILE}"
     else
-        ok "Environment file already exists"
+        ok "Environment file already exists — preserving existing configuration"
+        
+        # On update: preserve existing .env values and only update if explicitly set
+        if [ "$IS_UPDATE" = true ]; then
+            log "Preserving existing .env configuration on update"
+            
+            # Source existing .env to get current values
+            set -a
+            # shellcheck source=/dev/null
+            source "$ENV_FILE"
+            set +a
+            
+            # Update PANEL_URL if it was provided and differs
+            if [ -n "$PANEL_URL" ] && [ "$PANEL_URL" != "$PANEL_URL" ]; then
+                sed -i "s|^PANEL_URL=.*|PANEL_URL=${PANEL_URL}|" "$ENV_FILE" 2>/dev/null || true
+            fi
+        fi
     fi
 
     # FIX #5: Create Dovecot SQL config AFTER database migrations run
@@ -1297,14 +1400,18 @@ DOVECOTSQL
         chmod 640 /etc/dovecot/dovecot-sql.conf.ext
     fi
 
-    # 3g. Run database seeding
+    # 3g. Run database seeding (skip on update - preserve existing data)
     if [ -f "${PANEL_HOME}/apps/api/dist/db/seed.js" ]; then
-        log "Seeding database..."
-        cd "${PANEL_HOME}/apps/api"
-        # Run seed as root (sudo -u fails in nohup context with libsql error 14)
-        # Ownership is fixed later by chown -R
-        set -a && source "${PANEL_HOME}/.env" && set +a && NODE_ENV=production node dist/db/seed.js || \
-            warn "Seeding failed — will retry on first start"
+        if [ "$IS_UPDATE" = true ]; then
+            log "Skipping database seeding on update (preserving existing data)"
+        else
+            log "Seeding database..."
+            cd "${PANEL_HOME}/apps/api"
+            # Run seed as root (sudo -u fails in nohup context with libsql error 14)
+            # Ownership is fixed later by chown -R
+            set -a && source "${PANEL_HOME}/.env" && set +a && NODE_ENV=production node dist/db/seed.js || \
+                warn "Seeding failed — will retry on first start"
+        fi
     fi
 
     # 3h. Set permissions
@@ -1589,34 +1696,52 @@ CREDSEOF
     # ━━━ Installation Complete ━━━
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  🎉 NovaPanel Installation Complete!"
+    
+    if [ "$IS_UPDATE" = true ]; then
+        echo -e "  ${GREEN}🎉 NovaPanel Update Complete!${NC}"
+    else
+        echo -e "  ${GREEN}🎉 NovaPanel Installation Complete!${NC}"
+    fi
+    
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "  📋 Access Information:"
-    echo "  ┌─────────────────────────────────────────────────────────────────┐"
-    echo "  │ Panel URL:       ${PANEL_URL}"
-    echo "  │ Admin Username:  admin"
-    echo "  │ Admin Password:  ${ADMIN_PASSWORD}"
-    echo "  │ Admin Email:     ${ADMIN_EMAIL}"
-    echo "  └─────────────────────────────────────────────────────────────────┘"
-    echo ""
-    echo "  📁 File Locations:"
-    echo "  ┌─────────────────────────────────────────────────────────────────┐"
-    echo "  │ Panel Directory:  ${PANEL_HOME}"
-    echo "  │ Config File:      ${PANEL_HOME}/.env"
-    echo "  │ Credentials:      ${CREDS_FILE}"
-    echo "  │ Database:         /var/lib/novapanel/novapanel.db"
-    echo "  │ Logs:             /var/log/novapanel/"
-    echo "  └─────────────────────────────────────────────────────────────────┘"
-    echo ""
-    echo "  🔧 Management Commands:"
-    echo "  ┌─────────────────────────────────────────────────────────────────┐"
-    echo "  │ Start:    sudo systemctl start novapanel"
-    echo "  │ Stop:     sudo systemctl stop novapanel"
-    echo "  │ Restart:  sudo systemctl restart novapanel"
-    echo "  │ Status:   sudo systemctl status novapanel"
-    echo "  │ Logs:     sudo journalctl -u novapanel -f"
-    echo "  └─────────────────────────────────────────────────────────────────┘"
+    
+    if [ "$IS_UPDATE" = true ]; then
+        echo "  📋 Update Summary:"
+        echo "  ┌─────────────────────────────────────────────────────────────────┐"
+        echo "  │ Panel URL:       ${PANEL_URL}"
+        echo "  │ Config File:    ${PANEL_HOME}/.env"
+        echo "  │ Database:       /var/lib/novapanel/novapanel.db (preserved)"
+        echo "  └─────────────────────────────────────────────────────────────────┘"
+        echo ""
+        echo "  Your existing settings and data have been preserved."
+    else
+        echo "  📋 Access Information:"
+        echo "  ┌─────────────────────────────────────────────────────────────────┐"
+        echo "  │ Panel URL:       ${PANEL_URL}"
+        echo "  │ Admin Username:  admin"
+        echo "  │ Admin Password:  ${ADMIN_PASSWORD}"
+        echo "  │ Admin Email:     ${ADMIN_EMAIL}"
+        echo "  └─────────────────────────────────────────────────────────────────┘"
+        echo ""
+        echo "  📁 File Locations:"
+        echo "  ┌─────────────────────────────────────────────────────────────────┐"
+        echo "  │ Panel Directory:  ${PANEL_HOME}"
+        echo "  │ Config File:      ${PANEL_HOME}/.env"
+        echo "  │ Credentials:      ${CREDS_FILE}"
+        echo "  │ Database:         /var/lib/novapanel/novapanel.db"
+        echo "  │ Logs:             /var/log/novapanel/"
+        echo "  └─────────────────────────────────────────────────────────────────┘"
+        echo ""
+        echo "  🔧 Management Commands:"
+        echo "  ┌─────────────────────────────────────────────────────────────────┐"
+        echo "  │ Start:    sudo systemctl start novapanel"
+        echo "  │ Stop:     sudo systemctl stop novapanel"
+        echo "  │ Restart:  sudo systemctl restart novapanel"
+        echo "  │ Status:   sudo systemctl status novapanel"
+        echo "  │ Logs:     sudo journalctl -u novapanel -f"
+        echo "  └─────────────────────────────────────────────────────────────────┘"
+    fi
     echo ""
     echo "  🌐 Services Running:"
     echo "  ┌─────────────────────────────────────────────────────────────────┐"
@@ -1674,12 +1799,22 @@ CREDSEOF
 # MAIN EXECUTION
 # ═════════════════════════════════════════════════════════════════════════
 main() {
-    echo ""
-    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║     NovaPanel Server Installer v${SCRIPT_VERSION}                     ║${NC}"
-    echo -e "${CYAN}║     Verification-First Approach                              ║${NC}"
-    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
-    echo ""
+    # Show appropriate header based on installation type
+    if [ "$EXISTING_INSTALL" = true ]; then
+        echo ""
+        echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║     NovaPanel Server Updater v${SCRIPT_VERSION}                         ║${NC}"
+        echo -e "${CYAN}║     Updating Existing Installation                           ║${NC}"
+        echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+    else
+        echo ""
+        echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║     NovaPanel Server Installer v${SCRIPT_VERSION}                     ║${NC}"
+        echo -e "${CYAN}║     Verification-First Approach                              ║${NC}"
+        echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+    fi
 
     phase_preflight
     phase_system_packages
