@@ -51,6 +51,16 @@ LE_EMAIL="${LE_EMAIL:-}"
 DB_PASSWORD="${DB_PASSWORD:-}"
 LOG_LEVEL="${LOG_LEVEL:-info}"
 
+# ─── Parse Arguments ────────────────────────────────────────────────────────
+# Parse --force flag early before any interactive checks
+FORCE_ARG=0
+for arg in "$@"; do
+    if [ "$arg" = "--force" ]; then
+        FORCE_ARG=1
+        break
+    fi
+done
+
 # ─── Local Server Detection ────────────────────────────────────────────
 IS_LOCAL_SERVER=false
 BEHIND_NAT=false
@@ -63,8 +73,8 @@ EXISTING_INSTALL=false
 
 # Helper: Check if running interactively
 is_interactive() {
-    # Return true if stdin is a terminal AND not running with FORCE=1
-    if [ -t 0 ] && [ "${FORCE:-0}" != "1" ]; then
+    # Return true if stdin is a terminal
+    if [ -t 0 ]; then
         return 0
     else
         return 1
@@ -274,10 +284,21 @@ phase_preflight() {
     if check_existing_installation; then
         log "Existing NovaPanel installation detected at ${PANEL_HOME}"
         
-        if is_interactive; then
+        # Check if we should skip the confirmation prompt
+        # Skip only if FORCE=1 env var is set OR --force flag was passed
+        local FORCE_SKIP=0
+        if [ "${FORCE:-0}" = "1" ] || [ "$FORCE_ARG" = "1" ]; then
+            FORCE_SKIP=1
+        fi
+        
+        if is_interactive && [ "$FORCE_SKIP" = "0" ]; then
             ask_update_confirmation
         else
-            ok "Non-interactive mode: proceeding with update automatically"
+            if [ "$FORCE_SKIP" = "1" ]; then
+                ok "FORCE=1 set: skipping confirmation, proceeding with update"
+            else
+                ok "Non-interactive mode: proceeding with update automatically"
+            fi
         fi
     fi
 
@@ -1714,6 +1735,32 @@ CREDSEOF
         echo "  │ Database:       /var/lib/novapanel/novapanel.db (preserved)"
         echo "  └─────────────────────────────────────────────────────────────────┘"
         echo ""
+        
+        # Read existing credentials from .env for display
+        if [ -f "${PANEL_HOME}/.env" ]; then
+            EXISTING_ADMIN_PASSWORD=$(grep -E '^ADMIN_PASSWORD=' "${PANEL_HOME}/.env" 2>/dev/null | cut -d '=' -f2-)
+            EXISTING_ADMIN_EMAIL=$(grep -E '^ADMIN_EMAIL=' "${PANEL_HOME}/.env" 2>/dev/null | cut -d '=' -f2-)
+        fi
+        
+        if [ -n "$EXISTING_ADMIN_PASSWORD" ]; then
+            echo "  🔐 Credentials (preserved from existing installation):"
+            echo "  ┌─────────────────────────────────────────────────────────────────┐"
+            echo "  │ Admin Username:  admin"
+            echo "  │ Admin Password:  ${EXISTING_ADMIN_PASSWORD}"
+            echo "  │ Admin Email:      ${EXISTING_ADMIN_EMAIL:-admin@localhost.localdomain}"
+            echo "  └─────────────────────────────────────────────────────────────────┘"
+            echo ""
+        elif [ -n "$ADMIN_PASSWORD" ]; then
+            # Fallback if we still have the password in scope
+            echo "  🔐 Credentials (preserved from existing installation):"
+            echo "  ┌─────────────────────────────────────────────────────────────────┐"
+            echo "  │ Admin Username:  admin"
+            echo "  │ Admin Password:  ${ADMIN_PASSWORD}"
+            echo "  │ Admin Email:      ${ADMIN_EMAIL:-admin@localhost.localdomain}"
+            echo "  └─────────────────────────────────────────────────────────────────┘"
+            echo ""
+        fi
+        
         echo "  Your existing settings and data have been preserved."
     else
         echo "  📋 Access Information:"

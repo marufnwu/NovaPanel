@@ -17,6 +17,10 @@ async function seed() {
 
   // Create admin user (single admin — no plans, no subscriptions)
   const adminId = nanoid();
+  // NOTE: ADMIN_PASSWORD in .env is PLAINTEXT. This function reads the plaintext password
+  // from env and stores only the HASH in the database. The .env file always retains the
+  // plaintext password so the user can see it and login. Hashing happens only at
+  // seed time (first install) and at login verification time.
   const passwordHash = await hashPassword(env.ADMIN_PASSWORD);
   await db.insert(users).values({
     id: adminId,
