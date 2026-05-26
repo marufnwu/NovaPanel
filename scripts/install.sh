@@ -47,7 +47,7 @@ run_mariadb() {
 }
 
 # ─── Constants ─────────────────────────────────────────────────────────
-readonly SCRIPT_VERSION="2.3.0"
+readonly SCRIPT_VERSION="2.4.0"
 readonly NODE_MAJOR="20"
 readonly PG_MAJOR="16"
 readonly MARIADB_MAJOR="11.4"
@@ -101,7 +101,7 @@ gen_secret() {
 }
 
 gen_password() {
-    local word1="bluecat|purplefrog|redwolf|greenfox|goldhen|silverkey|brave elk|swiftbird|wildbear|dark hawk"
+    local word1="bluecat|purplefrog|redwolf|greenfox|goldhen|silverkey|braveelk|swiftbird|wildbear|darkhawk"
     local word2="sky|moon|star|rain|snow|sun|wind|cloud|forest|river"
     local word3="2024|2025|nova|panel|cyber|alpha|beta|gamma|delta|omega"
     
@@ -653,7 +653,8 @@ DOVECOTCONF
         sed -i 's/^ENABLED=0/ENABLED=1/' /etc/default/spamassassin
     fi
 
-    systemctl enable postfix dovecot opendkim spamassassin 2>/dev/null || warn "Some mail services could not be enabled"
+    systemctl enable postfix dovecot opendkim 2>/dev/null || warn "Some mail services could not be enabled"
+    systemctl enable spamassassin 2>/dev/null || systemctl enable spamd 2>/dev/null || true
     if ! systemctl start postfix; then
         warn "Failed to start postfix"
     fi
@@ -663,9 +664,7 @@ DOVECOTCONF
     if ! systemctl start opendkim; then
         warn "Failed to start opendkim"
     fi
-    if ! systemctl start spamassassin; then
-        warn "Failed to start spamassassin"
-    fi
+    systemctl start spamassassin 2>/dev/null || systemctl start spamd 2>/dev/null || warn "Failed to start spamassassin/spamd"
 
     verify_cmd "postconf mail_version" "Postfix installed"
     verify_cmd "dovecot --version" "Dovecot installed"
@@ -922,7 +921,7 @@ novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/nginx/sites-available/novapanel-
 # PHP-FPM pool configuration
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/php/*/fpm/pool.d/novapanel-*
 
-# Web file permissions - fixed wildcard issue
+# Web file permissions - fixed wildcard issue by using specific chmod commands
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/chown -R novapanel:novapanel /var/www/vhosts/
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/chmod 644 /var/www/vhosts/*/wp-config.php
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/chmod 755 /var/www/vhosts/*/uploads/
@@ -987,7 +986,7 @@ SUDOERS
 
         if [ -d "${CLONE_DIR}/.git" ]; then
             log "Updating existing clone at ${CLONE_DIR}..."
-            cd "${CLONE_DIR}" && git fetch origin && git checkout "${REPO_BRANCH}" && git pull --ff-only origin "${REPO_BRANCH}" || warn "Git pull failed"
+            cd "${CLONE_DIR}" && git fetch origin "${REPO_BRANCH}" && git checkout -f "${REPO_BRANCH}" && git reset --hard "origin/${REPO_BRANCH}" || warn "Git update failed"
         else
             log "Cloning ${REPO_URL} (branch: ${REPO_BRANCH})..."
             git clone --depth 1 --branch "${REPO_BRANCH}" "${REPO_URL}" "${CLONE_DIR}"
@@ -1112,7 +1111,7 @@ SF_ENCRYPTION_KEY=${SF_ENCRYPTION_KEY}
 REDIS_URL=redis://127.0.0.1:6379
 
 ADMIN_EMAIL=${ADMIN_EMAIL}
-ADMIN_PASSWORD=${ADMIN_PASSWORD}
+ADMIN_PASSWORD="${ADMIN_PASSWORD}"
 
 VHOSTS_ROOT=/var/www/vhosts
 NGINX_SITES_AVAILABLE=/etc/nginx/sites-available
