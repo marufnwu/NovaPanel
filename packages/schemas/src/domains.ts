@@ -32,7 +32,6 @@ export const CreateDomainInputSchema = z.object({
   siteId: z.string().optional(),
   projectId: z.string().optional(),
   dnsZoneId: z.string().optional(),
-  skipDnsVerification: z.boolean().default(false),
 });
 
 export type CreateDomainInput = z.infer<typeof CreateDomainInputSchema>;

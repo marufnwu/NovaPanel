@@ -13,29 +13,18 @@ export interface NetworkInfo {
 
 // RFC1918 private ranges and other special ranges to exclude
 const PRIVATE_RANGES = [
-  // 10.0.0.0/8
   { min: '10.0.0.0', max: '10.255.255.255' },
-  // 172.16.0.0/12
   { min: '172.16.0.0', max: '172.31.255.255' },
-  // 192.168.0.0/16
   { min: '192.168.0.0', max: '192.168.255.255' },
-  // 127.0.0.0/8 (loopback)
   { min: '127.0.0.0', max: '127.255.255.255' },
-  // 169.254.0.0/16 (link-local)
   { min: '169.254.0.0', max: '169.254.255.255' },
 ];
 
-/**
- * Convert IPv4 string to number for comparison
- */
 function ipToNumber(ip: string): number {
   const parts = ip.split('.').map(Number);
   return (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
 }
 
-/**
- * Check if an IP is in a private range
- */
 function isPrivateIp(ip: string): boolean {
   const ipNum = ipToNumber(ip);
   for (const range of PRIVATE_RANGES) {
@@ -47,6 +36,135 @@ function isPrivateIp(ip: string): boolean {
   }
   return false;
 }
+
+/**
+ * Verify that a nameserver hostname has valid A records pointing to a public IP.
+ * Used to validate glue records before saving nameserver settings.
+ */
+export interface NameserverVerificationResult {
+  hostname: string;
+  resolvesTo: string[];
+  isResolvable: boolean;
+  error?: string;
+}
+
+export async function verifyNameserverResolvable(hostname: string): Promise<NameserverVerificationResult> {
+  const result: NameserverVerificationResult = {
+    hostname,
+    resolvesTo: [],
+    isResolvable: false,
+  };
+
+  const addError = (msg: string) => { result.error = msg; };
+
+  // Validate hostname format
+  const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/;
+  if (!hostnameRegex.test(hostname)) {
+    addError(`"${hostname}" is not a valid hostname. Use format: ns1.example.com`);
+    return result;
+  }
+
+  // Try method 1: node:dns.resolve4()
+  try {
+    const { promises: dnsPromises } = await import('node:dns');
+    const addresses = await Promise.race([
+      dnsPromises.resolve4(hostname),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+    ] as any);
+    const publicAddresses = addresses.filter((a: string) => !isPrivateIp(a));
+    if (publicAddresses.length > 0) {
+      result.resolvesTo = publicAddresses;
+      result.isResolvable = true;
+      return result;
+    }
+    if (addresses.length > 0 && addresses.every((a: string) => isPrivateIp(a))) {
+      addError(`Nameserver ${hostname} resolves to private IP(s) ${addresses.join(', ')}. Glue records must point to a public IP address.`);
+      result.resolvesTo = addresses;
+      return result;
+    }
+  } catch {
+    // Continue to fallback
+  }
+
+  // Try method 2: dig +short hostname A
+  try {
+    const digResult = await run('dig', ['+short', hostname, 'A'], { timeout: 10000 });
+    if (digResult.stdout.trim()) {
+      const addresses = digResult.stdout.trim().split('\n').filter(a => a.match(/^\d+\.\d+\.\d+\.\d+$/));
+      const publicAddresses = addresses.filter(a => !isPrivateIp(a));
+      if (publicAddresses.length > 0) {
+        result.resolvesTo = publicAddresses;
+        result.isResolvable = true;
+        return result;
+      }
+      if (addresses.length > 0) {
+        addError(`Nameserver ${hostname} resolves to private IP(s) ${addresses.join(', ')}. Glue records must point to a public IP address.`);
+        result.resolvesTo = addresses;
+        return result;
+      }
+    }
+  } catch {
+    // Continue
+  }
+
+  addError(`Nameserver ${hostname} does not resolve to any IP address. Add an A record for ${hostname} at your registrar before using it.`);
+  return result;
+}
+
+/**
+ * Get all nameservers for a domain and verify their glue records.
+ */
+export interface DomainDelegationResult {
+  domain: string;
+  nameservers: string[];
+  allResolvable: boolean;
+  results: NameserverVerificationResult[];
+  unresolvableNs: string[];
+  error?: string;
+}
+
+export async function getDomainDelegation(domain: string): Promise<DomainDelegationResult> {
+  const result: DomainDelegationResult = {
+    domain,
+    nameservers: [],
+    allResolvable: true,
+    results: [],
+    unresolvableNs: [],
+  };
+
+  // Get nameservers for the domain
+  const nameservers = await getDomainNameservers(domain);
+  if (nameservers.length === 0) {
+    result.error = `Could not determine nameservers for ${domain}. Ensure NS records are set at your registrar.`;
+    result.allResolvable = false;
+    return result;
+  }
+
+  result.nameservers = nameservers;
+
+  // Verify each nameserver
+  const verificationResults = await Promise.all(
+    nameservers.map(ns => verifyNameserverResolvable(ns))
+  );
+
+  result.results = verificationResults;
+
+  for (const vr of verificationResults) {
+    if (!vr.isResolvable) {
+      result.allResolvable = false;
+      result.unresolvableNs.push(vr.hostname);
+    }
+  }
+
+  if (!result.allResolvable) {
+    const badNs = verificationResults.filter(v => !v.isResolvable);
+    result.error = `Domain nameservers are not resolvable: ${badNs.map(v => `${v.hostname} (${v.error})`).join('; ')}. Fix glue records at your registrar before adding this domain.`;
+  }
+
+  return result;
+}
+
+export { PRIVATE_RANGES };
 
 /**
  * Simple in-memory cache for network detection
@@ -198,6 +316,11 @@ export interface DnsVerificationResult {
 /**
  * Verify that a domain's A record(s) point to a specific IP address.
  * Used to verify domain ownership before attachment.
+ *
+ * Tries multiple methods in order:
+ * 1. node:dns.resolve4() — system resolver
+ * 2. dig +short domain A — system resolver fallback
+ * 3. Query authoritative nameservers directly via dig @ns +short domain A
  */
 export async function verifyDomainPointsToIp(domain: string, targetIp: string): Promise<DnsVerificationResult> {
   const result: DnsVerificationResult = {
@@ -207,26 +330,78 @@ export async function verifyDomainPointsToIp(domain: string, targetIp: string): 
     serverIp: targetIp,
   };
 
-  try {
-    // Use Node's built-in DNS module to resolve A records
-    const { promises: dnsPromises } = await import('node:dns');
-    const addresses = await dnsPromises.resolve4(domain);
+  // Helper to check if we found a match
+  const checkMatch = (addresses: string[]) => {
     result.resolvesTo = addresses;
     result.pointsToServer = addresses.includes(targetIp);
-  } catch (err: any) {
-    // Try using dig command as fallback
-    try {
-      const { run: runCmd } = await import('../services/executor.js');
-      const digResult = await runCmd('dig', ['+short', domain, 'A']);
-      if (digResult.stdout.trim()) {
-        result.resolvesTo = digResult.stdout.trim().split('\n').filter(Boolean);
-        result.pointsToServer = result.resolvesTo.includes(targetIp);
-      } else {
-        result.error = `DNS resolution failed: ${err.message}`;
+  };
+
+  // Try method 1: node:dns (system resolver)
+  try {
+    const { promises: dnsPromises } = await import('node:dns');
+    const addresses = await Promise.race([
+      dnsPromises.resolve4(domain),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+    ]);
+    checkMatch(addresses);
+    if (result.pointsToServer) return result;
+  } catch {
+    // Continue to next method
+  }
+
+  // Try method 2: dig (system resolver fallback)
+  try {
+    const { run: runCmd } = await import('../services/executor.js');
+    const digResult = await runCmd('dig', ['+short', domain, 'A'], { timeout: 10000 });
+    if (digResult.stdout.trim()) {
+      const addresses = digResult.stdout.trim().split('\n').filter(a => a.match(/^\d+\.\d+\.\d+\.\d+$/));
+      checkMatch(addresses);
+      if (result.pointsToServer) return result;
+      // If dig returned something but not matching, still useful for error message
+      if (addresses.length > 0 && !result.pointsToServer) {
+        result.error = `Domain resolves to ${addresses.join(', ')} but not to server IP ${targetIp}`;
+        return result;
       }
-    } catch {
-      result.error = `DNS resolution failed: ${err.message}`;
     }
+  } catch {
+    // Continue to next method
+  }
+
+  // Try method 3: Query authoritative nameservers directly
+  try {
+    const nameservers = await getDomainNameservers(domain);
+    if (nameservers.length > 0) {
+      const { run: runCmd } = await import('../services/executor.js');
+      const allAddresses: string[] = [];
+
+      // Query each authoritative nameserver
+      for (const ns of nameservers) {
+        try {
+          const digResult = await runCmd('dig', [`@${ns}`, '+short', domain, 'A'], { timeout: 10000 });
+          if (digResult.stdout.trim()) {
+            const addresses = digResult.stdout.trim().split('\n').filter(a => a.match(/^\d+\.\d+\.\d+\.\d+$/));
+            allAddresses.push(...addresses);
+          }
+        } catch {
+          // Try next nameserver
+        }
+      }
+
+      // Deduplicate
+      const uniqueAddresses = [...new Set(allAddresses)];
+      checkMatch(uniqueAddresses);
+      if (result.pointsToServer) return result;
+
+      if (uniqueAddresses.length > 0) {
+        result.error = `Domain resolves to ${uniqueAddresses.join(', ')} but not to server IP ${targetIp}`;
+      } else if (result.resolvesTo.length === 0) {
+        result.error = 'DNS resolution returned no A records from authoritative nameservers';
+      }
+    } else {
+      result.error = result.error || 'Could not determine domain nameservers';
+    }
+  } catch (err: any) {
+    result.error = result.error || `DNS verification failed: ${err.message}`;
   }
 
   return result;

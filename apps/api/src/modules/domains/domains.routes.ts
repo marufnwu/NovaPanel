@@ -2,8 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { DomainsService } from './domains.service.js';
 import { createDomainSchema, updateDomainSchema, verifyDomainDnsSchema, createSubdomainSchema, createAliasSchema, createRedirectSchema, makePublicSchema, updateNameserversSchema, domainLogsQuerySchema } from './domains.schema.js';
 import { requireAuth } from '../auth/auth.middleware.js';
-import { detectNetworkInfo } from '../../utils/network.js';
-import { verifyDomainPointsToIp } from '../../utils/network.js';
+import { detectNetworkInfo, verifyDomainPointsToIp, verifyNameserverResolvable } from '../../utils/network.js';
 import { AppError } from '../../errors.js';
 
 export default async function domainRoutes(fastify: FastifyInstance) {
@@ -186,8 +185,8 @@ export default async function domainRoutes(fastify: FastifyInstance) {
   // --- Nameservers ---
   fastify.get('/:domainId/nameservers', async (req) => {
     const { domainId } = req.params as { domainId: string };
-    const domain = await service.get(domainId);
-    return { success: true, data: { nameservers: domain.nameservers || [] } };
+    const result = await service.getNameservers(domainId);
+    return { success: true, data: result };
   });
 
   fastify.put('/:domainId/nameservers', async (req) => {
@@ -195,5 +194,21 @@ export default async function domainRoutes(fastify: FastifyInstance) {
     const data = updateNameserversSchema.parse(req.body);
     const result = await service.updateNameservers(domainId, data.nameservers, req.user.id, req.ip);
     return { success: true, data: result };
+  });
+
+  // GET /:domainId/nameservers/verify - verify glue records without saving
+  fastify.get('/:domainId/nameservers/verify', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const result = await service.getNameservers(domainId);
+    const nsList = result.nameservers || [];
+    const verificationResults = await Promise.all(nsList.map((ns: string) => verifyNameserverResolvable(ns)));
+    return {
+      success: true,
+      data: {
+        nameservers: nsList,
+        results: verificationResults,
+        allResolvable: verificationResults.every((r: any) => r.isResolvable),
+      },
+    };
   });
 }

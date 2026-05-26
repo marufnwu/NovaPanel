@@ -1573,7 +1573,6 @@ function DomainsTab({ siteId, siteName, queryClient }: { siteId: string; siteNam
         name: newDomainName,
         siteId,
         type: 'apex',
-        skipDnsVerification: true,
       });
       toast.success(`Domain "${newDomainName}" created`);
       setShowAddDomain(false);

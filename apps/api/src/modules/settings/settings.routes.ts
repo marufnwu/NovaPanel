@@ -1,6 +1,7 @@
 ﻿import type { FastifyInstance } from 'fastify';
 import { requireAuth, requireRole } from '../auth/auth.middleware.js';
 import { settingsService } from './settings.service.js';
+import { AppError } from '../../errors.js';
 import {
   updateIdentitySchema,
   updateTimezoneSchema,
@@ -22,6 +23,7 @@ import {
 } from './settings.schema.js';
 import { verifyDomainPointsToIp } from '../../utils/network.js';
 import { detectNetworkInfo } from '../../utils/network.js';
+import { verifyNameserverResolvable } from '../../utils/network.js';
 
 export default async function settingsRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
@@ -125,6 +127,20 @@ export default async function settingsRoutes(fastify: FastifyInstance) {
     handler: async (req) => {
       const data = updateNameserversSchema.parse(req.body);
       return { success: true, data: await settingsService.updateNameserverSettings(data, req.user.id, req.ip) };
+    },
+  });
+
+  // POST /settings/nameservers/verify
+  // Verify that a nameserver hostname has valid glue records
+  fastify.post('/settings/nameservers/verify', {
+    preHandler: [requireRole('admin')],
+    handler: async (req) => {
+      const { hostname } = req.body as { hostname: string };
+      if (!hostname || typeof hostname !== 'string' || !hostname.trim()) {
+        throw new AppError(400, 'INVALID_INPUT', 'Hostname is required');
+      }
+      const result = await verifyNameserverResolvable(hostname.trim());
+      return { success: true, data: result };
     },
   });
 

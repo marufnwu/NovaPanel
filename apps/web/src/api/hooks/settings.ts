@@ -211,6 +211,20 @@ export function useUpdateNameserverSettings() {
   });
 }
 
+export interface NameserverVerificationResult {
+  hostname: string;
+  resolvesTo: string[];
+  isResolvable: boolean;
+  error?: string;
+}
+
+export function useVerifyNameserver() {
+  return useMutation({
+    mutationFn: (hostname: string) =>
+      api.post<NameserverVerificationResult>('/settings/nameservers/verify', { hostname }),
+  });
+}
+
 export function useVerifyNameserverDomain() {
   return useMutation({
     mutationFn: (domain: string) =>

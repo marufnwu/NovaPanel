@@ -10,7 +10,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { ErrorState } from '../../components/ui/ErrorState';
-import { useDomains, useCreateDomain, useDeleteDomain, type Domain } from '../../api/hooks/domains';
+import { useDomains, useCreateDomain, useDeleteDomain, useVerifyDomainDns, type Domain } from '../../api/hooks/domains';
 import { Icon } from '../../components/icons';
 import { toast } from '../../lib/toast';
 
@@ -26,20 +26,42 @@ export function DomainsPage() {
   const { data: domains, isLoading, isError, error, refetch } = useDomains(debouncedSearch);
   const createDomain = useCreateDomain();
   const deleteDomain = useDeleteDomain();
+  const verifyDns = useVerifyDomainDns();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newDomainName, setNewDomainName] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [dnsCheckResult, setDnsCheckResult] = useState<{ pointsToServer: boolean; resolvesTo: string[]; error?: string } | null>(null);
+
+  const handleCheckDns = async () => {
+    if (!newDomainName) return;
+    setDnsCheckResult(null);
+    try {
+      const result = await verifyDns.mutateAsync(newDomainName);
+      setDnsCheckResult({
+        pointsToServer: result.pointsToServer,
+        resolvesTo: result.resolvesTo,
+        error: result.error,
+      });
+    } catch (err: any) {
+      setDnsCheckResult({
+        pointsToServer: false,
+        resolvesTo: [],
+        error: err.message || 'DNS check failed',
+      });
+    }
+  };
 
   const handleCreate = async () => {
     if (!newDomainName) return;
     createDomain.mutateAsync(
-      { name: newDomainName, type: 'apex', skipDnsVerification: false },
+      { name: newDomainName, type: 'apex' },
       {
         onSuccess: () => {
           toast.success('Domain created successfully');
           setShowCreateModal(false);
           setNewDomainName('');
+          setDnsCheckResult(null);
           queryClient.invalidateQueries({ queryKey: ['domains'] });
         },
         onError: (err: any) => toast.error(`Failed to create domain: ${err.message}`),
@@ -191,12 +213,61 @@ export function DomainsPage() {
           </>
         }
       >
-        <Input
-          label="Domain Name"
-          value={newDomainName}
-          onChange={(e) => setNewDomainName(e.target.value)}
-          placeholder="example.com"
-        />
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <Input
+                label="Domain Name"
+                value={newDomainName}
+                onChange={(e) => {
+                  setNewDomainName(e.target.value);
+                  setDnsCheckResult(null);
+                }}
+                placeholder="example.com"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button
+                variant="default"
+                onClick={handleCheckDns}
+                loading={verifyDns.isPending}
+                disabled={!newDomainName}
+              >
+                Check DNS
+              </Button>
+            </div>
+          </div>
+
+          {dnsCheckResult && (
+            <div className={`p-3 rounded-lg border ${
+              dnsCheckResult.pointsToServer
+                ? 'bg-green-500/10 border-green-500/30'
+                : 'bg-red-500/10 border-red-500/30'
+            }`}>
+              {dnsCheckResult.pointsToServer ? (
+                <div className="flex items-center gap-2 text-green-600">
+                  <Icon name="icon-check-circle" size={16} />
+                  <span className="text-sm font-medium">Domain points to server</span>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-red-600">
+                    <Icon name="icon-x-circle" size={16} />
+                    <span className="text-sm font-medium">Domain does not point to server</span>
+                  </div>
+                  {dnsCheckResult.error && (
+                    <p className="text-xs text-red-500/80 ml-6">{dnsCheckResult.error}</p>
+                  )}
+                  {dnsCheckResult.resolvesTo.length > 0 && (
+                    <p className="text-xs text-red-500/80 ml-6">
+                      Resolves to: {dnsCheckResult.resolvesTo.join(', ') || 'none'}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </Modal>
 
       <ConfirmDialog

@@ -2,6 +2,7 @@ import { run } from '../../services/executor.js';
 import { logger } from '../../config/logger.js';
 import { auditService } from '../audit/audit.service.js';
 import { env } from '../../config/env.js';
+import { AppError } from '../../errors.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -339,8 +340,23 @@ export class SettingsService {
   }
 
   async updateNameserverSettings(data: { ns1?: string; ns2?: string }, userId?: string, ipAddress?: string) {
-    if (data.ns1 !== undefined) setSetting('ns1', data.ns1);
-    if (data.ns2 !== undefined) setSetting('ns2', data.ns2);
+    const { verifyNameserverResolvable } = await import('../../utils/network.js');
+
+    if (data.ns1 !== undefined && data.ns1.trim() !== '') {
+      const result = await verifyNameserverResolvable(data.ns1.trim());
+      if (!result.isResolvable) {
+        throw new AppError(400, 'NAMESERVER_NOT_RESOLVABLE', result.error || `Nameserver ${data.ns1} is not resolvable`);
+      }
+      setSetting('ns1', data.ns1.trim());
+    }
+
+    if (data.ns2 !== undefined && data.ns2.trim() !== '') {
+      const result = await verifyNameserverResolvable(data.ns2.trim());
+      if (!result.isResolvable) {
+        throw new AppError(400, 'NAMESERVER_NOT_RESOLVABLE', result.error || `Nameserver ${data.ns2} is not resolvable`);
+      }
+      setSetting('ns2', data.ns2.trim());
+    }
 
     logger.info(data, 'Nameserver settings updated');
 

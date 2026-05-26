@@ -465,6 +465,43 @@ export function useVerifyDomainDns() {
   });
 }
 
+// --- Domain Nameservers ---
+
+export interface DomainNameserverResult {
+  hostname: string;
+  resolvesTo: string[];
+  isResolvable: boolean;
+  error?: string;
+}
+
+export interface DomainNameserverVerification {
+  nameservers: string[];
+  results: DomainNameserverResult[];
+  allResolvable: boolean;
+}
+
+export function useDomainNameservers(domainId: string) {
+  return useQuery({
+    queryKey: ['domains', domainId, 'nameservers'],
+    queryFn: () => api.get<{ nameservers: string[] }>(`/domains/${domainId}/nameservers`),
+  });
+}
+
+export function useUpdateDomainNameservers(domainId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (nameservers: string[]) =>
+      api.put(`/domains/${domainId}/nameservers`, { nameservers }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['domains', domainId, 'nameservers'] }),
+  });
+}
+
+export function useVerifyDomainNameservers(domainId: string) {
+  return useMutation({
+    mutationFn: () => api.get<DomainNameserverVerification>(`/domains/${domainId}/nameservers/verify`),
+  });
+}
+
 // --- Make Domain Public ---
 
 export function useMakeDomainPublic(domainId: string) {

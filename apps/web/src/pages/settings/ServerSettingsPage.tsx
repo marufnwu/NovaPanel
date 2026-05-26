@@ -8,6 +8,7 @@ import {
   useUpdatePhpVersion,
   useNameserverSettings,
   useUpdateNameserverSettings,
+  useVerifyNameserver,
   useTimezone,
   useUpdateTimezone,
   useAvailableTimezones,
@@ -375,28 +376,108 @@ function PhpSettings() {
 function NameserverSettings() {
   const { data, isLoading } = useNameserverSettings();
   const mutation = useUpdateNameserverSettings();
+  const verifyMutation = useVerifyNameserver();
   const [ns1, setNs1] = useState('');
   const [ns2, setNs2] = useState('');
+  const [ns1Result, setNs1Result] = useState<any>(null);
+  const [ns2Result, setNs2Result] = useState<any>(null);
+  const [verifyingNs1, setVerifyingNs1] = useState(false);
+  const [verifyingNs2, setVerifyingNs2] = useState(false);
 
   if (isLoading) return <div className="skeleton h-24 w-full" />;
   const vals = data || { ns1: '', ns2: '' };
 
+  const handleVerifyNs1 = async () => {
+    const hostname = ns1.trim() || vals.ns1;
+    if (!hostname) return;
+    setVerifyingNs1(true);
+    setNs1Result(null);
+    try {
+      const result = await verifyMutation.mutateAsync(hostname);
+      setNs1Result(result);
+    } catch (err: any) {
+      setNs1Result({ isResolvable: false, error: err.message || 'Verification failed', hostname });
+    }
+    setVerifyingNs1(false);
+  };
+
+  const handleVerifyNs2 = async () => {
+    const hostname = ns2.trim() || vals.ns2;
+    if (!hostname) return;
+    setVerifyingNs2(true);
+    setNs2Result(null);
+    try {
+      const result = await verifyMutation.mutateAsync(hostname);
+      setNs2Result(result);
+    } catch (err: any) {
+      setNs2Result({ isResolvable: false, error: err.message || 'Verification failed', hostname });
+    }
+    setVerifyingNs2(false);
+  };
+
+  const effectiveNs1 = ns1.trim() || vals.ns1;
+  const effectiveNs2 = ns2.trim() || vals.ns2;
+
+  const canSave = (ns1.trim() ? ns1Result?.isResolvable !== false : true) &&
+                  (ns2.trim() ? ns2Result?.isResolvable !== false : true) &&
+                  (ns1.trim() || ns2.trim());
+
   return (
     <div className="flex flex-col gap-4 max-w-md">
       <Field label="Nameserver 1">
-        <Input value={ns1 || vals.ns1} onChange={(e) => setNs1(e.target.value)} placeholder="ns1.example.com" />
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <Input value={ns1 || vals.ns1} onChange={(e) => { setNs1(e.target.value); setNs1Result(null); }} placeholder="ns1.example.com" />
+          </div>
+          <Button variant="default" size="small" loading={verifyingNs1} onClick={handleVerifyNs1} disabled={!effectiveNs1}>
+            Verify
+          </Button>
+        </div>
+        {ns1Result && (
+          <div className={`mt-2 p-2 rounded text-small ${ns1Result.isResolvable ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
+            {ns1Result.isResolvable ? (
+              <span>{ns1Result.hostname} → {ns1Result.resolvesTo.join(', ')}</span>
+            ) : (
+              <span>{ns1Result.error}</span>
+            )}
+          </div>
+        )}
       </Field>
       <Field label="Nameserver 2">
-        <Input value={ns2 || vals.ns2} onChange={(e) => setNs2(e.target.value)} placeholder="ns2.example.com" />
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <Input value={ns2 || vals.ns2} onChange={(e) => { setNs2(e.target.value); setNs2Result(null); }} placeholder="ns2.example.com" />
+          </div>
+          <Button variant="default" size="small" loading={verifyingNs2} onClick={handleVerifyNs2} disabled={!effectiveNs2}>
+            Verify
+          </Button>
+        </div>
+        {ns2Result && (
+          <div className={`mt-2 p-2 rounded text-small ${ns2Result.isResolvable ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
+            {ns2Result.isResolvable ? (
+              <span>{ns2Result.hostname} → {ns2Result.resolvesTo.join(', ')}</span>
+            ) : (
+              <span>{ns2Result.error}</span>
+            )}
+          </div>
+        )}
       </Field>
       <Button
         variant="primary"
         loading={mutation.isPending}
+        disabled={!canSave}
         onClick={() => {
+          const payload: any = {};
+          if (ns1.trim()) payload.ns1 = ns1.trim();
+          if (ns2.trim()) payload.ns2 = ns2.trim();
           mutation.mutate(
-            { ns1, ns2 },
+            payload,
             {
-              onSuccess: () => toast.success('Nameservers updated'),
+              onSuccess: () => {
+                toast.success('Nameservers updated');
+                setNs1Result(null);
+                setNs2Result(null);
+              },
               onError: (err) => toast.error(`Failed to update: ${err.message}`),
             }
           );

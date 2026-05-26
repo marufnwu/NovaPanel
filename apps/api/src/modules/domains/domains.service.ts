@@ -500,7 +500,7 @@ export class DomainsService {
     const [domain] = await db.select().from(domains).where(eq(domains.id, id)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
     return {
-      nameservers: domain.nameservers || ['ns1.cloudflare.com', 'ns2.cloudflare.com'],
+      nameservers: Array.isArray(domain.nameservers) ? domain.nameservers : (domain.nameservers ? [domain.nameservers] : []),
       zoneName: domain.name,
     };
   }
@@ -509,8 +509,17 @@ export class DomainsService {
     const [domain] = await db.select().from(domains).where(eq(domains.id, id)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
+    // Validate each nameserver has resolvable glue records
+    const { verifyNameserverResolvable } = await import('../../utils/network.js');
+    const results = await Promise.all(nameservers.map(ns => verifyNameserverResolvable(ns)));
+    const failures = results.filter(r => !r.isResolvable);
+    if (failures.length > 0) {
+      const firstFailure = failures[0];
+      throw new AppError(400, 'NAMESERVER_NOT_RESOLVABLE', firstFailure.error || `Nameserver ${firstFailure.hostname} is not resolvable`);
+    }
+
     await db.update(domains).set({
-      nameservers: JSON.stringify(nameservers),
+      nameservers,
       updatedAt: new Date(),
     }).where(eq(domains.id, id));
 

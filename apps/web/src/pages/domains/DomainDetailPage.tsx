@@ -19,7 +19,8 @@ import {
   useDomainCloudflareFirewall, useDomainCloudflareRedirects,
   useDomainAccessLog, useDomainErrorLog,
   useDeleteDomain as useDeleteDomainMutation,
-  type Subdomain, type DomainAlias, type DomainRedirect,
+  useDomainNameservers, useUpdateDomainNameservers, useVerifyDomainNameservers,
+  type Subdomain, type DomainAlias, type DomainRedirect, type DomainNameserverResult,
 } from '../../api/hooks/domains';
 import { useDnsZone, useCreateDnsRecord, useDeleteDnsRecord } from '../../api/hooks/dns';
 import { useIssueLetsEncrypt, useRenewCertificate } from '../../api/hooks/ssl';
@@ -82,6 +83,44 @@ export function DomainDetailPage() {
 
   const { data: accessLog } = useDomainAccessLog(domainId);
   const { data: errorLog } = useDomainErrorLog(domainId);
+
+  const { data: nameserversData, refetch: refetchNameservers } = useDomainNameservers(domainId);
+  const updateNameservers = useUpdateDomainNameservers(domainId);
+  const verifyNameservers = useVerifyDomainNameservers(domainId);
+
+  const [showEditNameservers, setShowEditNameservers] = useState(false);
+  const [editedNameservers, setEditedNameservers] = useState<string[]>([]);
+  const [verifyResult, setVerifyResult] = useState<any>(null);
+  const [verifying, setVerifying] = useState(false);
+
+  const openNameserverEditor = () => {
+    setEditedNameservers(nameserversData?.nameservers || []);
+    setShowEditNameservers(true);
+    setVerifyResult(null);
+  };
+
+  const handleVerifyNameservers = async () => {
+    setVerifying(true);
+    setVerifyResult(null);
+    try {
+      const result = await verifyNameservers.mutateAsync();
+      setVerifyResult(result);
+    } catch (err: any) {
+      toast.error(`Verification failed: ${err.message}`);
+    }
+    setVerifying(false);
+  };
+
+  const handleSaveNameservers = async () => {
+    try {
+      await updateNameservers.mutateAsync(editedNameservers);
+      toast.success('Nameservers updated');
+      setShowEditNameservers(false);
+      refetchNameservers();
+    } catch (err: any) {
+      toast.error(`Failed to update nameservers: ${err.message}`);
+    }
+  };
 
   const handleTabChange = (tabId: string) => {
     const url = new URL(window.location.href);
@@ -149,6 +188,7 @@ export function DomainDetailPage() {
     { id: 'aliases', label: 'Aliases' },
     { id: 'redirects', label: 'Redirects' },
     { id: 'dns', label: 'DNS' },
+    { id: 'nameservers', label: 'Nameservers' },
     { id: 'ssl', label: 'SSL' },
     { id: 'mail', label: 'Mail' },
     { id: 'ftp', label: 'FTP' },
@@ -308,6 +348,57 @@ export function DomainDetailPage() {
             />
           ) : (
             <EmptyState icon="icon-world" title="No DNS records" description="No DNS records found for this zone" />
+          )}
+        </Card>
+      )}
+
+      {activeTab === 'nameservers' && (
+        <Card
+          title="Nameservers"
+          action={
+            <div className="flex gap-2">
+              <Button variant="default" size="small" onClick={handleVerifyNameservers} loading={verifying}>
+                Verify
+              </Button>
+              <Button variant="primary" size="small" onClick={openNameserverEditor}>
+                Edit
+              </Button>
+            </div>
+          }
+        >
+          {nameserversData?.nameservers && nameserversData.nameservers.length > 0 ? (
+            <div className="space-y-3">
+              {verifyResult?.results ? (
+                <div className="space-y-2 mb-4">
+                  {verifyResult.results.map((r: DomainNameserverResult, i: number) => (
+                    <div key={i} className={`p-3 rounded-lg border ${r.isResolvable ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                      <div className="flex items-center gap-2">
+                        {r.isResolvable ? (
+                          <Icon name="icon-check-circle" size={16} className="text-green-600" />
+                        ) : (
+                          <Icon name="icon-x-circle" size={16} className="text-red-600" />
+                        )}
+                        <span className="font-mono font-medium">{r.hostname}</span>
+                      </div>
+                      {r.isResolvable ? (
+                        <p className="text-small text-green-600/80 ml-6">Resolves to: {r.resolvesTo.join(', ')}</p>
+                      ) : (
+                        <p className="text-small text-red-600/80 ml-6">{r.error}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <div className="space-y-1">
+                {nameserversData.nameservers.map((ns: string, i: number) => (
+                  <div key={i} className="flex items-center gap-2 p-2 rounded bg-background-secondary">
+                    <span className="font-mono text-small">{ns}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <EmptyState icon="icon-world" title="No nameservers set" description="Set nameservers to manage DNS delegation for this domain" />
           )}
         </Card>
       )}
@@ -566,6 +657,47 @@ export function DomainDetailPage() {
         impact="medium"
         loading={deleteRedirect.isPending}
       />
+
+      <Modal
+        isOpen={showEditNameservers}
+        onClose={() => setShowEditNameservers(false)}
+        title="Edit Nameservers"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowEditNameservers(false)}>Cancel</Button>
+            <Button variant="primary" onClick={handleSaveNameservers} loading={updateNameservers.isPending}>
+              Save
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-small text-foreground-secondary">Enter nameservers (one per line). Each will be verified for valid glue records before saving.</p>
+          <textarea
+            className="w-full h-32 px-3 py-2 text-small rounded-md border border-border-tertiary bg-background-primary focus:outline-none focus:ring-2 focus:ring-foreground-info/50 font-mono"
+            value={editedNameservers.join('\n')}
+            onChange={(e) => setEditedNameservers(e.target.value.split('\n').filter(ns => ns.trim()))}
+            placeholder="ns1.example.com&#10;ns2.example.com"
+          />
+          {verifyResult && (
+            <div className="space-y-2">
+              <p className="text-small font-medium">Verification Results:</p>
+              {verifyResult.results?.map((r: DomainNameserverResult, i: number) => (
+                <div key={i} className={`p-2 rounded text-small ${r.isResolvable ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
+                  {r.isResolvable ? (
+                    <span>{r.hostname} → {r.resolvesTo.join(', ')}</span>
+                  ) : (
+                    <span>{r.hostname}: {r.error}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <Button variant="default" size="small" onClick={handleVerifyNameservers} loading={verifying} disabled={editedNameservers.length === 0}>
+            Verify Before Saving
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 }
