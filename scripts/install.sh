@@ -94,6 +94,28 @@ gen_secret() {
     fi
 }
 
+# ─── Helper: Generate a user-friendly password ──────────────────────────
+gen_password() {
+    # Generates a memorable password: Word-Number-Word pattern
+    # Example: BlueCat42Sky! or purple-frog-2024-moon
+    local word1="bluecat|purplefrog|redwolf|greenfox|goldhen|silverkey|brave elk|swiftbird|wildbear|dark hawk"
+    local word2="sky|moon|star|rain|snow|sun|wind|cloud|forest|river"
+    local word3="2024|2025|nova|panel|cyber|alpha|beta|gamma|delta|omega"
+    
+    local w1=$(echo "$word1" | tr '|' '\n' | shuf -n 1)
+    local w2=$(echo "$word2" | tr '|' '\n' | shuf -n 1)
+    local w3=$(echo "$word3" | tr '|' '\n' | shuf -n 1)
+    local num=$((RANDOM % 900 + 100))
+    
+    # Randomly choose format
+    case $((RANDOM % 4)) in
+        0) echo "${w1}${num}${w2}" ;;
+        1) echo "${w1}-${w2}-${num}" ;;
+        2) echo "${w3}-${w1}${w2}" ;;
+        3) echo "${w2}${num}${w1}" ;;
+    esac
+}
+
 # ─── Helper: Verify a command succeeded with message ─────────────────────
 verify_cmd() {
     local cmd="$1"
@@ -302,7 +324,7 @@ phase_preflight() {
         DB_PASSWORD="$(gen_secret 24)"
     fi
     if [ -z "$ADMIN_PASSWORD" ]; then
-        ADMIN_PASSWORD="$(gen_secret 16)"
+        ADMIN_PASSWORD="$(gen_password)"
     fi
 
     # Warn if local server detected
@@ -1052,7 +1074,7 @@ SUDOERS
         fi
 
         local REPO_URL="https://github.com/marufnwu/NovaPanel.git"
-        local REPO_BRANCH="v5"
+        local REPO_BRANCH="${INSTALL_BRANCH:-release}"
         local CLONE_DIR="${PANEL_HOME}-src"
 
         if [ -d "${CLONE_DIR}/.git" ]; then
