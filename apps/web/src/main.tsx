@@ -5,7 +5,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router } from './router';
 import { ThemeProvider } from './lib/theme-provider';
 import { CommandPalette } from './components/ui/CommandPalette';
+import { ToastProvider } from './components/ui/ToastProvider';
 import { useCommandPaletteStore } from './store/command-palette-store';
+import { toast } from './lib/toast';
+import { ApiError } from './api/client';
 import './index.css';
 
 const showError = (msg: string, stack: string) => {
@@ -97,6 +100,7 @@ const AppContent = () => {
     <>
       <RouterProvider router={router} />
       <CommandPalette isOpen={isOpen} onClose={toggle} />
+      <ToastProvider />
     </>
   );
 };

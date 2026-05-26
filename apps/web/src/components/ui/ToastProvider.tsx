@@ -14,6 +14,20 @@ export function ToastProvider() {
       expand={false}
       richColors
       closeButton
+      toastOptions={{
+        style: {
+          background: 'var(--color-background-secondary, #f8f9fa)',
+          border: '1px solid var(--color-border-tertiary, #e5e7eb)',
+          borderRadius: 'var(--radius-lg, 8px)',
+          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.10), 0 1px 4px rgba(0, 0, 0, 0.06)',
+          color: 'var(--color-text-primary, #111827)',
+          fontSize: '13px',
+          fontFamily: 'var(--font-sans, system-ui)',
+          padding: '14px 16px',
+          minWidth: '280px',
+          maxWidth: '400px',
+        },
+      }}
     />
   );
 }

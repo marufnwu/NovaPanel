@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { DomainsService } from './domains.service.js';
-import { createDomainSchema, updateDomainSchema, verifyDomainDnsSchema, createSubdomainSchema, createAliasSchema, createRedirectSchema, makePublicSchema, domainLogsQuerySchema } from './domains.schema.js';
+import { createDomainSchema, updateDomainSchema, verifyDomainDnsSchema, createSubdomainSchema, createAliasSchema, createRedirectSchema, makePublicSchema, updateNameserversSchema, domainLogsQuerySchema } from './domains.schema.js';
 import { requireAuth } from '../auth/auth.middleware.js';
 import { detectNetworkInfo } from '../../utils/network.js';
 import { verifyDomainPointsToIp } from '../../utils/network.js';
@@ -19,14 +19,12 @@ export default async function domainRoutes(fastify: FastifyInstance) {
 
   fastify.post('/', async (req, reply) => {
     const data = createDomainSchema.parse(req.body);
-    if (!data.skipDnsVerification) {
-      const networkInfo = await detectNetworkInfo();
-      const serverIp = networkInfo.primaryIp;
-      if (serverIp) {
-        const verification = await verifyDomainPointsToIp(data.name, serverIp);
-        if (!verification.pointsToServer) {
-          throw new AppError(400, 'DOMAIN_DNS_NOT_POINTING', `Domain ${data.name} does not point to this server. Expected IP: ${serverIp}, found: ${verification.resolvesTo.join(', ') || 'none'}.`);
-        }
+    const networkInfo = await detectNetworkInfo();
+    const serverIp = networkInfo.primaryIp;
+    if (serverIp) {
+      const verification = await verifyDomainPointsToIp(data.name, serverIp);
+      if (!verification.pointsToServer) {
+        throw new AppError(400, 'DOMAIN_DNS_NOT_POINTING', `Domain ${data.name} does not point to this server. Expected IP: ${serverIp}, found: ${verification.resolvesTo.join(', ') || 'none'}.`);
       }
     }
     const domain = await service.create({ name: data.name, siteId: data.siteId, type: data.type, userId: req.user.id, ipAddress: req.ip });
@@ -182,6 +180,20 @@ export default async function domainRoutes(fastify: FastifyInstance) {
   fastify.get('/:domainId/cloudflare-zone', async (req) => {
     const { domainId } = req.params as { domainId: string };
     const result = await service.getCloudflareZone(domainId);
+    return { success: true, data: result };
+  });
+
+  // --- Nameservers ---
+  fastify.get('/:domainId/nameservers', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const domain = await service.get(domainId);
+    return { success: true, data: { nameservers: domain.nameservers || [] } };
+  });
+
+  fastify.put('/:domainId/nameservers', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const data = updateNameserversSchema.parse(req.body);
+    const result = await service.updateNameservers(domainId, data.nameservers, req.user.id, req.ip);
     return { success: true, data: result };
   });
 }

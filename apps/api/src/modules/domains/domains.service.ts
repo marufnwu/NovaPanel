@@ -1,5 +1,6 @@
 import { db } from '../../db/index.js';
 import { domains } from '../../db/schema/domains.js';
+import { domainSubdomains, domainAliases, domainRedirects } from '../../db/schema/domain-records.js';
 import { eq, like, count, and } from 'drizzle-orm';
 import { AppError } from '../../errors.js';
 import { nanoid } from 'nanoid';
@@ -34,13 +35,6 @@ interface DomainRedirect {
   domainId: string;
   createdAt: Date;
 }
-
-// [P3-12] Deferred: Subdomains, aliases, and redirects currently use in-memory storage.
-// Requires a database migration to create proper tables. In production,
-// these should be stored in the database for persistence across restarts.
-const subdomainStore: Map<string, Subdomain> = new Map();
-const aliasStore: Map<string, DomainAlias> = new Map();
-const redirectStore: Map<string, DomainRedirect> = new Map();
 
 interface ListOptions {
   page?: number;
@@ -83,6 +77,21 @@ export class DomainsService {
   }
 
   async create(data: { name: string; siteId?: string; type?: string; orgId?: string; userId?: string; ipAddress?: string }) {
+    // Check for duplicate domain name
+    const existing = await db.select().from(domains).where(eq(domains.name, data.name)).limit(1);
+    if (existing[0]) {
+      throw new AppError(409, 'DOMAIN_EXISTS', `Domain ${data.name} already exists`);
+    }
+
+    // Validate siteId exists if provided
+    if (data.siteId) {
+      const { sites } = await import('../../db/schema/sites.js');
+      const [site] = await db.select().from(sites).where(eq(sites.id, data.siteId)).limit(1);
+      if (!site) {
+        throw new AppError(400, 'INVALID_SITE', `Site with ID ${data.siteId} not found`);
+      }
+    }
+
     const id = nanoid();
     await db.insert(domains).values({
       id,
@@ -157,34 +166,34 @@ export class DomainsService {
   }
 
   async listSubdomains(domainId: string): Promise<Subdomain[]> {
-    // Verify domain exists
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    const subdomains: Subdomain[] = [];
-    subdomainStore.forEach((sub) => {
-      if (sub.domainId === domainId) {
-        subdomains.push(sub);
-      }
-    });
-    return subdomains;
+    const records = await db.select().from(domainSubdomains).where(eq(domainSubdomains.domainId, domainId));
+    return records.map(r => ({
+      id: r.id,
+      name: r.name,
+      domainId: r.domainId,
+      documentRoot: r.documentRoot || '',
+      phpVersion: r.phpVersion || '8.1',
+      siteId: r.siteId || null,
+      createdAt: r.createdAt,
+    }));
   }
 
   async createSubdomain(domainId: string, data: { name: string; documentRoot?: string; phpVersion?: string; siteId?: string; websiteId?: string }, userId?: string, ipAddress?: string): Promise<Subdomain> {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    const subdomain: Subdomain = {
-      id: nanoid(),
-      name: data.name,
+    const id = nanoid();
+    await db.insert(domainSubdomains).values({
+      id,
       domainId,
+      name: data.name,
       documentRoot: data.documentRoot || `/var/www/${data.name}`,
       phpVersion: data.phpVersion || '8.1',
       siteId: data.siteId || data.websiteId || null,
-      createdAt: new Date(),
-    };
-
-    subdomainStore.set(subdomain.id, subdomain);
+    });
 
     auditService.log({
       userId,
@@ -193,18 +202,26 @@ export class DomainsService {
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return subdomain;
+    return {
+      id,
+      name: data.name,
+      domainId,
+      documentRoot: data.documentRoot || `/var/www/${data.name}`,
+      phpVersion: data.phpVersion || '8.1',
+      siteId: data.siteId || data.websiteId || null,
+      createdAt: new Date(),
+    };
   }
 
   async deleteSubdomain(domainId: string, subdomainId: string, userId?: string, ipAddress?: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    const subdomain = subdomainStore.get(subdomainId);
+    const [subdomain] = await db.select().from(domainSubdomains).where(eq(domainSubdomains.id, subdomainId)).limit(1);
     if (!subdomain) throw new AppError(404, 'SUBDOMAIN_NOT_FOUND', 'Subdomain not found');
     if (subdomain.domainId !== domainId) throw new AppError(403, 'FORBIDDEN', 'Subdomain does not belong to this domain');
 
-    subdomainStore.delete(subdomainId);
+    await db.delete(domainSubdomains).where(eq(domainSubdomains.id, subdomainId));
 
     auditService.log({
       userId,
@@ -221,27 +238,25 @@ export class DomainsService {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    const aliases: DomainAlias[] = [];
-    aliasStore.forEach((alias) => {
-      if (alias.domainId === domainId) {
-        aliases.push(alias);
-      }
-    });
-    return aliases;
+    const records = await db.select().from(domainAliases).where(eq(domainAliases.domainId, domainId));
+    return records.map(r => ({
+      id: r.id,
+      alias: r.alias,
+      domainId: r.domainId,
+      createdAt: r.createdAt,
+    }));
   }
 
   async createAlias(domainId: string, data: { alias: string }, userId?: string, ipAddress?: string): Promise<DomainAlias> {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    const alias: DomainAlias = {
-      id: nanoid(),
-      alias: data.alias,
+    const id = nanoid();
+    await db.insert(domainAliases).values({
+      id,
       domainId,
-      createdAt: new Date(),
-    };
-
-    aliasStore.set(alias.id, alias);
+      alias: data.alias,
+    });
 
     auditService.log({
       userId,
@@ -250,18 +265,23 @@ export class DomainsService {
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return alias;
+    return {
+      id,
+      alias: data.alias,
+      domainId,
+      createdAt: new Date(),
+    };
   }
 
   async deleteAlias(domainId: string, aliasId: string, userId?: string, ipAddress?: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    const alias = aliasStore.get(aliasId);
+    const [alias] = await db.select().from(domainAliases).where(eq(domainAliases.id, aliasId)).limit(1);
     if (!alias) throw new AppError(404, 'ALIAS_NOT_FOUND', 'Alias not found');
     if (alias.domainId !== domainId) throw new AppError(403, 'FORBIDDEN', 'Alias does not belong to this domain');
 
-    aliasStore.delete(aliasId);
+    await db.delete(domainAliases).where(eq(domainAliases.id, aliasId));
 
     auditService.log({
       userId,
@@ -278,29 +298,29 @@ export class DomainsService {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    const redirects: DomainRedirect[] = [];
-    redirectStore.forEach((redirect) => {
-      if (redirect.domainId === domainId) {
-        redirects.push(redirect);
-      }
-    });
-    return redirects;
+    const records = await db.select().from(domainRedirects).where(eq(domainRedirects.domainId, domainId));
+    return records.map(r => ({
+      id: r.id,
+      sourcePath: r.sourcePath,
+      targetUrl: r.targetUrl,
+      type: r.type as '301' | '302',
+      domainId: r.domainId,
+      createdAt: r.createdAt,
+    }));
   }
 
   async createRedirect(domainId: string, data: { sourcePath: string; targetUrl: string; type: '301' | '302' }, userId?: string, ipAddress?: string): Promise<DomainRedirect> {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    const redirect: DomainRedirect = {
-      id: nanoid(),
+    const id = nanoid();
+    await db.insert(domainRedirects).values({
+      id,
+      domainId,
       sourcePath: data.sourcePath,
       targetUrl: data.targetUrl,
       type: data.type,
-      domainId,
-      createdAt: new Date(),
-    };
-
-    redirectStore.set(redirect.id, redirect);
+    });
 
     auditService.log({
       userId,
@@ -309,18 +329,25 @@ export class DomainsService {
       ipAddress,
     }).catch(err => logger.error({ err }, 'Audit log failed'));
 
-    return redirect;
+    return {
+      id,
+      sourcePath: data.sourcePath,
+      targetUrl: data.targetUrl,
+      type: data.type,
+      domainId,
+      createdAt: new Date(),
+    };
   }
 
   async deleteRedirect(domainId: string, redirectId: string, userId?: string, ipAddress?: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, domainId)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
 
-    const redirect = redirectStore.get(redirectId);
+    const [redirect] = await db.select().from(domainRedirects).where(eq(domainRedirects.id, redirectId)).limit(1);
     if (!redirect) throw new AppError(404, 'REDIRECT_NOT_FOUND', 'Redirect not found');
     if (redirect.domainId !== domainId) throw new AppError(403, 'FORBIDDEN', 'Redirect does not belong to this domain');
 
-    redirectStore.delete(redirectId);
+    await db.delete(domainRedirects).where(eq(domainRedirects.id, redirectId));
 
     auditService.log({
       userId,
@@ -476,6 +503,25 @@ export class DomainsService {
       nameservers: domain.nameservers || ['ns1.cloudflare.com', 'ns2.cloudflare.com'],
       zoneName: domain.name,
     };
+  }
+
+  async updateNameservers(id: string, nameservers: string[], userId?: string, ipAddress?: string) {
+    const [domain] = await db.select().from(domains).where(eq(domains.id, id)).limit(1);
+    if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+
+    await db.update(domains).set({
+      nameservers: JSON.stringify(nameservers),
+      updatedAt: new Date(),
+    }).where(eq(domains.id, id));
+
+    auditService.log({
+      userId,
+      action: 'domain.nameservers.update',
+      resource: `domain:${domain.name}`,
+      ipAddress,
+    }).catch(err => logger.error({ err }, 'Audit log failed'));
+
+    return { nameservers };
   }
 
   async getCloudflareStatus(id: string) {

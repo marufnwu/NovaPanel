@@ -11,7 +11,6 @@ export const createDomainSchema = z.object({
   siteId: z.string().optional(),
   projectId: z.string().optional(),
   dnsZoneId: z.string().optional(),
-  skipDnsVerification: z.boolean().default(false),
 });
 
 export const verifyDomainDnsSchema = z.object({
@@ -53,6 +52,10 @@ export const createRedirectSchema = z.object({
 
 export const makePublicSchema = z.object({
   tunnelId: z.string().optional(),
+});
+
+export const updateNameserversSchema = z.object({
+  nameservers: z.array(z.string()).min(1, 'At least one nameserver is required'),
 });
 
 export const domainLogsQuerySchema = z.object({

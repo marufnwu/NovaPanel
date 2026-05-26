@@ -6,6 +6,7 @@ export * from './sites.js';
 export * from './domains.js';
 export * from './databases.js';
 export * from './dns.js';
+export * from './domain-records.js';
 export * from './ftp.js';
 export * from './cron.js';
 export * from './containers.js';

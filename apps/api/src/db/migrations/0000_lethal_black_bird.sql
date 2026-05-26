@@ -199,6 +199,8 @@ CREATE TABLE `domains` (
 	`updated_at` integer
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `domains_name_unique` ON `domains` (`name`);
+--> statement-breakpoint
 CREATE TABLE `ssl_certificates` (
 	`id` text PRIMARY KEY NOT NULL,
 	`domain_id` text NOT NULL,
@@ -696,4 +698,33 @@ CREATE TABLE `activity_logs` (
 	`details` text,
 	`ip_address` text,
 	`timestamp` integer DEFAULT (unixepoch()) NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `domain_subdomains` (
+	`id` text PRIMARY KEY NOT NULL,
+	`domain_id` text NOT NULL,
+	`name` text NOT NULL,
+	`document_root` text DEFAULT '',
+	`php_version` text DEFAULT '8.1',
+	`site_id` text,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`updated_at` integer
+);
+--> statement-breakpoint
+CREATE TABLE `domain_aliases` (
+	`id` text PRIMARY KEY NOT NULL,
+	`domain_id` text NOT NULL,
+	`alias` text NOT NULL,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`updated_at` integer
+);
+--> statement-breakpoint
+CREATE TABLE `domain_redirects` (
+	`id` text PRIMARY KEY NOT NULL,
+	`domain_id` text NOT NULL,
+	`source_path` text NOT NULL,
+	`target_url` text NOT NULL,
+	`type` text DEFAULT '301' NOT NULL,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`updated_at` integer
 );
