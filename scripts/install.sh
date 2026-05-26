@@ -70,6 +70,8 @@ SERVER_IP=""
 # ─── Existing Installation Detection ──────────────────────────────────
 IS_UPDATE=false
 EXISTING_INSTALL=false
+INSTALL_MODE=""  # Will be set to "fresh" or "update" during installation
+INSTALL_MODE=""  # Will be set to "fresh" or "update" during installation
 
 # Helper: Check if running interactively (stdin is a terminal)
 is_interactive() {
@@ -88,8 +90,8 @@ check_existing_installation() {
     return 1
 }
 
-# Prompt for update confirmation with timeout fallback
-ask_update_confirmation() {
+# Prompt for install mode with timeout fallback
+ask_install_mode() {
     local PANEL_HOME_CHECK="${PANEL_HOME:-/opt/novapanel}"
     
     echo ""
@@ -99,34 +101,75 @@ ask_update_confirmation() {
     echo ""
     echo -e "Found existing NovaPanel installation at: ${BOLD}${PANEL_HOME_CHECK}${NC}"
     echo ""
-    echo "This will:"
-    echo "  • Update existing code to the latest version"
-    echo "  • Keep your current database and settings"
-    echo "  • Restart all services"
+    echo "Options:"
+    echo "  1) Fresh Install - Wipes ALL data and does complete reinstall"
+    echo "  2) Update - Preserves existing data, only updates code"
     echo ""
-    echo -e "${GREEN}Your data will NOT be lost.${NC}"
+    echo -e "${GREEN}Your data will NOT be lost if you choose Update.${NC}"
     echo ""
+    echo "Choose [1/2]: "
     
-    # Read with 60-second timeout; if timeout or empty input, default to "Y" (continue)
     REPLY=""
-    read -t 60 -p "Do you want to continue? [Y/n]: " -n 1 -r REPLY
-    echo
     
-    # Default to Y if timeout, empty input, or just Enter
-    if [[ -z "$REPLY" ]] || [[ "$REPLY" =~ ^[Yy]$ ]]; then
-        echo -e "${GREEN}Continuing with update...${NC}"
+    if [ -t 0 ]; then
+        # Terminal available - wait for input with timeout
+        read -t 60 -n 1 -r REPLY || true
     else
-        echo ""
-        echo "Installation cancelled."
-        echo ""
-        echo "To update NovaPanel, use the update script or run:"
-        echo "  curl -fsSL <update-url> | sudo bash"
-        echo ""
-        echo "Or set FORCE=1 to skip this prompt:"
-        echo "  FORCE=1 sudo bash $0"
-        echo ""
-        exit 0
+        # No terminal (piped mode) - can't read input, default to Update after delay
+        echo "(No terminal detected - defaulting to Update in 10 seconds..."
+        echo "Use FORCE=1 to skip this delay)"
+        sleep 10
+        REPLY="2"
     fi
+    
+    # Default to Update (2) if empty input
+    if [ -z "$REPLY" ]; then
+        REPLY="2"
+    fi
+    
+    case "$REPLY" in
+        1)
+            echo ""
+            echo -e "${YELLOW}⚠️  FRESH INSTALL CHOSEN - ALL DATA WILL BE WIPED${NC}"
+            echo ""
+            echo "This will:"
+            echo "  • Stop the novapanel service"
+            echo "  • Remove the existing installation at ${PANEL_HOME_CHECK}"
+            echo "  • Delete the database at /var/lib/novapanel/novapanel.db"
+            echo "  • Delete the .env file at ${PANEL_HOME_CHECK}/.env"
+            echo "  • Perform a complete fresh installation"
+            echo ""
+            echo -e "${RED}WARNING: All existing data will be lost!${NC}"
+            echo ""
+            
+            # Confirm fresh install in interactive mode
+            if [ -t 0 ]; then
+                echo "Are you sure you want to continue? [y/N]: "
+                read -t 30 -n 1 -r CONFIRM || true
+                echo ""
+                if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+                    echo "Installation cancelled."
+                    exit 0
+                fi
+            else
+                # Non-interactive mode - proceed with FORCE=1 check
+                if [ "${FORCE:-0}" != "1" ]; then
+                    echo "For safety, please confirm in interactive mode or set FORCE=1"
+                    echo "  FORCE=1 sudo bash $0"
+                    exit 1
+                fi
+                echo "FORCE=1 set: proceeding with fresh install..."
+            fi
+            
+            IS_UPDATE=false
+            return 0
+            ;;
+        2|*)
+            echo -e "${GREEN}Continuing with update (data preservation mode)...${NC}"
+            IS_UPDATE=true
+            return 0
+            ;;
+    esac
 }
 
 # ─── Colors ──────────────────────────────────────────────────────────────
@@ -301,10 +344,36 @@ phase_preflight() {
         fi
         
         if [ "$FORCE_SKIP" = "1" ]; then
-            ok "FORCE=1 set: skipping confirmation, proceeding with update"
+            ok "FORCE=1 set: skipping confirmation, defaulting to update mode"
+            IS_UPDATE=true
         else
             # Always prompt with timeout (handles both interactive and piped modes)
-            ask_update_confirmation
+            ask_install_mode
+        fi
+        
+        # If fresh install was chosen (IS_UPDATE=false), wipe existing data
+        if [ "$IS_UPDATE" = false ]; then
+            log "Wiping existing installation for fresh install..."
+            
+            # Stop novapanel service
+            echo ""
+            echo "Stopping novapanel service..."
+            systemctl stop novapanel 2>/dev/null || true
+            
+            # Remove installation directory
+            echo "Removing ${PANEL_HOME}..."
+            rm -rf "${PANEL_HOME}" 2>/dev/null || true
+            
+            # Remove database file
+            echo "Removing database at /var/lib/novapanel/novapanel.db..."
+            rm -f /var/lib/novapanel/novapanel.db 2>/dev/null || true
+            
+            # Remove .env file (use separate variable since PANEL_HOME may be gone)
+            local ENV_TO_REMOVE="${PANEL_HOME}/.env"
+            echo "Removing .env file..."
+            rm -f "$ENV_TO_REMOVE" 2>/dev/null || true
+            
+            ok "Existing data wiped - proceeding with fresh installation"
         fi
     fi
 
@@ -1863,12 +1932,19 @@ CREDSEOF
 # ═════════════════════════════════════════════════════════════════════════
 main() {
     # Show appropriate header based on installation type
-    if [ "$EXISTING_INSTALL" = true ]; then
+    if [ "$EXISTING_INSTALL" = true ] && [ "$IS_UPDATE" = true ]; then
         echo ""
         echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
         echo -e "${CYAN}║     NovaPanel Server Updater v${SCRIPT_VERSION}                         ║${NC}"
-        echo -e "${CYAN}║     Updating Existing Installation                           ║${NC}"
+        echo -e "${CYAN}║     Updating Existing Installation (Data Preserved)          ║${NC}"
         echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+        echo ""
+    elif [ "$EXISTING_INSTALL" = true ] && [ "$IS_UPDATE" = false ]; then
+        echo ""
+        echo -e "${RED}╔══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║     NovaPanel Fresh Install v${SCRIPT_VERSION}                          ║${NC}"
+        echo -e "${RED}║     Wiping Existing Installation (ALL DATA WILL BE LOST)       ║${NC}"
+        echo -e "${RED}╚══════════════════════════════════════════════════════════════╝${NC}"
         echo ""
     else
         echo ""
