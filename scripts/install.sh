@@ -71,14 +71,9 @@ SERVER_IP=""
 IS_UPDATE=false
 EXISTING_INSTALL=false
 
-# Helper: Check if running interactively
+# Helper: Check if running interactively (stdin is a terminal)
 is_interactive() {
-    # Return true if stdin is a terminal
-    if [ -t 0 ]; then
-        return 0
-    else
-        return 1
-    fi
+    [ -t 0 ]
 }
 
 # Helper: Check for existing installation
@@ -93,7 +88,7 @@ check_existing_installation() {
     return 1
 }
 
-# Prompt for update confirmation
+# Prompt for update confirmation with timeout fallback
 ask_update_confirmation() {
     local PANEL_HOME_CHECK="${PANEL_HOME:-/opt/novapanel}"
     
@@ -111,10 +106,16 @@ ask_update_confirmation() {
     echo ""
     echo -e "${GREEN}Your data will NOT be lost.${NC}"
     echo ""
-    read -p "Do you want to continue? [Y/n]: " -n 1 -r REPLY
+    
+    # Read with 60-second timeout; if timeout or empty input, default to "Y" (continue)
+    REPLY=""
+    read -t 60 -p "Do you want to continue? [Y/n]: " -n 1 -r REPLY
     echo
     
-    if [[ $REPLY =~ ^[Nn]$ ]]; then
+    # Default to Y if timeout, empty input, or just Enter
+    if [[ -z "$REPLY" ]] || [[ "$REPLY" =~ ^[Yy]$ ]]; then
+        echo -e "${GREEN}Continuing with update...${NC}"
+    else
         echo ""
         echo "Installation cancelled."
         echo ""
@@ -126,8 +127,6 @@ ask_update_confirmation() {
         echo ""
         exit 0
     fi
-    
-    echo -e "${GREEN}Continuing with update...${NC}"
 }
 
 # ─── Colors ──────────────────────────────────────────────────────────────
@@ -187,6 +186,16 @@ gen_password() {
         2) echo "${w3}-${w1}${w2}" ;;
         3) echo "${w2}${num}${w1}" ;;
     esac
+}
+
+# Helper: Check if password looks like a hash (hex-only, length > 20)
+is_hash_password() {
+    local pwd="$1"
+    # Hash passwords are typically hex strings (bcrypt/sha hash style) > 20 chars
+    if [ ${#pwd} -gt 20 ] && [[ "$pwd" =~ ^[a-fA-F0-9]+$ ]]; then
+        return 0
+    fi
+    return 1
 }
 
 # ─── Helper: Verify a command succeeded with message ─────────────────────
@@ -284,21 +293,18 @@ phase_preflight() {
     if check_existing_installation; then
         log "Existing NovaPanel installation detected at ${PANEL_HOME}"
         
-        # Check if we should skip the confirmation prompt
-        # Skip only if FORCE=1 env var is set OR --force flag was passed
+        # Check if we should skip the confirmation prompt entirely
+        # Only skip if FORCE=1 env var is set OR --force flag was passed
         local FORCE_SKIP=0
         if [ "${FORCE:-0}" = "1" ] || [ "$FORCE_ARG" = "1" ]; then
             FORCE_SKIP=1
         fi
         
-        if is_interactive && [ "$FORCE_SKIP" = "0" ]; then
-            ask_update_confirmation
+        if [ "$FORCE_SKIP" = "1" ]; then
+            ok "FORCE=1 set: skipping confirmation, proceeding with update"
         else
-            if [ "$FORCE_SKIP" = "1" ]; then
-                ok "FORCE=1 set: skipping confirmation, proceeding with update"
-            else
-                ok "Non-interactive mode: proceeding with update automatically"
-            fi
+            # Always prompt with timeout (handles both interactive and piped modes)
+            ask_update_confirmation
         fi
     fi
 
@@ -1277,7 +1283,7 @@ SUDOERS
         chmod 777 "$TURBO_LOG_DIR" 2>/dev/null || true
 
         log "Installing dependencies..."
-        pnpm install 2>&1 | tee /tmp/novapanel-pnpm-install.log
+        pnpm install --yes 2>&1 | tee /tmp/novapanel-pnpm-install.log
 
         log "Building schemas, API, and web..."
         # Build shared schemas package first (required by API)
@@ -1750,6 +1756,16 @@ CREDSEOF
             echo "  │ Admin Email:      ${EXISTING_ADMIN_EMAIL:-admin@localhost.localdomain}"
             echo "  └─────────────────────────────────────────────────────────────────┘"
             echo ""
+            
+            # Check if the preserved password looks like a hash
+            if is_hash_password "$EXISTING_ADMIN_PASSWORD"; then
+                echo "  ⚠️  Note: Your admin password appears to be an old hash-style"
+                echo "     password from a previous installation."
+                echo ""
+                echo "     To change it after login, go to:"
+                echo "       Settings → Security → Change Password"
+                echo ""
+            fi
         elif [ -n "$ADMIN_PASSWORD" ]; then
             # Fallback if we still have the password in scope
             echo "  🔐 Credentials (preserved from existing installation):"
