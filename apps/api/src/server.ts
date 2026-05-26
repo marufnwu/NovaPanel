@@ -130,13 +130,18 @@ export async function createServer() {
   });
 
   // Auto-wrap JSON responses for API routes with consistent format
+  // Only wrap if body doesn't have 'success' OR 'error' property (to avoid double-wrapping)
   fastify.addHook('onSend', async (request, reply, payload) => {
     if (!request.url.startsWith('/api/')) return payload;
     const contentType = reply.getHeader('content-type');
     if (typeof contentType === 'string' && contentType.includes('application/json')) {
       try {
         const body = typeof payload === 'string' ? JSON.parse(payload) : payload;
-        if (body && typeof body === 'object' && !('success' in body)) {
+        // Only wrap if it's a plain object without success/error properties
+        // (success=true responses from routes, or bare data objects)
+        // Don't wrap if it already has success or error (from error handler)
+        if (body && typeof body === 'object' && !Array.isArray(body) && 
+            !('success' in body) && !('error' in body)) {
           const wrapped = { success: true, data: body };
           return JSON.stringify(wrapped);
         }
