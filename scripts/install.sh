@@ -8,6 +8,10 @@
 # ║  Usage:                                                              ║
 # ║    sudo bash scripts/install.sh                                      ║
 # ║    sudo ADMIN_EMAIL=you@example.com bash scripts/install.sh          ║
+# ║    sudo ./install.sh --force                                         ║
+# ║                                                                      ║
+# ║  Command line flags:                                                 ║
+# ║    --force, --wipe  Skip confirmation (for reinstall/wipe)          ║
 # ║                                                                      ║
 # ║  Environment variables (all optional with sensible defaults):        ║
 # ║    ADMIN_EMAIL     — Admin email (default: admin@$(hostname -f))     ║
@@ -24,6 +28,16 @@ set -euo pipefail
 
 # ─── Prevent interactive apt-get prompts ────────────────────────────────
 export DEBIAN_FRONTEND=noninteractive
+
+# ─── Command Line Argument Parsing ─────────────────────────────────────
+FORCE_WIPE=false
+for arg in "$@"; do
+    case "$arg" in
+        --force|--wipe)
+            FORCE_WIPE=true
+            ;;
+    esac
+done
 
 # ─── Error trapping for visibility ─────────────────────────────────────
 trap 'echo ""; echo "[✗] INSTALL FAILED at line $LINENO"; echo "    Command that failed: $BASH_COMMAND"; echo "    Check /tmp/novapanel-install.log for details"; echo ""' ERR
@@ -227,9 +241,13 @@ phase_preflight() {
         echo -e "${CYAN}  To cancel, press:          ${BOLD}Enter${NC} or ${BOLD}Ctrl+C${NC}"
         echo ""
         
-        # Check for CONFIRM_DELETE environment variable first (for pipe usage: curl | sudo bash)
-        if [ "${CONFIRM_DELETE:-}" = "YES" ]; then
-            echo "  [Environment variable CONFIRM_DELETE=YES detected - proceeding]"
+        # Check for --force/--wipe flag or CONFIRM_DELETE environment variable (for pipe usage: curl | sudo bash)
+        if [ "$FORCE_WIPE" = true ] || [ "${CONFIRM_DELETE:-}" = "YES" ]; then
+            if [ "$FORCE_WIPE" = true ]; then
+                echo "  [--force/--wipe flag detected - proceeding with wipe]"
+            else
+                echo "  [Environment variable CONFIRM_DELETE=YES detected - proceeding]"
+            fi
         elif [ -t 0 ]; then
             # Terminal is available - prompt user with 60s timeout
             echo -n "  Type YES to confirm: "
@@ -243,25 +261,24 @@ phase_preflight() {
                 exit 0
             fi
         else
-            # stdin is not a terminal and CONFIRM_DELETE is not set
+            # stdin is not a terminal and no force flag or CONFIRM_DELETE set
             echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo -e "${RED}  ERROR: Cannot prompt for confirmation in non-interactive mode${NC}"
             echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo ""
             echo "  When running via pipe (curl | sudo bash), stdin is not a terminal."
-            echo "  Use the CONFIRM_DELETE environment variable to confirm deletion:"
+            echo "  Use the --force or --wipe flag to confirm deletion:"
             echo ""
-            echo -e "    ${BOLD}Option 1:${NC} Pipe with env var on same line:"
-            echo "      curl -fsSL URL | CONFIRM_DELETE=YES sudo bash"
-            echo ""
-            echo -e "    ${BOLD}Option 2:${NC} Export first, then pipe:"
-            echo "      export CONFIRM_DELETE=YES"
-            echo "      curl -fsSL URL | sudo bash"
-            echo ""
-            echo -e "    ${BOLD}Option 3:${NC} Download script, then run:"
+            echo -e "    ${BOLD}Option 1 (Recommended):${NC} Download script, then run with --force:"
             echo "      curl -fsSL URL -o install.sh"
             echo "      chmod +x install.sh"
-            echo "      sudo CONFIRM_DELETE=YES ./install.sh"
+            echo "      sudo ./install.sh --force"
+            echo ""
+            echo -e "    ${BOLD}Option 2:${NC} Pipe with --force flag:"
+            echo "      curl -fsSL URL | sudo bash -s -- --force"
+            echo ""
+            echo -e "    ${BOLD}Option 3:${NC} Use CONFIRM_DELETE environment variable:"
+            echo "      curl -fsSL URL | CONFIRM_DELETE=YES sudo bash"
             echo ""
             echo "  To cancel this installation, press Ctrl+C now."
             exit 1
