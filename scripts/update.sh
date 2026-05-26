@@ -7,7 +7,7 @@
 # ║                                                                      ║
 # ║  NOTE: For fresh installations, use install.sh instead.                ║
 # ║        install.sh handles both fresh installs and updates (with       ║
-# ║        user confirmation for existing installs).                      ║
+# ║        user confirmation for existing installs).                     ║
 # ║                                                                      ║
 # ║  Usage:                                                              ║
 # ║    sudo bash scripts/update.sh                    # Update to release║
@@ -29,7 +29,7 @@
 set -euo pipefail
 
 # ─── Constants ───────────────────────────────────────────────────────────
-readonly SCRIPT_VERSION="1.0.0"
+readonly SCRIPT_VERSION="1.1.0"
 readonly PANEL_HOME="${PANEL_HOME:-/opt/novapanel}"
 readonly BACKUP_DIR="/var/lib/novapanel/backups"
 readonly UPDATE_BRANCH="${UPDATE_BRANCH:-release}"
@@ -48,7 +48,7 @@ NC='\033[0m'
 log()  { echo -e "${BLUE}[UPDATE]${NC} $*"; }
 ok()   { echo -e "${GREEN}[✓]${NC} $*"; }
 warn() { echo -e "${YELLOW}[⚠]${NC} $*"; }
-fail() { echo -e "${RED>[✗]${NC} $*" >&2; }
+fail() { echo -e "${RED}[✗]${NC} $*" >&2; }
 
 die() {
     fail "$@"
@@ -172,16 +172,26 @@ create_backup() {
     log "Creating backup before update..."
     mkdir -p "${BACKUP_DIR}"
 
-    # Backup .env file
+    # SECURITY FIX: Do NOT backup .env file directly as it contains secrets
+    # Instead, backup .env template (without actual secrets) or reference it
     if [ -f "${PANEL_HOME}/.env" ]; then
-        cp "${PANEL_HOME}/.env" "${backup_path}.env"
-        ok "Backed up .env"
+        # Create a template version of .env with secrets replaced
+        grep -v '^ADMIN_PASSWORD=' "${PANEL_HOME}/.env" | \
+        sed 's/^JWT_SECRET=.*/JWT_SECRET=<REDACTED>/' | \
+        sed 's/^SESSION_SECRET=.*/SESSION_SECRET=<REDACTED>/' | \
+        sed 's/^SF_ENCRYPTION_KEY=.*/SF_ENCRYPTION_KEY=<REDACTED>/' \
+        > "${backup_path}.env.template"
+        ok "Backed up .env template (secrets redacted)"
     fi
 
-    # Backup current source code (excluding node_modules and data)
+    # Backup current source code (excluding node_modules, data, and .env)
     log "Backing up current source..."
     mkdir -p "${backup_path}"
-    rsync -a --exclude='node_modules' --exclude='.git' --exclude='data' \
+    rsync -a \
+        --exclude='node_modules' \
+        --exclude='.git' \
+        --exclude='data' \
+        --exclude='.env' \
         "${PANEL_HOME}/" "${backup_path}/"
     ok "Source backed up to ${backup_path}"
 
@@ -292,7 +302,7 @@ perform_update() {
     ok "Permissions fixed"
 
     # Restart service
-    section "Restarting Nova面板"
+    section "Restarting NovaPanel"
     log "Restarting novapanel service..."
 
     # Stop the service
@@ -346,9 +356,9 @@ rollback() {
     log "Stopping novapanel service..."
     systemctl stop novapanel 2>/dev/null || true
 
-    # Restore the backup
+    # Restore the backup (excluding .env which should be preserved)
     log "Restoring backup..."
-    rsync -a --delete "${last_backup}/" "${PANEL_HOME}/"
+    rsync -a --delete --exclude='.env' "${last_backup}/" "${PANEL_HOME}/"
 
     # Fix permissions
     chown -R novapanel:novapanel "${PANEL_HOME}"
@@ -432,7 +442,7 @@ main() {
     # ─── Create backup before update ───────────────────────────────────
     create_backup
 
-    # ─── Perform the update ────────────────────────────────────────────
+    # ─── Perform the update ───────────────────────────────────────────
     if ! perform_update; then
         fail ""
         fail "Update failed!"

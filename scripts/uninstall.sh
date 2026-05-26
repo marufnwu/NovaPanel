@@ -3,7 +3,7 @@
 # ║  NovaPanel Uninstaller                                               ║
 # ║                                                                      ║
 # ║  Safely removes NovaPanel from a server.                             ║
-# ║  Default: preserves user data (/var/www/) and databases              ║
+# ║  Default: preserves user data (/var/www/) and databases             ║
 # ║  Use --purge to remove all data                                      ║
 # ║                                                                      ║
 # ║  Usage:                                                              ║
@@ -64,6 +64,15 @@ section(){ echo ""; echo -e "${CYAN}━━━ $* ━━━${NC}"; }
 die() {
     fail "$@"
     exit 1
+}
+
+# ─── Helper function to run mariadb commands without password in CLI ─────
+# Uses process substitution to create a temporary defaults file
+# This prevents password from appearing in ps aux output
+run_mariadb() {
+    local db_pass="$1"
+    shift
+    mariadb --defaults-file=<(printf "[client]\npassword=%s\n" "$db_pass") -u root "$@"
 }
 
 # ─── Check: Root ──────────────────────────────────────────────────────────
@@ -302,6 +311,50 @@ remove_dns_configs() {
     ok "DNS configs cleaned"
 }
 
+remove_databases() {
+    section "Removing Databases (PURGE)"
+
+    # SECURITY FIX: Extract DB_PASSWORD BEFORE removing /etc/novapanel/
+    local DB_PASS=""
+    if [ -f /etc/novapanel/.db-password ]; then
+        DB_PASS="$(cat /etc/novapanel/.db-password 2>/dev/null || echo '')"
+    fi
+
+    # MariaDB
+    log "Dropping MariaDB 'novapanel' database..."
+    if command -v mariadb &>/dev/null; then
+        if [ -n "$DB_PASS" ]; then
+            # Use run_mariadb helper to avoid password exposure in process list
+            run_mariadb "$DB_PASS" -e "DROP DATABASE IF EXISTS novapanel;" 2>/dev/null && \
+                ok "MariaDB database dropped" || warn "Could not drop MariaDB database"
+        else
+            # Try without password (may fail if password was set)
+            mariadb -u root -e "DROP DATABASE IF EXISTS novapanel;" 2>/dev/null && \
+                ok "MariaDB database dropped" || warn "Could not drop MariaDB database (no password found)"
+        fi
+    else
+        warn "MariaDB not installed"
+    fi
+
+    # PostgreSQL
+    log "Dropping PostgreSQL 'novapanel' database..."
+    if command -v psql &>/dev/null; then
+        if [ -f /etc/novapanel/.pg-password ]; then
+            local PG_PASS
+            PG_PASS="$(cat /etc/novapanel/.pg-password 2>/dev/null || echo '')"
+            if [ -n "$PG_PASS" ]; then
+                su - postgres -c "psql -U postgres -c \"DROP DATABASE IF EXISTS novapanel;\"" 2>/dev/null && \
+                    ok "PostgreSQL database dropped" || warn "Could not drop PostgreSQL database"
+            fi
+        else
+            su - postgres -c "psql -U postgres -c \"DROP DATABASE IF EXISTS novapanel;\"" 2>/dev/null && \
+                ok "PostgreSQL database dropped" || warn "Could not drop PostgreSQL database (no password)"
+        fi
+    else
+        warn "PostgreSQL not installed"
+    fi
+}
+
 remove_panel_data() {
     section "Removing Panel Data"
 
@@ -326,47 +379,6 @@ remove_panel_data() {
         ufw delete allow 8732/tcp 2>/dev/null || true
     fi
     ok "UFW rule removed"
-}
-
-remove_databases() {
-    section "Removing Databases (PURGE)"
-
-    # MariaDB
-    log "Dropping MariaDB 'novapanel' database..."
-    if command -v mariadb &>/dev/null; then
-        # Try to connect with existing credentials
-        if [ -f /etc/novapanel/.db-password ]; then
-            local DB_PASS
-            DB_PASS="$(cat /etc/novapanel/.db-password 2>/dev/null || echo '')"
-            if [ -n "$DB_PASS" ]; then
-                mariadb -u root -p"$DB_PASS" -e "DROP DATABASE IF EXISTS novapanel;" 2>/dev/null && \
-                    ok "MariaDB database dropped" || warn "Could not drop MariaDB database"
-            fi
-        else
-            mariadb -u root -e "DROP DATABASE IF EXISTS novapanel;" 2>/dev/null && \
-                ok "MariaDB database dropped" || warn "Could not drop MariaDB database (no password)"
-        fi
-    else
-        warn "MariaDB not installed"
-    fi
-
-    # PostgreSQL
-    log "Dropping PostgreSQL 'novapanel' database..."
-    if command -v psql &>/dev/null; then
-        if [ -f /etc/novapanel/.pg-password ]; then
-            local PG_PASS
-            PG_PASS="$(cat /etc/novapanel/.pg-password 2>/dev/null || echo '')"
-            if [ -n "$PG_PASS" ]; then
-                su - postgres -c "psql -U postgres -c \"DROP DATABASE IF EXISTS novapanel;\"" 2>/dev/null && \
-                    ok "PostgreSQL database dropped" || warn "Could not drop PostgreSQL database"
-            fi
-        else
-            su - postgres -c "psql -U postgres -c \"DROP DATABASE IF EXISTS novapanel;\"" 2>/dev/null && \
-                ok "PostgreSQL database dropped" || warn "Could not drop PostgreSQL database (no password)"
-        fi
-    else
-        warn "PostgreSQL not installed"
-    fi
 }
 
 remove_website_data() {
@@ -464,12 +476,12 @@ main() {
     remove_user
     remove_webserver_configs
     remove_dns_configs
-    remove_panel_data
-
+    # SECURITY FIX: Call remove_databases BEFORE remove_panel_data
+    # to ensure DB passwords are still available
     if [ "$PURGE" = true ]; then
         remove_databases
-        remove_website_data
     fi
+    remove_panel_data
 
     if [ "$REMOVE_PACKAGES" = true ]; then
         remove_packages

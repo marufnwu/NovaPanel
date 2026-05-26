@@ -2,21 +2,21 @@
 # ╔══════════════════════════════════════════════════════════════════════╗
 # ║  NovaPanel Server Installer — Fresh Install Only                    ║
 # ║                                                                      ║
-# ║  Installs NovaPanel and all dependencies on a fresh server.          ║
+# ║  Installs NovaPanel and all dependencies on a fresh server.         ║
 # ║  Supports: Ubuntu 22.04, Ubuntu 24.04, Debian 11, Debian 12          ║
 # ║                                                                      ║
 # ║  Usage:                                                              ║
 # ║    sudo bash scripts/install.sh                                      ║
-# ║    sudo ADMIN_EMAIL=you@example.com bash scripts/install.sh          ║
+# ║    sudo ADMIN_EMAIL=you@example.com bash scripts/install.sh           ║
 # ║                                                                      ║
 # ║  Environment variables (all optional with sensible defaults):        ║
-# ║    ADMIN_EMAIL     — Admin email (default: admin@$(hostname -f))     ║
-# ║    ADMIN_PASSWORD  — Admin password (default: auto-generated)      ║
+# ║    ADMIN_EMAIL     — Admin email (default: admin@$(hostname -f))    ║
+# ║    ADMIN_PASSWORD  — Admin password (default: auto-generated)       ║
 # ║    PANEL_URL       — Panel URL (default: http://$(hostname -f):8732) ║
-# ║    PANEL_USER      — System user (default: novapanel)                ║
+# ║    PANEL_USER      — System user (default: novapanel)               ║
 # ║    PANEL_HOME      — Install dir (default: /opt/novapanel)           ║
-# ║    MAIL_HOSTNAME   — Mail hostname (default: mail.$(hostname -d))    ║
-# ║    LE_EMAIL        — Let's Encrypt email (default: $ADMIN_EMAIL)    ║
+# ║    MAIL_HOSTNAME   — Mail hostname (default: mail.$(hostname -d))   ║
+# ║    LE_EMAIL        — Let's Encrypt email (default: $ADMIN_EMAIL)     ║
 # ║    DB_PASSWORD     — MariaDB root password (default: auto-generated) ║
 # ║                                                                      ║
 # ║  NOTE: If existing installation is found, it will be automatically   ║
@@ -31,8 +31,23 @@ export DEBIAN_FRONTEND=noninteractive
 # ─── Error trapping for visibility ─────────────────────────────────────
 trap 'echo ""; echo "[✗] INSTALL FAILED at line $LINENO"; echo "    Command that failed: $BASH_COMMAND"; echo "    Check /tmp/novapanel-install.log for details"; echo ""' ERR
 
-# ─── Constants ────────────────────────────────────────────────────────
-readonly SCRIPT_VERSION="2.2.0"
+# ─── Initialize variables to prevent set -u failures ───────────────────
+BEHIND_NAT=false
+IS_LOCAL_SERVER=false
+PUBLIC_IP=""
+SERVER_IP=""
+
+# ─── Helper function to run mariadb commands without password in CLI ─────
+# Uses process substitution to create a temporary defaults file
+# This prevents password from appearing in ps aux output
+run_mariadb() {
+    local db_pass="$1"
+    shift
+    mariadb --defaults-file=<(printf "[client]\npassword=%s\n" "$db_pass") -u root "$@"
+}
+
+# ─── Constants ─────────────────────────────────────────────────────────
+readonly SCRIPT_VERSION="2.3.0"
 readonly NODE_MAJOR="20"
 readonly PG_MAJOR="16"
 readonly MARIADB_MAJOR="11.4"
@@ -40,7 +55,7 @@ readonly PHP_VERSIONS=("8.1" "8.2" "8.3")
 readonly FTP_PASSIVE_MIN=50000
 readonly FTP_PASSIVE_MAX=50100
 
-# ─── Configurable via Environment ────────────────────────────────────
+# ─── Configurable via Environment ───────────────────────────────────────
 PANEL_USER="${PANEL_USER:-novapanel}"
 PANEL_HOME="${PANEL_HOME:-/opt/novapanel}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-}"
@@ -737,24 +752,25 @@ phase_service_config() {
         chmod 600 /etc/novapanel/.db-password
     fi
 
-    if ! mariadb -u root -p"$DB_PASSWORD" -e "SELECT 1" &>/dev/null; then
+    # Use run_mariadb helper to avoid password exposure in process list
+    if ! run_mariadb "$DB_PASSWORD" -e "SELECT 1" &>/dev/null; then
         log "Setting MariaDB root password..."
         mariadb -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';" 2>/dev/null || \
             warn "Failed to set MariaDB root password"
-        mariadb -u root -p"${DB_PASSWORD}" -e "FLUSH PRIVILEGES;" 2>/dev/null || \
+        run_mariadb "$DB_PASSWORD" -e "FLUSH PRIVILEGES;" 2>/dev/null || \
             warn "Failed to flush MariaDB privileges"
     fi
 
-    if ! mariadb -u root -p"${DB_PASSWORD}" -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null; then
+    if ! run_mariadb "$DB_PASSWORD" -e "DELETE FROM mysql.user WHERE User='';" 2>/dev/null; then
         warn "Failed to remove anonymous MySQL users"
     fi
-    if ! mariadb -u root -p"${DB_PASSWORD}" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null; then
+    if ! run_mariadb "$DB_PASSWORD" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null; then
         warn "Failed to remove remote root users"
     fi
-    if ! mariadb -u root -p"${DB_PASSWORD}" -e "DROP DATABASE IF EXISTS test;" 2>/dev/null; then
+    if ! run_mariadb "$DB_PASSWORD" -e "DROP DATABASE IF EXISTS test;" 2>/dev/null; then
         warn "Failed to drop test database"
     fi
-    if ! mariadb -u root -p"${DB_PASSWORD}" -e "FLUSH PRIVILEGES;" 2>/dev/null; then
+    if ! run_mariadb "$DB_PASSWORD" -e "FLUSH PRIVILEGES;" 2>/dev/null; then
         warn "Failed to flush privileges"
     fi
 
@@ -793,31 +809,21 @@ phase_service_config() {
     log "Configuring PHP-FPM pools..."
     for ver in "${PHP_VERSIONS[@]}"; do
         local pool_conf="/etc/php/${ver}/fpm/pool.d/www.conf"
-        if heredocvf "$pool_conf" 2>/dev/null; then
+        # Check if pool exists and disable default - fixed heredocvf typo
+        if [ -f "$pool_conf" ] && [ -s "$pool_conf" ]; then
             mv "$pool_conf" "${pool_conf}.disabled"
             ok "Disabled default PHP ${ver} FPM www pool"
         fi
     done
 
-    for ver in "${PHP_VERSIONS[@]}"; do
-        local pool_conf="/etc/php/${ver}/fpm/pool.d/www.conf.disabled"
-        if [ -f "$pool_conf" ]; then
-            sed -i "s|^listen = .*|listen = /run/php/php${ver}-fpm.sock|" "$pool_conf"
-            sed -i "s|^;*\s*listen.owner = .*|listen.owner = www-data|" "$pool_conf"
-            sed -i "s|^;*\s*listen.group = .*|listen.group = www-data|" "$pool_conf"
-            sed -i "s|^;*\s*listen.mode = .*|listen.mode = 0660|" "$pool_conf"
-            if ! systemctl restart "php${ver}-fpm" 2>/dev/null; then
-                warn "Failed to restart php${ver}-fpm"
-            fi
-            ok "PHP ${ver} FPM configured"
-        fi
-    done
-
+    # Create fresh pool configs for each PHP version
     for phpver in 8.1 8.2 8.3; do
         pool_dir="/etc/php/${phpver}/fpm/pool.d"
         if [ -d "$pool_dir" ]; then
+            # Remove any existing configs
             rm -f "${pool_dir}/www.conf" "${pool_dir}/www.conf.disabled" "${pool_dir}/www.conf.default" 2>/dev/null || true
             
+            # Create fresh pool config
             cat > "${pool_dir}/www.conf" << POOL
 [www]
 user = www-data
@@ -832,10 +838,11 @@ pm.start_servers = 2
 pm.min_spare_servers = 1
 pm.max_spare_servers = 3
 POOL
-            log "Created PHP ${phpver} FPM default pool"
+            log "Created PHP ${phpver} FPM pool config"
         fi
     done
 
+    # Restart all PHP-FPM versions
     for phpver in 8.1 8.2 8.3; do
         if systemctl restart "php${phpver}-fpm" 2>/dev/null; then
             ok "PHP ${phpver} FPM restarted with new pool"
@@ -853,6 +860,7 @@ POOL
     ufw default deny incoming
     ufw default allow outgoing
 
+    # Allow only specific ports for NovaPanel services
     ufw allow 22/tcp
     ufw allow 80/tcp
     ufw allow 443/tcp
@@ -892,32 +900,56 @@ phase_panel_deploy() {
     ok "Panel user: ${PANEL_USER}"
 
     log "Configuring sudo access for ${PANEL_USER}..."
+    # SECURITY FIX: Narrow down sudoers rules to only specific services needed
     cat > /etc/sudoers.d/novapanel << 'SUDOERS'
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart *
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop *
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl start *
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload *
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active *
+# Panel service control - limited to specific services only
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nginx, /usr/bin/systemctl restart php*-fpm, /usr/bin/systemctl restart mariadb, /usr/bin/systemctl restart postgresql, /usr/bin/systemctl restart redis-server, /usr/bin/systemctl restart apache2, /usr/bin/systemctl restart named, /usr/bin/systemctl restart postfix, /usr/bin/systemctl restart dovecot, /usr/bin/systemctl restart proftpd, /usr/bin/systemctl restart fail2ban
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop nginx, /usr/bin/systemctl stop php*-fpm, /usr/bin/systemctl stop mariadb, /usr/bin/systemctl stop postgresql, /usr/bin/systemctl stop redis-server, /usr/bin/systemctl stop apache2, /usr/bin/systemctl stop named, /usr/bin/systemctl stop postfix, /usr/bin/systemctl stop dovecot, /usr/bin/systemctl stop proftpd, /usr/bin/systemctl stop fail2ban
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl start nginx, /usr/bin/systemctl start php*-fpm, /usr/bin/systemctl start mariadb, /usr/bin/systemctl start postgresql, /usr/bin/systemctl start redis-server, /usr/bin/systemctl start apache2, /usr/bin/systemctl start named, /usr/bin/systemctl start postfix, /usr/bin/systemctl start dovecot, /usr/bin/systemctl start proftpd, /usr/bin/systemctl start fail2ban
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl status nginx, /usr/bin/systemctl status php*-fpm, /usr/bin/systemctl status mariadb, /usr/bin/systemctl status postgresql, /usr/bin/systemctl status redis-server, /usr/bin/systemctl status apache2, /usr/bin/systemctl status named, /usr/bin/systemctl status postfix, /usr/bin/systemctl status dovecot, /usr/bin/systemctl status proftpd, /usr/bin/systemctl status fail2ban
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx, /usr/bin/systemctl reload apache2
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active nginx, /usr/bin/systemctl is-active php*-fpm, /usr/bin/systemctl is-active mariadb, /usr/bin/systemctl is-active postgresql, /usr/bin/systemctl is-active redis-server
+
+# Nginx configuration management
 novapanel ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
 novapanel ALL=(ALL) NOPASSWD: /usr/sbin/nginx -s reload
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/novapanel-*.tmp /etc/nginx/*
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/novapanel-*.tmp /etc/php/*
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/rm -f /etc/nginx/sites-enabled/*
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/ln -s /etc/nginx/sites-available/* /etc/nginx/sites-enabled/
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/nginx/sites-available/*
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/php/*/fpm/pool.d/*
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/chown -R novapanel\:novapanel /var/www/*
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/chmod * /var/www/*
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /var/www/*
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/crontab -u * *
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/supervisorctl *
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/ufw *
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/novapanel-*.tmp /etc/nginx/sites-available/
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/novapanel-*.tmp /etc/nginx/sites-enabled/
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/rm -f /etc/nginx/sites-enabled/novapanel-*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/ln -s /etc/nginx/sites-available/novapanel-* /etc/nginx/sites-enabled/
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/nginx/sites-available/novapanel-*
+
+# PHP-FPM pool configuration
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/php/*/fpm/pool.d/novapanel-*
+
+# Web file permissions - fixed wildcard issue
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/chown -R novapanel:novapanel /var/www/vhosts/
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/chmod 644 /var/www/vhosts/*/wp-config.php
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/chmod 755 /var/www/vhosts/*/uploads/
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/chmod 644 /var/www/vhosts/*/.htaccess
+
+# Directory operations
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /var/www/vhosts/*
+
+# Apache configuration management
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/apache2/sites-available/novapanel-*
+
+# DNS zone management
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/bind/zones/novapanel-*
+
+# Mail configuration
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/dovecot/novapanel-*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/postfix/novapanel-*
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/proftpd/novapanel-*
+
+# Certbot for SSL
 novapanel ALL=(ALL) NOPASSWD: /usr/bin/certbot *
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/dovecot/*
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/postfix/*
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/proftpd/*
-novapanel ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/bind/*
+
+# Firewall management - limited to panel ports
+novapanel ALL=(ALL) NOPASSWD: /usr/sbin/ufw allow 8732/tcp, /usr/sbin/ufw delete allow 8732/tcp
+
+# Crontab management for panel user
+novapanel ALL=(ALL) NOPASSWD: /usr/bin/crontab -u novapanel *
 SUDOERS
     chmod 440 /etc/sudoers.d/novapanel
     if command -v visudo &>/dev/null; then
