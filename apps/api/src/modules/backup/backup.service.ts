@@ -63,7 +63,8 @@ export class BackupService {
       if (data.resourceType === 'site') {
         const domainList = await db.select().from(domains);
         for (const domain of domainList) {
-          const domainDir = `${env.VHOSTS_ROOT}/${domain.orgId}`;
+          // Use siteId for directory path if available
+          const domainDir = `${env.VHOSTS_ROOT}/${domain.siteId || domain.id}`;
           try {
             await run('tar', [
               '-czf', `${stagingDir}/files_${domain.name}.tar.gz`,
@@ -174,7 +175,8 @@ export class BackupService {
         for (const domain of domainList) {
           const archivePath = `${stagingDir}/files_${domain.name}.tar.gz`;
           try {
-            const domainDir = `${env.VHOSTS_ROOT}/${domain.orgId}`;
+            // Use siteId for directory path
+            const domainDir = `${env.VHOSTS_ROOT}/${domain.siteId || domain.id}`;
             await run('tar', ['-xzf', archivePath, '-C', domainDir], {
               sudo: true, timeout: 300_000,
             });
