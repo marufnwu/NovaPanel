@@ -457,6 +457,8 @@ export interface DomainDnsVerification {
   pointsToServer: boolean;
   error?: string;
   errorCode?: 'A_RECORD_WRONG' | 'NO_A_RECORD' | 'NO_NS_RECORDS' | 'VERIFICATION_FAILED';
+  nameservers?: string[];
+  nameserverAddresses?: Record<string, string[]>;
 }
 
 export function useVerifyDomainDns() {

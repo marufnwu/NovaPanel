@@ -312,6 +312,8 @@ export interface DnsVerificationResult {
   serverIp: string;
   error?: string;
   errorCode?: 'A_RECORD_WRONG' | 'NO_A_RECORD' | 'NO_NS_RECORDS' | 'VERIFICATION_FAILED';
+  nameservers?: string[];
+  nameserverAddresses?: Record<string, string[]>;
 }
 
 /**
@@ -329,6 +331,8 @@ export async function verifyDomainPointsToIp(domain: string, targetIp: string): 
     resolvesTo: [],
     pointsToServer: false,
     serverIp: targetIp,
+    nameservers: [],
+    nameserverAddresses: {},
   };
 
   // Helper to check if we found a match
@@ -371,26 +375,31 @@ export async function verifyDomainPointsToIp(domain: string, targetIp: string): 
   // - Domain doesn't exist, OR
   // - Local resolver has no data (could be propagation delay)
   // Either way, we should try authoritative NS as last resort
-  try {
+try {
     const nameservers = await getDomainNameservers(domain);
+    result.nameservers = nameservers;
 
     // If we have nameservers, query them directly
     if (nameservers.length > 0) {
       const { run: runCmd } = await import('../services/executor.js');
       const allAddresses: string[] = [];
+      const nsToAddresses: Record<string, string[]> = {};
 
       // Query each authoritative nameserver
       for (const ns of nameservers) {
         try {
           const digResult = await runCmd('dig', [`@${ns}`, '+short', domain, 'A'], { timeout: 10000 });
-          if (digResult.stdout.trim()) {
-            const addresses = digResult.stdout.trim().split('\n').filter(a => a.match(/^\d+\.\d+\.\d+\.\d+$/));
-            allAddresses.push(...addresses);
-          }
+          const addresses = digResult.stdout.trim()
+            ? digResult.stdout.trim().split('\n').filter((a: string) => a.match(/^\d+\.\d+\.\d+\.\d+$/))
+            : [];
+          nsToAddresses[ns] = addresses;
+          allAddresses.push(...addresses);
         } catch {
-          // Try next nameserver
+          nsToAddresses[ns] = [];
         }
       }
+
+      result.nameserverAddresses = nsToAddresses;
 
       // Deduplicate
       const uniqueAddresses = [...new Set(allAddresses)];
@@ -401,7 +410,14 @@ export async function verifyDomainPointsToIp(domain: string, targetIp: string): 
         result.error = `Domain ${domain} resolves to ${uniqueAddresses.join(', ')} but your server IP is ${targetIp}. Update the A record at your registrar to point to ${targetIp}.`;
         result.errorCode = 'A_RECORD_WRONG';
       } else if (result.resolvesTo.length === 0) {
-        result.error = `Domain ${domain} has nameservers set (${nameservers.join(', ')}) but no A record exists. Add an A record pointing to ${targetIp} at your registrar.`;
+        const nsList = nameservers.join(', ');
+        const noAEntries = Object.entries(nsToAddresses).filter(([, addrs]) => addrs.length === 0).map(([ns]) => ns);
+        const allNoA = noAEntries.length === nameservers.length;
+        if (allNoA) {
+          result.error = `Domain ${domain} has nameservers [${nsList}] but none of them have an A record for this domain. Add an A record at your registrar pointing to ${targetIp}. The nameservers are currently: ${nsList}. Check each nameserver individually to confirm they lack the A record.`;
+        } else {
+          result.error = `Domain ${domain} has nameservers [${nsList}] but some don't have an A record. Add an A record at your registrar pointing to ${targetIp}. Current nameservers: ${nsList}.`;
+        }
         result.errorCode = 'NO_A_RECORD';
       }
     } else {

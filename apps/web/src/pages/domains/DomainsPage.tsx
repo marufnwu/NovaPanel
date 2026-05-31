@@ -31,7 +31,7 @@ export function DomainsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newDomainName, setNewDomainName] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [dnsCheckResult, setDnsCheckResult] = useState<{ pointsToServer: boolean; resolvesTo: string[]; error?: string; errorCode?: string } | null>(null);
+  const [dnsCheckResult, setDnsCheckResult] = useState<{ pointsToServer: boolean; resolvesTo: string[]; error?: string; errorCode?: string; nameservers?: string[]; nameserverAddresses?: Record<string, string[]>; serverIp?: string } | null>(null);
 
   const handleCheckDns = async () => {
     if (!newDomainName) return;
@@ -43,6 +43,9 @@ export function DomainsPage() {
         resolvesTo: result.resolvesTo,
         error: result.error,
         errorCode: result.errorCode,
+        nameservers: result.nameservers,
+        nameserverAddresses: result.nameserverAddresses,
+        serverIp: result.serverIp,
       });
     } catch (err: any) {
       setDnsCheckResult({
@@ -262,15 +265,61 @@ export function DomainsPage() {
                     <p className="text-xs text-red-500/80 ml-6">{dnsCheckResult.error}</p>
                   )}
                   {dnsCheckResult.errorCode === 'A_RECORD_WRONG' && (
-                    <div className="ml-6 mt-2 p-2 bg-red-500/5 rounded text-xs">
-                      <p className="font-medium text-red-600">Action needed:</p>
-                      <p>Update your domain's A record at your registrar to point to the server IP.</p>
+                    <div className="space-y-2">
+                      <div className="ml-6 mt-2 p-2 bg-red-500/5 rounded text-xs">
+                        <p className="font-medium text-red-600">Action needed:</p>
+                        <p>Update your domain's A record at your registrar to point to the server IP.</p>
+                      </div>
+                      {dnsCheckResult.nameservers && dnsCheckResult.nameservers.length > 0 && (
+                        <div className="ml-6 mt-2 p-2 bg-red-500/5 rounded text-xs space-y-1">
+                          <p className="font-medium text-red-600">Nameservers and their A records for this domain:</p>
+                          {dnsCheckResult.nameservers.map((ns: string) => {
+                            const addresses = dnsCheckResult.nameserverAddresses?.[ns] || [];
+                            const hasAddress = addresses.length > 0;
+                            return (
+                              <div key={ns} className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${hasAddress ? 'bg-green-500' : 'bg-red-500'}`} />
+                                <span className="font-mono">{ns}</span>
+                                {hasAddress ? (
+                                  <span className="text-green-600">→ {addresses.join(', ')}</span>
+                                ) : (
+                                  <span className="text-red-500">→ no A record</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                          <p className="text-foreground-secondary mt-1">Your A record is pointing to {dnsCheckResult.resolvesTo.join(', ')} but should point to {dnsCheckResult.serverIp}.</p>
+                        </div>
+                      )}
                     </div>
                   )}
                   {dnsCheckResult.errorCode === 'NO_A_RECORD' && (
-                    <div className="ml-6 mt-2 p-2 bg-yellow-500/5 rounded text-xs">
-                      <p className="font-medium text-yellow-600">Action needed:</p>
-                      <p>Add an A record at your registrar pointing to the server IP.</p>
+                    <div className="space-y-2">
+                      <div className="ml-6 mt-2 p-2 bg-yellow-500/5 rounded text-xs">
+                        <p className="font-medium text-yellow-600">Action needed:</p>
+                        <p>Add an A record at your registrar pointing to the server IP.</p>
+                      </div>
+                      {dnsCheckResult.nameservers && dnsCheckResult.nameservers.length > 0 && (
+                        <div className="ml-6 mt-2 p-2 bg-yellow-500/5 rounded text-xs space-y-1">
+                          <p className="font-medium text-yellow-600">Nameservers found:</p>
+                          {dnsCheckResult.nameservers.map((ns: string) => {
+                            const addresses = dnsCheckResult.nameserverAddresses?.[ns] || [];
+                            const hasAddress = addresses.length > 0;
+                            return (
+                              <div key={ns} className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${hasAddress ? 'bg-green-500' : 'bg-red-500'}`} />
+                                <span className="font-mono">{ns}</span>
+                                {hasAddress ? (
+                                  <span className="text-green-600">→ {addresses.join(', ')}</span>
+                                ) : (
+                                  <span className="text-red-500">→ no A record</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                          <p className="text-foreground-secondary mt-1">None of your nameservers have an A record for this domain. The A record must be added at your registrar.</p>
+                        </div>
+                      )}
                     </div>
                   )}
                   {dnsCheckResult.errorCode === 'NO_NS_RECORDS' && (

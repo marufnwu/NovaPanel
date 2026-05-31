@@ -46,6 +46,8 @@ export default async function domainRoutes(fastify: FastifyInstance) {
         pointsToServer: verification.pointsToServer,
         error: verification.error,
         errorCode: verification.errorCode,
+        nameservers: verification.nameservers,
+        nameserverAddresses: verification.nameserverAddresses,
       }
     };
   });
