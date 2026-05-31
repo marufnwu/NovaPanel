@@ -417,11 +417,7 @@ export class DomainsService {
     }
     if (!errorLog) errorLogFailed = true;
 
-    // If both logs failed, throw an error with helpful message
-    if (accessLogFailed && errorLogFailed) {
-      throw new AppError(404, 'LOGS_NOT_FOUND', `No log files found for domain ${domain.name}. Tried paths: ${accessPaths.join(', ')} and ${errorPaths.join(', ')}`);
-    }
-
+    // Return empty strings if logs don't exist — don't throw, 404 is too noisy for UI tabs
     return { accessLog, errorLog };
   }
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useSearch } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -13,10 +13,21 @@ import { Icon } from '../../components/icons';
 import { toast } from '../../lib/toast';
 
 export function ContainerDetailPage() {
-  const params = useParams({ from: '/containers/$containerId' });
-  const search = useSearch({ from: '/containers/$containerId' });
-  const containerId = params.containerId as string;
-  const activeTab = (search as any)?.tab || 'overview';
+  const location = useLocation();
+  const navigate = useNavigate();
+  const pathParts = location.pathname.split('/containers/');
+  const containerId = pathParts[1]?.split('/')[0] || '';
+  const searchParams = new URLSearchParams(location.search);
+  const activeTab = searchParams.get('tab') || 'overview';
+
+  if (!containerId) {
+    return (
+      <div className="flex items-center justify-center min-h-[200px]">
+        <p className="text-foreground-secondary">Container ID is required</p>
+      </div>
+    );
+  }
+
   const queryClient = useQueryClient();
 
   const { data: container, isLoading, isError, error, refetch } = useContainer(containerId);
@@ -32,10 +43,7 @@ export function ContainerDetailPage() {
   ];
 
   const handleTabChange = (tabId: string) => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('tab', tabId);
-    window.history.pushState({}, '', url.toString());
-    window.dispatchEvent(new Event('locationchange'));
+    navigate({ search: { tab: tabId } } as any);
   };
 
   if (isLoading) return <PageSkeleton />;

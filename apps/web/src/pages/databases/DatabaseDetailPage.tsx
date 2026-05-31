@@ -1,4 +1,4 @@
-import { useParams, useSearch } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Button } from '../../components/ui/Button';
@@ -29,11 +29,22 @@ import { toast } from '../../lib/toast';
 import { ErrorState } from '../../components/ui/ErrorState';
 
 export function DatabaseDetailPage() {
-  const params = useParams({ from: '/databases/$databaseId' });
-  const search = useSearch({ from: '/databases/$databaseId' });
-  const databaseId = params.databaseId as string;
+  const location = useLocation();
+  const navigate = useNavigate();
+  const pathParts = location.pathname.split('/databases/');
+  const databaseId = pathParts[1]?.split('/')[0] || '';
+  const searchParams = new URLSearchParams(location.search);
+  const activeTab = searchParams.get('tab') || 'overview';
+
+  if (!databaseId) {
+    return (
+      <div className="flex items-center justify-center min-h-[200px]">
+        <p className="text-foreground-secondary">Database ID is required</p>
+      </div>
+    );
+  }
+
   const queryClient = useQueryClient();
-  const activeTab = (search as any)?.tab || 'overview';
 
   const { data: dbInfo, isLoading, isError, error, refetch } = useDatabaseInfo(databaseId);
 
@@ -53,10 +64,7 @@ export function DatabaseDetailPage() {
   ];
 
   const handleTabChange = (tabId: string) => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('tab', tabId);
-    window.history.pushState({}, '', url.toString());
-    window.dispatchEvent(new Event('locationchange'));
+    navigate({ search: { tab: tabId } } as any);
   };
 
   if (isLoading) return <PageSkeleton />;

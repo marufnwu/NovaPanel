@@ -52,44 +52,7 @@ export default async function domainRoutes(fastify: FastifyInstance) {
     };
   });
 
-  fastify.get('/:id', async (req) => {
-    const { id } = req.params as { id: string };
-    const domain = await service.get(id);
-    return { success: true, data: domain };
-  });
-
-  fastify.put('/:id', async (req) => {
-    const { id } = req.params as { id: string };
-    const data = updateDomainSchema.parse(req.body);
-    const domain = await service.update(id, data, req.user.id, req.ip);
-    return { success: true, data: domain };
-  });
-
-  fastify.delete('/:id', async (req) => {
-    const { id } = req.params as { id: string };
-    await service.delete(id, req.user.id, req.ip);
-    return { success: true, data: null };
-  });
-
-  fastify.post('/:id/suspend', async (req) => {
-    const { id } = req.params as { id: string };
-    await service.suspend(id, req.user.id, req.ip);
-    return { success: true, data: { status: 'suspended' } };
-  });
-
-  fastify.post('/:id/activate', async (req) => {
-    const { id } = req.params as { id: string };
-    await service.unsuspend(id, req.user.id, req.ip);
-    return { success: true, data: { status: 'active' } };
-  });
-
-  fastify.get('/:id/cloudflare-status', async (req) => {
-    const { id } = req.params as { id: string };
-    const status = await service.getCloudflareStatus(id);
-    return { success: true, data: status };
-  });
-
-  // --- Subdomains ---
+  // --- Subdomains (must come before /:id routes) ---
 
   fastify.get('/:domainId/subdomains', async (req) => {
     const { domainId } = req.params as { domainId: string };
@@ -110,7 +73,7 @@ export default async function domainRoutes(fastify: FastifyInstance) {
     return { success: true, data: null };
   });
 
-  // --- Aliases ---
+  // --- Aliases (must come before /:id routes) ---
 
   fastify.get('/:domainId/aliases', async (req) => {
     const { domainId } = req.params as { domainId: string };
@@ -131,7 +94,7 @@ export default async function domainRoutes(fastify: FastifyInstance) {
     return { success: true, data: null };
   });
 
-  // --- Redirects ---
+  // --- Redirects (must come before /:id routes) ---
 
   fastify.get('/:domainId/redirects', async (req) => {
     const { domainId } = req.params as { domainId: string };
@@ -152,7 +115,7 @@ export default async function domainRoutes(fastify: FastifyInstance) {
     return { success: true, data: null };
   });
 
-  // --- Domain Actions ---
+  // --- Domain Actions (must come before /:id routes) ---
 
   fastify.post('/:domainId/make-primary', async (req) => {
     const { domainId } = req.params as { domainId: string };
@@ -195,6 +158,70 @@ export default async function domainRoutes(fastify: FastifyInstance) {
     return { success: true, data: result };
   });
 
+  // --- Cloudflare (domain-scoped proxies — must come before /:id routes) ---
+
+  fastify.get('/:domainId/cloudflare/dns', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const zone = await service.getCloudflareZone(domainId);
+    if (!zone.zoneId) return { success: true, data: { records: [], total_count: 0 } };
+    try {
+      const { cloudflareService } = await import('../cloudflare/cloudflare.service.js');
+      const records = await cloudflareService.listDnsRecords(zone.zoneId, {});
+      return { success: true, data: { records: (records as any).result || [], total_count: (records as any).result_info?.total_count || 0 } };
+    } catch {
+      return { success: true, data: { records: [], total_count: 0 } };
+    }
+  });
+
+  fastify.post('/:domainId/cloudflare/dns', async (req, reply) => {
+    const { domainId } = req.params as { domainId: string };
+    const zone = await service.getCloudflareZone(domainId);
+    if (!zone.zoneId) throw new AppError(400, 'CLOUDFLARE_NOT_LINKED', 'Cloudflare zone not linked to this domain');
+    const { cloudflareService } = await import('../cloudflare/cloudflare.service.js');
+    const data = req.body as any;
+    const record = await cloudflareService.createDnsRecord(zone.zoneId, data, req.user.id, req.ip);
+    return reply.status(201).send({ success: true, data: record });
+  });
+
+  fastify.get('/:domainId/cloudflare/ssl', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const zone = await service.getCloudflareZone(domainId);
+    if (!zone.zoneId) return { success: true, data: { sslMode: 'off', alwaysUseHttps: false, automaticHttpsRewrites: false, minTlsVersion: '1.2', http2: false, http3: false } };
+    try {
+      const { cloudflareService } = await import('../cloudflare/cloudflare.service.js');
+      const ssl = await cloudflareService.getSslSettings(zone.zoneId);
+      return { success: true, data: ssl };
+    } catch {
+      return { success: true, data: { sslMode: 'off', alwaysUseHttps: false, automaticHttpsRewrites: false, minTlsVersion: '1.2', http2: false, http3: false } };
+    }
+  });
+
+  fastify.get('/:domainId/cloudflare/firewall', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const zone = await service.getCloudflareZone(domainId);
+    if (!zone.zoneId) return { success: true, data: [] };
+    try {
+      const { cloudflareService } = await import('../cloudflare/cloudflare.service.js');
+      const rules = await cloudflareService.listFirewallRules(zone.zoneId);
+      return { success: true, data: rules as any[] };
+    } catch {
+      return { success: true, data: [] };
+    }
+  });
+
+  fastify.get('/:domainId/cloudflare/redirects', async (req) => {
+    const { domainId } = req.params as { domainId: string };
+    const zone = await service.getCloudflareZone(domainId);
+    if (!zone.zoneId) return { success: true, data: [] };
+    try {
+      const { cloudflareService } = await import('../cloudflare/cloudflare.service.js');
+      const rules = await cloudflareService.listRedirectRules(zone.zoneId);
+      return { success: true, data: rules as any[] };
+    } catch {
+      return { success: true, data: [] };
+    }
+  });
+
   // --- Nameservers ---
   fastify.get('/:domainId/nameservers', async (req) => {
     const { domainId } = req.params as { domainId: string };
@@ -223,5 +250,44 @@ export default async function domainRoutes(fastify: FastifyInstance) {
         allResolvable: verificationResults.every((r: any) => r.isResolvable),
       },
     };
+  });
+
+  // --- Generic /:id routes (must come after more specific routes) ---
+
+  fastify.get('/:id', async (req) => {
+    const { id } = req.params as { id: string };
+    const domain = await service.get(id);
+    return { success: true, data: domain };
+  });
+
+  fastify.put('/:id', async (req) => {
+    const { id } = req.params as { id: string };
+    const data = updateDomainSchema.parse(req.body);
+    const domain = await service.update(id, data, req.user.id, req.ip);
+    return { success: true, data: domain };
+  });
+
+  fastify.delete('/:id', async (req) => {
+    const { id } = req.params as { id: string };
+    await service.delete(id, req.user.id, req.ip);
+    return { success: true, data: null };
+  });
+
+  fastify.post('/:id/suspend', async (req) => {
+    const { id } = req.params as { id: string };
+    await service.suspend(id, req.user.id, req.ip);
+    return { success: true, data: { status: 'suspended' } };
+  });
+
+  fastify.post('/:id/activate', async (req) => {
+    const { id } = req.params as { id: string };
+    await service.unsuspend(id, req.user.id, req.ip);
+    return { success: true, data: { status: 'active' } };
+  });
+
+  fastify.get('/:id/cloudflare-status', async (req) => {
+    const { id } = req.params as { id: string };
+    const status = await service.getCloudflareStatus(id);
+    return { success: true, data: status };
   });
 }
