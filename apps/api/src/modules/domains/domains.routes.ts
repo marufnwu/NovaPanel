@@ -23,7 +23,8 @@ export default async function domainRoutes(fastify: FastifyInstance) {
     if (serverIp) {
       const verification = await verifyDomainPointsToIp(data.name, serverIp);
       if (!verification.pointsToServer) {
-        throw new AppError(400, 'DOMAIN_DNS_NOT_POINTING', `Domain ${data.name} does not point to this server. Expected IP: ${serverIp}, found: ${verification.resolvesTo.join(', ') || 'none'}.`);
+        const errorMessage = verification.error || `Domain ${data.name} does not point to this server. Expected IP: ${serverIp}, found: ${verification.resolvesTo.join(', ') || 'none'}.`;
+        throw new AppError(400, verification.errorCode || 'DOMAIN_DNS_NOT_POINTING', errorMessage);
       }
     }
     const domain = await service.create({ name: data.name, siteId: data.siteId, type: data.type, userId: req.user.id, ipAddress: req.ip });
@@ -36,7 +37,17 @@ export default async function domainRoutes(fastify: FastifyInstance) {
     const serverIp = networkInfo.primaryIp;
     if (!serverIp) return { success: false, error: 'Could not determine server IP address', data: null };
     const verification = await verifyDomainPointsToIp(domain, serverIp);
-    return { success: true, data: { domain, serverIp, resolvesTo: verification.resolvesTo, pointsToServer: verification.pointsToServer, error: verification.error } };
+    return {
+      success: true,
+      data: {
+        domain,
+        serverIp,
+        resolvesTo: verification.resolvesTo,
+        pointsToServer: verification.pointsToServer,
+        error: verification.error,
+        errorCode: verification.errorCode,
+      }
+    };
   });
 
   fastify.get('/:id', async (req) => {

@@ -16,7 +16,7 @@ const ALLOWED_COMMANDS: ReadonlySet<string> = new Set([
   // Systemd
   'systemctl',
   // DNS
-  'rndc', 'named-checkzone', 'dig',
+  'rndc', 'named-checkzone', 'dig', 'whois',
   // Mail
   'postfix', 'postmap', 'doveadm', 'opendkim-genkey', 'opendkim-testkey',
   // Database

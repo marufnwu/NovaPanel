@@ -31,7 +31,7 @@ export function DomainsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newDomainName, setNewDomainName] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [dnsCheckResult, setDnsCheckResult] = useState<{ pointsToServer: boolean; resolvesTo: string[]; error?: string } | null>(null);
+  const [dnsCheckResult, setDnsCheckResult] = useState<{ pointsToServer: boolean; resolvesTo: string[]; error?: string; errorCode?: string } | null>(null);
 
   const handleCheckDns = async () => {
     if (!newDomainName) return;
@@ -42,6 +42,7 @@ export function DomainsPage() {
         pointsToServer: result.pointsToServer,
         resolvesTo: result.resolvesTo,
         error: result.error,
+        errorCode: result.errorCode,
       });
     } catch (err: any) {
       setDnsCheckResult({
@@ -250,17 +251,35 @@ export function DomainsPage() {
                   <span className="text-sm font-medium">Domain points to server</span>
                 </div>
               ) : (
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <div className="flex items-center gap-2 text-red-600">
                     <Icon name="icon-x-circle" size={16} />
-                    <span className="text-sm font-medium">Domain does not point to server</span>
+                    <span className="text-sm font-medium">DNS verification failed</span>
                   </div>
                   {dnsCheckResult.error && (
                     <p className="text-xs text-red-500/80 ml-6">{dnsCheckResult.error}</p>
                   )}
+                  {dnsCheckResult.errorCode === 'A_RECORD_WRONG' && (
+                    <div className="ml-6 mt-2 p-2 bg-red-500/5 rounded text-xs">
+                      <p className="font-medium text-red-600">Action needed:</p>
+                      <p>Update your domain's A record at your registrar to point to the server IP.</p>
+                    </div>
+                  )}
+                  {dnsCheckResult.errorCode === 'NO_A_RECORD' && (
+                    <div className="ml-6 mt-2 p-2 bg-yellow-500/5 rounded text-xs">
+                      <p className="font-medium text-yellow-600">Action needed:</p>
+                      <p>Add an A record at your registrar pointing to the server IP.</p>
+                    </div>
+                  )}
+                  {dnsCheckResult.errorCode === 'NO_NS_RECORDS' && (
+                    <div className="ml-6 mt-2 p-2 bg-yellow-500/5 rounded text-xs">
+                      <p className="font-medium text-yellow-600">Action needed:</p>
+                      <p>Set nameservers at your registrar. If already set, wait for DNS propagation (up to 48 hours).</p>
+                    </div>
+                  )}
                   {dnsCheckResult.resolvesTo.length > 0 && (
                     <p className="text-xs text-red-500/80 ml-6">
-                      Resolves to: {dnsCheckResult.resolvesTo.join(', ') || 'none'}
+                      Currently resolves to: {dnsCheckResult.resolvesTo.join(', ')}
                     </p>
                   )}
                 </div>

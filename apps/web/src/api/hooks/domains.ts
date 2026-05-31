@@ -456,6 +456,7 @@ export interface DomainDnsVerification {
   resolvesTo: string[];
   pointsToServer: boolean;
   error?: string;
+  errorCode?: 'A_RECORD_WRONG' | 'NO_A_RECORD' | 'NO_NS_RECORDS' | 'VERIFICATION_FAILED';
 }
 
 export function useVerifyDomainDns() {

@@ -311,6 +311,7 @@ export interface DnsVerificationResult {
   pointsToServer: boolean;
   serverIp: string;
   error?: string;
+  errorCode?: 'A_RECORD_WRONG' | 'NO_A_RECORD' | 'NO_NS_RECORDS' | 'VERIFICATION_FAILED';
 }
 
 /**
@@ -357,19 +358,23 @@ export async function verifyDomainPointsToIp(domain: string, targetIp: string): 
       const addresses = digResult.stdout.trim().split('\n').filter(a => a.match(/^\d+\.\d+\.\d+\.\d+$/));
       checkMatch(addresses);
       if (result.pointsToServer) return result;
-      // If dig returned something but not matching, still useful for error message
-      if (addresses.length > 0 && !result.pointsToServer) {
-        result.error = `Domain resolves to ${addresses.join(', ')} but not to server IP ${targetIp}`;
-        return result;
-      }
+      // Method 2 returned non-matching IPs - continue to method 3 (authoritative NS)
+      // because these may be stale/incorrect and authoritative NS may have correct data
     }
   } catch {
     // Continue to next method
   }
 
   // Try method 3: Query authoritative nameservers directly
+  // Only proceed if we got non-matching IPs from methods 1 & 2
+  // If we got NO IPs at all from methods 1 & 2, that likely means:
+  // - Domain doesn't exist, OR
+  // - Local resolver has no data (could be propagation delay)
+  // Either way, we should try authoritative NS as last resort
   try {
     const nameservers = await getDomainNameservers(domain);
+
+    // If we have nameservers, query them directly
     if (nameservers.length > 0) {
       const { run: runCmd } = await import('../services/executor.js');
       const allAddresses: string[] = [];
@@ -393,15 +398,28 @@ export async function verifyDomainPointsToIp(domain: string, targetIp: string): 
       if (result.pointsToServer) return result;
 
       if (uniqueAddresses.length > 0) {
-        result.error = `Domain resolves to ${uniqueAddresses.join(', ')} but not to server IP ${targetIp}`;
+        result.error = `Domain ${domain} resolves to ${uniqueAddresses.join(', ')} but your server IP is ${targetIp}. Update the A record at your registrar to point to ${targetIp}.`;
+        result.errorCode = 'A_RECORD_WRONG';
       } else if (result.resolvesTo.length === 0) {
-        result.error = 'DNS resolution returned no A records from authoritative nameservers';
+        result.error = `Domain ${domain} has nameservers set (${nameservers.join(', ')}) but no A record exists. Add an A record pointing to ${targetIp} at your registrar.`;
+        result.errorCode = 'NO_A_RECORD';
       }
     } else {
-      result.error = result.error || 'Could not determine domain nameservers';
+      // No nameservers found - this is informational, not a hard failure
+      // The domain might still have a valid A record via other methods
+      // Only set error if we actually have some info to report
+      if (result.resolvesTo.length === 0) {
+        result.error = `Could not determine nameservers for ${domain}. Ensure NS records are set at your registrar. If your A record is already pointing to ${targetIp}, wait for DNS propagation (can take up to 48 hours).`;
+        result.errorCode = 'NO_NS_RECORDS';
+      } else {
+        // We have A record IPs but they don't match - this means A record is wrong
+        result.error = `Domain ${domain} currently resolves to ${result.resolvesTo.join(', ')} but your server IP is ${targetIp}. Update the A record at your registrar to point to ${targetIp}.`;
+        result.errorCode = 'A_RECORD_WRONG';
+      }
     }
   } catch (err: any) {
     result.error = result.error || `DNS verification failed: ${err.message}`;
+    result.errorCode = 'VERIFICATION_FAILED';
   }
 
   return result;
@@ -409,21 +427,59 @@ export async function verifyDomainPointsToIp(domain: string, targetIp: string): 
 
 /**
  * Get nameservers for a domain by querying NS records
+ * Uses multiple methods to ensure we get the authoritative NS
  */
 export async function getDomainNameservers(domain: string): Promise<string[]> {
+  // Method 1: node:dns.resolveNs() - uses system resolver
   try {
     const { promises: dnsPromises } = await import('node:dns');
-    const nameservers = await dnsPromises.resolveNs(domain);
-    return nameservers;
+    const nameservers = await Promise.race([
+      dnsPromises.resolveNs(domain),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+    ]) as string[];
+    if (nameservers && nameservers.length > 0) {
+      return nameservers;
+    }
   } catch {
-    // Fallback to dig
-    try {
-      const { run: runCmd } = await import('../services/executor.js');
-      const digResult = await runCmd('dig', ['+short', domain, 'NS']);
-      if (digResult.stdout.trim()) {
-        return digResult.stdout.trim().split('\n').filter(Boolean);
-      }
-    } catch { /* ignore */ }
-    return [];
+    // Continue to fallback
   }
+
+  // Method 2: dig +short domain NS - uses system resolver fallback
+  try {
+    const { run: runCmd } = await import('../services/executor.js');
+    const digResult = await runCmd('dig', ['+short', domain, 'NS'], { timeout: 10000 });
+    if (digResult.stdout.trim()) {
+      const ns = digResult.stdout.trim().split('\n').filter(Boolean);
+      if (ns.length > 0) return ns;
+    }
+  } catch { /* ignore */ }
+
+  // Method 3: whois command - gets NS from registrar/TLD registry WHOIS data
+  try {
+    const { run: runCmd } = await import('../services/executor.js');
+    const whoisResult = await runCmd('whois', [domain], { timeout: 15000 });
+    if (whoisResult.exitCode === 0 && whoisResult.stdout) {
+      // Parse nameservers from whois output
+      // Common patterns: "Name Server: ns1.example.com", "NS: dns1.registrar-servers.com"
+      const lines = whoisResult.stdout.split('\n');
+      const nameservers: string[] = [];
+      for (const line of lines) {
+        const lowerLine = line.toLowerCase().trim();
+        if (lowerLine.startsWith('name server:') || lowerLine.startsWith('nserver:') || lowerLine.startsWith('ns:')) {
+          const parts = line.split(/\s+/);
+          // Last part is usually the hostname
+          for (const part of parts.reverse()) {
+            if (part.match(/^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)+$/)) {
+              nameservers.push(part.toLowerCase());
+            }
+          }
+        }
+      }
+      if (nameservers.length > 0) {
+        return [...new Set(nameservers)];
+      }
+    }
+  } catch { /* ignore */ }
+
+  return [];
 }
