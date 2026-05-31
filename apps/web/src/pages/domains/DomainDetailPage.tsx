@@ -398,7 +398,10 @@ export function DomainDetailPage() {
               </div>
             </div>
           ) : (
-            <EmptyState icon="icon-world" title="No nameservers set" description="Set nameservers to manage DNS delegation for this domain" />
+            <div>
+              <p className="text-small text-foreground-secondary mb-3">Nameservers delegate DNS authority for your domain. Each nameserver hostname must have a valid glue record (A record) pointing to a public IP address. Verification is automatic when saving.</p>
+              <EmptyState icon="icon-world" title="No nameservers set" description="Set nameservers to manage DNS delegation for this domain" />
+            </div>
           )}
         </Card>
       )}

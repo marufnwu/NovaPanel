@@ -239,6 +239,8 @@ export function DomainsPage() {
             </div>
           </div>
 
+          <p className="text-small text-foreground-secondary mb-3">Your domain's A record must point to this server's IP address before adding it. Set the A record at your registrar first, then check DNS here.</p>
+
           {dnsCheckResult && (
             <div className={`p-3 rounded-lg border ${
               dnsCheckResult.pointsToServer

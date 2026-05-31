@@ -424,6 +424,10 @@ function NameserverSettings() {
 
   return (
     <div className="flex flex-col gap-4 max-w-md">
+      <p className="text-small text-foreground-secondary">
+        These are the <strong>glue records</strong> — nameserver hostnames that must have A records at your domain registrar.
+        When users set your domain's NS to<span className="font-mono">{vals.ns1 || 'ns1.example.com'}</span>, the registrar needs an A record for that hostname to make it resolvable.
+      </p>
       <Field label="Nameserver 1">
         <div className="flex gap-2">
           <div className="flex-1">
