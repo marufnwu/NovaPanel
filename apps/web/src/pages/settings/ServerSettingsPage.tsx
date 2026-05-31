@@ -438,22 +438,42 @@ function NameserverSettings() {
           </Button>
         </div>
         {ns1Result && (
-          <div className={`mt-2 p-2 rounded text-small ${ns1Result.isResolvable ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
+          <div className={`mt-2 p-3 rounded text-small ${ns1Result.isResolvable ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
             {ns1Result.isResolvable ? (
               <div>
-                <span>{ns1Result.hostname} → {ns1Result.resolvesTo.join(', ')}</span>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                  <span>{ns1Result.hostname} → {ns1Result.resolvesTo.join(', ')}</span>
+                </div>
+                <p className="text-xs mt-1 opacity-80">Glue record is valid.</p>
               </div>
             ) : (
-              <div className="space-y-1">
-                <span>{ns1Result.error}</span>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-red-500" />
+                  <span className="font-medium">Nameserver verification failed</span>
+                </div>
+                <p className="text-xs">{ns1Result.error}</p>
                 {ns1Result.parentDomainNs && ns1Result.parentDomainNs.length > 0 && (
-                  <div className="text-xs mt-1 opacity-80">
-                    Current NS records for this domain: {ns1Result.parentDomainNs.join(', ')}
+                  <div className="text-xs p-2 bg-black/10 rounded">
+                    <p className="font-medium">Current domain NS records:</p>
+                    <p className="font-mono">{ns1Result.parentDomainNs.join(', ')}</p>
                   </div>
                 )}
                 {ns1Result.isListedInParentNs === false && ns1Result.parentDomainNs && ns1Result.parentDomainNs.length > 0 && (
-                  <div className="text-xs mt-1 font-medium">
-                    Note: This nameserver is NOT listed in your domain's NS records. You must add it at your registrar first.
+                  <div className="text-xs p-2 bg-yellow-500/10 rounded border border-yellow-500/30">
+                    <p className="font-medium text-yellow-600">Step 1:</p>
+                    <p>Add {ns1Result.hostname} to your domain's NS records at your registrar.</p>
+                    <p className="font-medium text-yellow-600 mt-1">Step 2:</p>
+                    <p>Add an A record for {ns1Result.hostname} pointing to your server IP.</p>
+                  </div>
+                )}
+                {ns1Result.parentDomainNs && ns1Result.parentDomainNs.length === 0 && ns1Result.parentDomainHasA && (
+                  <div className="text-xs p-2 bg-yellow-500/10 rounded border border-yellow-500/30">
+                    <p className="font-medium text-yellow-600">Step 1:</p>
+                    <p>Set NS records at your registrar to your nameservers (e.g., {ns1Result.hostname}).</p>
+                    <p className="font-medium text-yellow-600 mt-1">Step 2:</p>
+                    <p>Add A records for each nameserver hostname pointing to your server IP.</p>
                   </div>
                 )}
               </div>
@@ -471,22 +491,42 @@ function NameserverSettings() {
           </Button>
         </div>
         {ns2Result && (
-          <div className={`mt-2 p-2 rounded text-small ${ns2Result.isResolvable ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
+          <div className={`mt-2 p-3 rounded text-small ${ns2Result.isResolvable ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
             {ns2Result.isResolvable ? (
               <div>
-                <span>{ns2Result.hostname} → {ns2Result.resolvesTo.join(', ')}</span>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                  <span>{ns2Result.hostname} → {ns2Result.resolvesTo.join(', ')}</span>
+                </div>
+                <p className="text-xs mt-1 opacity-80">Glue record is valid.</p>
               </div>
             ) : (
-              <div className="space-y-1">
-                <span>{ns2Result.error}</span>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-red-500" />
+                  <span className="font-medium">Nameserver verification failed</span>
+                </div>
+                <p className="text-xs">{ns2Result.error}</p>
                 {ns2Result.parentDomainNs && ns2Result.parentDomainNs.length > 0 && (
-                  <div className="text-xs mt-1 opacity-80">
-                    Current NS records for this domain: {ns2Result.parentDomainNs.join(', ')}
+                  <div className="text-xs p-2 bg-black/10 rounded">
+                    <p className="font-medium">Current domain NS records:</p>
+                    <p className="font-mono">{ns2Result.parentDomainNs.join(', ')}</p>
                   </div>
                 )}
                 {ns2Result.isListedInParentNs === false && ns2Result.parentDomainNs && ns2Result.parentDomainNs.length > 0 && (
-                  <div className="text-xs mt-1 font-medium">
-                    Note: This nameserver is NOT listed in your domain's NS records. You must add it at your registrar first.
+                  <div className="text-xs p-2 bg-yellow-500/10 rounded border border-yellow-500/30">
+                    <p className="font-medium text-yellow-600">Step 1:</p>
+                    <p>Add {ns2Result.hostname} to your domain's NS records at your registrar.</p>
+                    <p className="font-medium text-yellow-600 mt-1">Step 2:</p>
+                    <p>Add an A record for {ns2Result.hostname} pointing to your server IP.</p>
+                  </div>
+                )}
+                {ns2Result.parentDomainNs && ns2Result.parentDomainNs.length === 0 && ns2Result.parentDomainHasA && (
+                  <div className="text-xs p-2 bg-yellow-500/10 rounded border border-yellow-500/30">
+                    <p className="font-medium text-yellow-600">Step 1:</p>
+                    <p>Set NS records at your registrar to your nameservers (e.g., {ns2Result.hostname}).</p>
+                    <p className="font-medium text-yellow-600 mt-1">Step 2:</p>
+                    <p>Add A records for each nameserver hostname pointing to your server IP.</p>
                   </div>
                 )}
               </div>

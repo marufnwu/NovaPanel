@@ -48,6 +48,8 @@ export interface NameserverVerificationResult {
   error?: string;
   isListedInParentNs?: boolean;
   parentDomainNs?: string[];
+  parentDomainHasA?: boolean;
+  parentDomainA?: string[];
 }
 
 export async function verifyNameserverResolvable(hostname: string): Promise<NameserverVerificationResult> {
@@ -109,15 +111,15 @@ export async function verifyNameserverResolvable(hostname: string): Promise<Name
     // Continue
   }
 
-  // Failed to resolve - get context about parent domain NS
+  // Failed to resolve - get context about parent domain NS and A records
   const context = await getNameserverContext(hostname);
   result.isListedInParentNs = context.isListedInParentNs;
   result.parentDomainNs = context.parentDomainNs;
+  result.parentDomainHasA = context.parentDomainHasA;
+  result.parentDomainA = context.parentDomainA;
   let errorMsg = `Nameserver ${hostname} does not resolve to any IP address.`;
   if (context.suggestion) {
     errorMsg += ` ${context.suggestion}`;
-  } else {
-    errorMsg += ` Add an A record for ${hostname} at your registrar before using it. Note: DNS changes may take up to 48 hours to propagate.`;
   }
   addError(errorMsg);
   return result;
@@ -140,15 +142,18 @@ function extractApexDomain(hostname: string): string | null {
 }
 
 /**
- * Get additional context about a nameserver by checking its parent domain's NS records
+ * Get additional context about a nameserver by checking its parent domain's NS and A records
  */
-async function getNameserverContext(hostname: string): Promise<{ parentDomainNs: string[]; isListedInParentNs: boolean; suggestion: string }> {
+async function getNameserverContext(hostname: string): Promise<{ parentDomainNs: string[]; isListedInParentNs: boolean; parentDomainHasA: boolean; parentDomainA: string[]; suggestion: string }> {
   const apexDomain = extractApexDomain(hostname);
   if (!apexDomain) {
-    return { parentDomainNs: [], isListedInParentNs: false, suggestion: '' };
+    return { parentDomainNs: [], isListedInParentNs: false, parentDomainHasA: false, parentDomainA: [], suggestion: '' };
   }
 
   let parentDomainNs: string[] = [];
+  let parentDomainA: string[] = [];
+
+  // Get parent domain NS records
   try {
     const { promises: dnsPromises } = await import('node:dns');
     parentDomainNs = await Promise.race([
@@ -165,18 +170,38 @@ async function getNameserverContext(hostname: string): Promise<{ parentDomainNs:
     } catch { /* ignore */ }
   }
 
+  // Get parent domain A record
+  try {
+    const { promises: dnsPromises } = await import('node:dns');
+    parentDomainA = await Promise.race([
+      dnsPromises.resolve4(apexDomain),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+    ]) as string[];
+  } catch {
+    // Fallback to dig
+    try {
+      const digResult = await run('dig', ['+short', apexDomain, 'A'], { timeout: 10000 });
+      if (digResult.stdout.trim()) {
+        parentDomainA = digResult.stdout.trim().split('\n').filter(a => a.match(/^\d+\.\d+\.\d+\.\d+$/));
+      }
+    } catch { /* ignore */ }
+  }
+
   const isListedInParentNs = parentDomainNs.some(ns => ns.toLowerCase() === hostname.toLowerCase());
+  const parentDomainHasA = parentDomainA.length > 0;
 
   let suggestion = '';
   if (isListedInParentNs) {
-    suggestion = `This nameserver is listed as an authoritative NS for ${apexDomain}, but its A record is missing or not yet propagated. Add the A record at your registrar and wait up to 48 hours.`;
+    suggestion = `This nameserver is listed as an authoritative NS for ${apexDomain}, but it has no A record. Add an A record for ${hostname} pointing to your server IP at your registrar. DNS changes may take up to 48 hours to propagate.`;
   } else if (parentDomainNs.length > 0) {
-    suggestion = `This nameserver is NOT listed in ${apexDomain}'s NS records (current NS: ${parentDomainNs.join(', ')}). If you want to use this as a nameserver, add it at your registrar first.`;
+    suggestion = `This nameserver is NOT in ${apexDomain}'s NS records (current NS: ${parentDomainNs.join(', ')}). To use this as a nameserver: (1) Add ${hostname} to your domain's NS records at your registrar, (2) Add an A record for ${hostname} pointing to your server IP.`;
+  } else if (parentDomainHasA) {
+    suggestion = `Your domain ${apexDomain} has an A record (${parentDomainA.join(', ')}) but no NS records found. To use custom nameservers: (1) Set NS records at your registrar to your nameservers (e.g., ${hostname}), (2) Add A records for each nameserver hostname pointing to your server IP.`;
   } else {
-    suggestion = `Could not find NS records for ${apexDomain}. Ensure your domain has nameservers configured at your registrar.`;
+    suggestion = `Could not find NS or A records for ${apexDomain}. Ensure your domain has nameservers and A records configured at your registrar. Note: DNS changes may take up to 48 hours to propagate.`;
   }
 
-  return { parentDomainNs, isListedInParentNs, suggestion };
+return { parentDomainNs, isListedInParentNs, parentDomainHasA, parentDomainA, suggestion };
 }
 
 /**

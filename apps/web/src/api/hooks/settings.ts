@@ -218,6 +218,8 @@ export interface NameserverVerificationResult {
   error?: string;
   isListedInParentNs?: boolean;
   parentDomainNs?: string[];
+  parentDomainHasA?: boolean;
+  parentDomainA?: string[];
 }
 
 export function useVerifyNameserver() {
