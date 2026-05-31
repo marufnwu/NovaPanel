@@ -30,7 +30,7 @@ export function CronTimeline({ siteId, domainId, compact = false }: CronTimeline
   const runCron = useRunCronJob();
 
   // Fetch cron jobs for the site
-  const { data: cronJobs, isLoading: jobsLoading, refetch: refetchJobs } = useCronJobs(domainId);
+  const { data: cronJobs, isLoading: jobsLoading, refetch: refetchJobs } = useCronJobs(siteId);
 
   // Calculate time range based on view
   const timeRange = useMemo(() => {
@@ -71,7 +71,7 @@ export function CronTimeline({ siteId, domainId, compact = false }: CronTimeline
       });
 
       // Add scheduled future runs
-      if (job.isActive) {
+      if (job.status === 'active') {
         const nextRuns = getNextScheduledRuns(job.schedule, timeRange.start, timeRange.end);
         nextRuns.forEach(time => {
           allMarkers.push({
@@ -112,7 +112,7 @@ export function CronTimeline({ siteId, domainId, compact = false }: CronTimeline
     
     return {
       totalJobs: cronJobs?.length || 0,
-      activeJobs: cronJobs?.filter(j => j.isActive).length || 0,
+      activeJobs: cronJobs?.filter(j => j.status === 'active').length || 0,
       executions: executions.length,
       successes,
       failures,
@@ -335,12 +335,12 @@ export function CronTimeline({ siteId, domainId, compact = false }: CronTimeline
                         }}
                         disabled={toggleCron.isPending}
                         className={`relative w-10 h-5 rounded-full transition-colors ${
-                          job.isActive ? 'bg-foreground-success' : 'bg-background-tertiary'
+                          job.status === 'active' ? 'bg-foreground-success' : 'bg-background-tertiary'
                         } ${toggleCron.isPending ? 'opacity-50' : ''}`}
                       >
                         <span
                           className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                            job.isActive ? 'translate-x-5' : 'translate-x-0.5'
+                            job.status === 'active' ? 'translate-x-5' : 'translate-x-0.5'
                           }`}
                         />
                       </button>
@@ -353,22 +353,22 @@ export function CronTimeline({ siteId, domainId, compact = false }: CronTimeline
                     
                     <div className="flex items-center gap-2">
                       {/* Next Run */}
-                      {job.isActive && (
+                      {job.status === 'active' && (
                         <div className="text-meta text-foreground-tertiary">
                           Next: {getNextRunTime(job.schedule)}
                         </div>
                       )}
                       
                       {/* Last Run Status */}
-                      {job.lastRun && (
+                      {job.lastRunAt && (
                         <span className={`px-2 py-0.5 rounded text-meta ${
-                          job.lastStatus === 'success' 
+                          job.lastExitCode === 0
                             ? 'bg-foreground-success/10 text-foreground-success'
-                            : job.lastStatus === 'failed'
+                            : job.lastExitCode !== null
                             ? 'bg-foreground-danger/10 text-foreground-danger'
                             : 'bg-foreground-tertiary/10 text-foreground-tertiary'
                         }`}>
-                          {job.lastStatus || 'unknown'}
+                          {job.lastExitCode === 0 ? 'success' : job.lastExitCode !== null ? 'failed' : 'unknown'}
                         </span>
                       )}
                       
@@ -398,15 +398,15 @@ export function CronTimeline({ siteId, domainId, compact = false }: CronTimeline
                         </div>
                         <div>
                           <div className="text-meta text-foreground-tertiary mb-1">System User</div>
-                          <div className="text-small">{job.systemUser || 'default'}</div>
+                          <div className="text-small">{job.user || 'default'}</div>
                         </div>
                       </div>
                       
-                      {job.lastRun && (
+                      {job.lastRunAt && (
                         <div className="grid grid-cols-3 gap-4 mb-4">
                           <div>
                             <div className="text-meta text-foreground-tertiary mb-1">Last Run</div>
-                            <div className="text-small">{new Date(job.lastRun).toLocaleString()}</div>
+                            <div className="text-small">{new Date(job.lastRunAt).toLocaleString()}</div>
                           </div>
                           <div>
                             <div className="text-meta text-foreground-tertiary mb-1">Last Duration</div>
@@ -573,7 +573,7 @@ function generateMockHistory(job: CronJob, timeRange: { start: Date; end: Date }
   // Generate realistic mock history for visualization
   const history: CronHistoryEntry[] = [];
   
-  if (!job.isActive) return history;
+  if (job.status !== 'active') return history;
 
   // Parse schedule to determine frequency
   const parts = job.schedule.split(' ');

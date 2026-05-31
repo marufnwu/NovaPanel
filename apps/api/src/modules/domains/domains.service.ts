@@ -65,7 +65,7 @@ export class DomainsService {
     const where = conditions.length > 0 ? and(...conditions) : undefined;
 
     const items = await db.select().from(domains).where(where).limit(perPage).offset(offset);
-    const [{ total }] = await db.select({ total: count() }).from(domains);
+    const [{ total }] = await db.select({ total: count() }).from(domains).where(where);
 
     return { items, total, page, perPage };
   }
@@ -139,6 +139,11 @@ export class DomainsService {
   async delete(id: string, userId?: string, ipAddress?: string) {
     const [domain] = await db.select().from(domains).where(eq(domains.id, id)).limit(1);
     if (!domain) throw new AppError(404, 'DOMAIN_NOT_FOUND', 'Domain not found');
+
+    // Cascade delete domain-related records
+    await db.delete(domainSubdomains).where(eq(domainSubdomains.domainId, id));
+    await db.delete(domainAliases).where(eq(domainAliases.domainId, id));
+    await db.delete(domainRedirects).where(eq(domainRedirects.domainId, id));
 
     await db.delete(domains).where(eq(domains.id, id));
 

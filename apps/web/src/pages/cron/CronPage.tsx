@@ -79,18 +79,18 @@ export function CronPage() {
     {
       key: 'isActive',
       label: 'Status',
-      render: (j: CronJob) => <StatusBadge status={j.isActive ? 'active' : 'inactive'} />,
+      render: (j: CronJob) => <StatusBadge status={j.status === 'active' ? 'active' : 'inactive'} />,
     },
     {
       key: 'lastRun',
       label: 'Last Run',
-      render: (j: CronJob) => j.lastRun ? new Date(j.lastRun).toLocaleString() : 'Never',
+      render: (j: CronJob) => j.lastRunAt ? new Date(j.lastRunAt).toLocaleString() : 'Never',
     },
     {
       key: 'lastStatus',
       label: 'Last Status',
-      render: (j: CronJob) => j.lastStatus ? (
-        <StatusBadge status={j.lastStatus === 'success' ? 'active' : 'inactive'} />
+      render: (j: CronJob) => j.lastExitCode !== null ? (
+        <StatusBadge status={j.lastExitCode === 0 ? 'active' : 'inactive'} />
       ) : '—',
     },
     {

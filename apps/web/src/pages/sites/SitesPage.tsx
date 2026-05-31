@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button } from '../../components/ui/Button';
@@ -16,7 +16,13 @@ import { Icon } from '../../components/icons';
 
 export function SitesPage() {
   const navigate = useNavigate();
-  const { data: sites, isLoading, isError, error, refetch } = useSites();
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+  const { data: sites, isLoading, isError, error, refetch } = useSites(debouncedSearch);
   const createSite = useCreateSite();
   const [showCreateModal, setShowCreateModal] = useState(false);
 
@@ -69,6 +75,14 @@ export function SitesPage() {
         >
           Create Site
         </Button>
+      </div>
+
+      <div className="max-w-[300px]">
+        <Input
+          placeholder="Search sites..."
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+        />
       </div>
 
       <DataTable

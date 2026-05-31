@@ -8,7 +8,10 @@ import { logger } from '../../config/logger.js';
 import { auditService } from '../audit/audit.service.js';
 
 export class CronService {
-  async listJobs(_orgId?: string) {
+  async listJobs(_orgId?: string, siteId?: string) {
+    if (siteId) {
+      return db.select().from(cronJobs).where(eq(cronJobs.siteId, siteId));
+    }
     return db.select().from(cronJobs);
   }
 

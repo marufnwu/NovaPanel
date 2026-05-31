@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useLocation, useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouterState, useParams } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -23,20 +24,19 @@ import {
   type Subdomain, type DomainAlias, type DomainRedirect, type DomainNameserverResult,
 } from '../../api/hooks/domains';
 import { useDnsZone, useCreateDnsRecord, useDeleteDnsRecord } from '../../api/hooks/dns';
-import { useIssueLetsEncrypt, useRenewCertificate } from '../../api/hooks/ssl';
+import { useIssueLetsEncrypt, useRenewCertificate, useToggleAutoRenew, useDownloadCert } from '../../api/hooks/ssl';
+import { api } from '../../api/client';
 import { useMailAliases as useMailForwardAliases, useCreateAlias as useCreateMailForwardAlias, useDeleteAlias as useDeleteMailForwardAlias, useMailboxes, useCreateMailbox, useDeleteMailbox, useMailDomainInfo, useDkimStatus } from '../../api/hooks/mail';
 import { FtpPage } from '../ftp/FtpPage';
 import { Icon } from '../../components/icons';
 import { toast } from '../../lib/toast';
 
 export function DomainDetailPage() {
-  const location = useLocation();
+  const params = useParams({ strict: false }) as { domainId?: string };
+  const domainId = params.domainId || '';
+  const search = useRouterState({ select: (s) => s.location.search }) as any;
+  const activeTab = search?.tab || 'overview';
   const navigate = useNavigate();
-
-  const pathParts = location.pathname.split('/domains/');
-  const domainId = pathParts[1]?.split('/')[0] || '';
-  const searchParams = new URLSearchParams(location.search);
-  const activeTab = searchParams.get('tab') || 'overview';
 
   if (!domainId) {
     return (
@@ -116,11 +116,12 @@ export function DomainDetailPage() {
             <button
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}
-              className="px-4 py-2.5 text-small transition-colors relative"
-              style={{
-                color: activeTab === tab.id ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                fontWeight: activeTab === tab.id ? 500 : 400,
-              }}
+              className={cn(
+                'px-4 py-2.5 text-small transition-colors relative',
+                activeTab === tab.id
+                  ? 'text-foreground-primary font-medium'
+                  : 'text-foreground-secondary hover:text-foreground-primary'
+              )}
             >
               {tab.label}
               {activeTab === tab.id && (
@@ -373,27 +374,84 @@ function RedirectsTab({ domainId }: { domainId: string }) {
 }
 
 function DnsTab({ domainId }: { domainId: string }) {
-  const { data: dnsZone, isLoading } = useDnsZone(domainId);
+  const { data: dnsZone, isLoading, refetch } = useDnsZone(domainId);
+  const createDnsRecord = useCreateDnsRecord();
+  const deleteDnsRecord = useDeleteDnsRecord();
+  const [showAdd, setShowAdd] = useState(false);
+  const [newRecordType, setNewRecordType] = useState('A');
+  const [newRecordName, setNewRecordName] = useState('');
+  const [newRecordValue, setNewRecordValue] = useState('');
+  const [newRecordTtl, setNewRecordTtl] = useState(3600);
+  const [deleteRecordId, setDeleteRecordId] = useState<string | null>(null);
+
+  const handleAddRecord = async () => {
+    if (!newRecordName || !newRecordValue) return;
+    try {
+      await createDnsRecord.mutateAsync({ domainId, type: newRecordType, name: newRecordName, value: newRecordValue, ttl: newRecordTtl });
+      toast.success('DNS record created');
+      setShowAdd(false);
+      setNewRecordName('');
+      setNewRecordValue('');
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleDeleteRecord = async () => {
+    if (!deleteRecordId) return;
+    try {
+      await deleteDnsRecord.mutateAsync({ domainId, recordId: deleteRecordId });
+      toast.success('DNS record deleted');
+      setDeleteRecordId(null);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
 
   if (isLoading) return <PageSkeleton />;
 
   return (
-    <Card title="DNS Records">
-      {dnsZone?.records && dnsZone.records.length > 0 ? (
-        <DataTable
-          columns={[
-            { key: 'type', label: 'Type', render: (r: any) => <span className="font-mono">{r.type}</span> },
-            { key: 'name', label: 'Name', render: (r: any) => <span className="font-mono">{r.name}</span> },
-            { key: 'value', label: 'Value', render: (r: any) => <span className="font-mono text-foreground-secondary">{r.value}</span> },
-            { key: 'ttl', label: 'TTL' },
-          ]}
-          data={dnsZone.records}
-          rowKey={(r: any) => r.id}
-        />
-      ) : (
-        <EmptyState icon="icon-world" title="No DNS records" description="No DNS zone found for this domain. Create a DNS zone first." />
-      )}
-    </Card>
+    <>
+      <Card title="DNS Records" action={<Button size="small" onClick={() => setShowAdd(true)} icon={<Icon name="icon-plus" size={15} />}>Add Record</Button>}>
+        {dnsZone?.records && dnsZone.records.length > 0 ? (
+          <DataTable
+            columns={[
+              { key: 'type', label: 'Type', render: (r: any) => <span className="font-mono">{r.type}</span> },
+              { key: 'name', label: 'Name', render: (r: any) => <span className="font-mono">{r.name}</span> },
+              { key: 'value', label: 'Value', render: (r: any) => <span className="font-mono text-foreground-secondary">{r.value}</span> },
+              { key: 'ttl', label: 'TTL' },
+              { key: 'actions', label: '', render: (r: any) => <Button variant="ghost" size="small" onClick={() => setDeleteRecordId(r.id)} icon={<Icon name="icon-trash" size={15} />} /> },
+            ]}
+            data={dnsZone.records}
+            rowKey={(r: any) => r.id}
+          />
+        ) : (
+          <EmptyState icon="icon-world" title="No DNS records" description="Add DNS records to this domain" action={{ label: 'Add Record', onClick: () => setShowAdd(true) }} />
+        )}
+      </Card>
+
+      <Modal isOpen={showAdd} onClose={() => setShowAdd(false)} title="Add DNS Record"
+        footer={<><Button variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button><Button variant="primary" onClick={handleAddRecord} loading={createDnsRecord.isPending}>Add</Button></>}>
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="text-meta font-medium mb-1 block">Type</label>
+              <select value={newRecordType} onChange={(e) => setNewRecordType(e.target.value)} className="h-[34px] px-3 text-small rounded-md border border-border-tertiary bg-background-primary w-full">
+                {['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS'].map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="flex-1">
+              <Input label="Name" value={newRecordName} onChange={(e) => setNewRecordName(e.target.value)} placeholder="@ or www" />
+            </div>
+          </div>
+          <Input label="Value" value={newRecordValue} onChange={(e) => setNewRecordValue(e.target.value)} placeholder="192.168.1.1" />
+          <Input label="TTL" type="number" value={newRecordTtl} onChange={(e) => setNewRecordTtl(parseInt(e.target.value) || 3600)} placeholder="3600" />
+        </div>
+      </Modal>
+
+      <ConfirmDialog isOpen={!!deleteRecordId} onClose={() => setDeleteRecordId(null)}
+        onConfirm={handleDeleteRecord} title="Delete DNS Record" description="This DNS record will be permanently deleted." confirmText="Delete" impact="medium" loading={deleteDnsRecord.isPending} />
+    </>
   );
 }
 
@@ -505,9 +563,18 @@ function NameserversTab({ domainId }: { domainId: string }) {
 }
 
 function SslTab({ domainId, domain }: { domainId: string; domain: any }) {
+  const queryClient = useQueryClient();
   const issueCert = useIssueLetsEncrypt();
   const renewCert = useRenewCertificate();
+  const toggleAutoRenew = useToggleAutoRenew();
+  const downloadCert = useDownloadCert();
   const [email, setEmail] = useState('');
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+
+  const { data: sslCert } = useQuery({
+    queryKey: ['ssl', domainId],
+    queryFn: () => api.get<any>(`/domains/${domainId}/ssl`),
+  });
 
   const handleIssue = async () => {
     if (!email) {
@@ -522,28 +589,150 @@ function SslTab({ domainId, domain }: { domainId: string; domain: any }) {
     }
   };
 
+  const handleRenew = async () => {
+    try {
+      await renewCert.mutateAsync(domainId);
+      toast.success('Certificate renewal started');
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleToggleAutoRenew = async () => {
+    try {
+      await toggleAutoRenew.mutateAsync({ domainId, autoRenew: !domain.sslAutoRenew });
+      toast.success(`Auto-renew ${!domain.sslAutoRenew ? 'enabled' : 'disabled'}`);
+      queryClient.invalidateQueries({ queryKey: ['domains', domainId] });
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleDownloadCert = async (file: 'cert' | 'key' | 'chain') => {
+    try {
+      const result = await downloadCert.mutateAsync({ domainId, file });
+      const blob = new Blob([result.pem], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${domain.name}_${file}.pem`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`Certificate ${file} downloaded`);
+      setShowDownloadMenu(false);
+    } catch (err: any) {
+      toast.error(`Failed to download: ${err.message}`);
+    }
+  };
+
   return (
-    <Card title="SSL Certificate">
-      {domain.sslStatus === 'active' ? (
-        <div className="space-y-3">
-          <div className="flex justify-between">
-            <span className="text-foreground-secondary">Status</span>
-            <StatusBadge status="active" />
+    <div className="space-y-4">
+      <Card title="SSL Certificate">
+        {domain.sslStatus === 'active' && sslCert ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-3 bg-background-secondary rounded-lg">
+              <div className="flex items-center gap-3">
+                <span className={`w-3 h-3 rounded-full ${sslCert.expiresAt && new Date(sslCert.expiresAt) > new Date() ? 'bg-foreground-success' : 'bg-foreground-error'}`} />
+                <span className="text-small font-medium">
+                  {sslCert.expiresAt && new Date(sslCert.expiresAt) > new Date() ? 'Valid Certificate' : 'Expired Certificate'}
+                </span>
+              </div>
+              <div className="text-meta text-foreground-tertiary">
+                {sslCert.expiresAt ? `Expires ${new Date(sslCert.expiresAt).toLocaleDateString()}` : 'No expiry date'}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2 text-small">
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">Domain</span>
+                  <span className="font-mono">{domain.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">Issuer</span>
+                  <span>{sslCert.issuer || "Let's Encrypt"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">Provider</span>
+                  <span>{sslCert.type === 'letsencrypt' ? "Let's Encrypt" : sslCert.type || 'Unknown'}</span>
+                </div>
+              </div>
+              <div className="space-y-2 text-small">
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">Valid From</span>
+                  <span>{sslCert.issuedAt ? new Date(sslCert.issuedAt).toLocaleDateString() : '—'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">Valid Until</span>
+                  <span>{sslCert.expiresAt ? new Date(sslCert.expiresAt).toLocaleDateString() : '—'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground-secondary">Days Left</span>
+                  <span className={sslCert.daysUntilExpiry !== null && sslCert.daysUntilExpiry < 30 ? 'text-foreground-error' : ''}>
+                    {sslCert.daysUntilExpiry !== null ? sslCert.daysUntilExpiry : '—'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {sslCert.sanDomains && sslCert.sanDomains.length > 0 && (
+              <div className="p-3 bg-background-secondary rounded-lg">
+                <div className="text-meta text-foreground-tertiary mb-2">Domains Covered</div>
+                <div className="flex flex-wrap gap-2">
+                  {sslCert.sanDomains.map((d: string, idx: number) => (
+                    <span key={idx} className="px-2 py-1 bg-background-tertiary rounded text-small font-mono">{d}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <Button variant="default" size="small" onClick={handleRenew} loading={renewCert.isPending} icon={<Icon name="icon-refresh" size={15} />}>
+                Renew
+              </Button>
+              <div className="relative">
+                <Button variant="ghost" size="small" onClick={() => setShowDownloadMenu(!showDownloadMenu)} icon={<Icon name="icon-download" size={15} />}>
+                  Download
+                </Button>
+                {showDownloadMenu && (
+                  <div className="absolute right-0 mt-1 w-36 bg-background-secondary border border-border-tertiary rounded-lg shadow-lg z-10">
+                    <button onClick={() => handleDownloadCert('cert')} className="w-full px-3 py-2 text-left text-small hover:bg-background-tertiary rounded-t-lg">Certificate (.pem)</button>
+                    <button onClick={() => handleDownloadCert('key')} className="w-full px-3 py-2 text-left text-small hover:bg-background-tertiary">Private Key</button>
+                    <button onClick={() => handleDownloadCert('chain')} className="w-full px-3 py-2 text-left text-small hover:bg-background-tertiary rounded-b-lg">Full Chain</button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="flex justify-between">
-            <span className="text-foreground-secondary">Auto Renew</span>
-            <span>{domain.sslAutoRenew ? 'Enabled' : 'Disabled'}</span>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-small text-foreground-secondary">Enter your email to receive renewal notifications, then click Issue Certificate.</p>
+            <Input label="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@example.com" type="email" />
+            <Button onClick={handleIssue} loading={issueCert.isPending} disabled={!email}>Issue Certificate</Button>
           </div>
-          <Button variant="default" size="small" onClick={() => renewCert.mutate(domainId, { onSuccess: () => toast.success('Certificate renewed'), onError: (err: any) => toast.error(err.message) })} loading={renewCert.isPending}>Renew Certificate</Button>
-        </div>
-      ) : (
+        )}
+      </Card>
+
+      <Card title="Certificate Settings">
         <div className="space-y-4">
-          <p className="text-small text-foreground-secondary">Enter your email to receive renewal notifications, then click Issue Certificate.</p>
-          <Input label="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@example.com" type="email" />
-          <Button onClick={handleIssue} loading={issueCert.isPending} disabled={!email}>Issue Certificate</Button>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-small font-medium">Auto-renewal</div>
+              <div className="text-meta text-foreground-tertiary">Automatically renew before expiration</div>
+            </div>
+            <button
+              onClick={handleToggleAutoRenew}
+              disabled={toggleAutoRenew.isPending}
+              className={`relative w-11 h-6 rounded-full transition-colors ${domain.sslAutoRenew ? 'bg-foreground-success' : 'bg-background-tertiary'} ${toggleAutoRenew.isPending ? 'opacity-50' : ''}`}
+            >
+              <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${domain.sslAutoRenew ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
         </div>
-      )}
-    </Card>
+      </Card>
+    </div>
   );
 }
 

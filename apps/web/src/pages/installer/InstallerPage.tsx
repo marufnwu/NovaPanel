@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Button } from '../../components/ui/Button';
+import { cn } from '../../lib/utils';
 import { Card } from '../../components/ui/Card';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { PageSkeleton } from '../../components/ui/Skeleton';
@@ -57,11 +58,12 @@ export function InstallerPage() {
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              className="px-4 py-2.5 text-small transition-colors relative"
-              style={{
-                color: selectedCategory === cat ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                fontWeight: selectedCategory === cat ? 500 : 400,
-              }}
+              className={cn(
+                'px-4 py-2.5 text-small transition-colors relative',
+                selectedCategory === cat
+                  ? 'text-foreground-primary font-medium'
+                  : 'text-foreground-secondary hover:text-foreground-primary'
+              )}
             >
               {cat}
               {selectedCategory === cat && (

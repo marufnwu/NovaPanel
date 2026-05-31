@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/Button';
 import { DataTable } from '../../components/ui/DataTable';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -394,11 +395,12 @@ function CertDetailsModal({
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className="px-3 py-2 text-small capitalize"
-                style={{
-                  color: tab === t ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                  fontWeight: tab === t ? 500 : 400,
-                }}
+                className={cn(
+                  'px-3 py-2 text-small capitalize',
+                  tab === t
+                    ? 'text-foreground-primary font-medium'
+                    : 'text-foreground-secondary'
+                )}
               >
                 {t}
               </button>

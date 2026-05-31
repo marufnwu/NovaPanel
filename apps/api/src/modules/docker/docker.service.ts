@@ -138,6 +138,30 @@ export class DockerService {
     } catch {}
   }
 
+  async restartSite(siteId: string): Promise<void> {
+    const cName = containerName(siteId);
+    try {
+      await execAsync('docker', ['restart', cName]);
+      logger.info({ siteId }, 'Site container restarted');
+    } catch (err) {
+      logger.warn({ siteId, err }, 'Restart site failed');
+      throw new AppError(500, 'RESTART_FAILED', 'Failed to restart site container');
+    }
+  }
+
+  async clearCache(siteId: string): Promise<void> {
+    const cName = containerName(siteId);
+    const volName = volumeName(siteId);
+    try {
+      await execAsync('docker', ['stop', cName]);
+      await execAsync('docker', ['rm', '-f', cName]);
+    } catch {}
+    try {
+      await execAsync('docker', ['volume', 'rm', volName]);
+    } catch {}
+    logger.info({ siteId }, 'Site cache cleared');
+  }
+
   generateDockerfileForRuntime(runtime: string, version?: string, startCommand?: string, port?: number): string {
     const runtimes: Record<string, string> = {
       node: `FROM node:${version || '20-alpine'}\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nEXPOSE ${port || 3000}\nCMD ${startCommand || 'npm start'}`,

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { DataTable } from '../../components/ui/DataTable';
@@ -130,11 +131,12 @@ export function FirewallPage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className="px-4 py-2.5 text-small transition-colors relative"
-              style={{
-                color: activeTab === tab.id ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                fontWeight: activeTab === tab.id ? 500 : 400,
-              }}
+              className={cn(
+                'px-4 py-2.5 text-small transition-colors relative',
+                activeTab === tab.id
+                  ? 'text-foreground-primary font-medium'
+                  : 'text-foreground-secondary hover:text-foreground-primary'
+              )}
             >
               {tab.label}
               {activeTab === tab.id && (

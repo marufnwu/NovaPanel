@@ -3,14 +3,18 @@ import { api } from '../client';
 
 export interface CronJob {
   id: string;
-  domainId?: string | null;
+  siteId: string | null;
+  name: string;
   command: string;
   schedule: string;
-  systemUser: string;
-  isActive: boolean;
-  lastRun?: string | null;
-  lastStatus?: string | null;
+  user: string;
+  workingDir: string | null;
+  status: 'active' | 'paused' | 'error';
+  lastRunAt: string | null;
+  lastExitCode: number | null;
+  nextRunAt: string | null;
   createdAt: string;
+  updatedAt: string | null;
 }
 
 export interface CronRunResult {
@@ -19,10 +23,10 @@ export interface CronRunResult {
   stderr: string;
 }
 
-export function useCronJobs(domainId?: string) {
+export function useCronJobs(siteId?: string) {
   return useQuery({
-    queryKey: ['cron', domainId],
-    queryFn: () => api.get<CronJob[]>(domainId ? `/cron?domainId=${domainId}` : '/cron'),
+    queryKey: ['cron', siteId],
+    queryFn: () => api.get<CronJob[]>(siteId ? `/cron?siteId=${siteId}` : '/cron'),
   });
 }
 

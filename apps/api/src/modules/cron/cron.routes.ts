@@ -8,8 +8,9 @@ export default async function cronRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
   // GET /cron
-  fastify.get('/cron', async () => {
-    return { success: true, data: await service.listJobs() };
+  fastify.get('/cron', async (req) => {
+    const { siteId } = req.query as { siteId?: string };
+    return { success: true, data: await service.listJobs(undefined, siteId) };
   });
 
   // GET /cron/:id

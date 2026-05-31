@@ -1,6 +1,7 @@
-import { useNavigate, useLocation, useRouterState } from '@tanstack/react-router';
+import { useNavigate, useRouterState, useParams } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -47,8 +48,8 @@ import { BackupManager } from '../../components/sites/BackupManager';
 import { CacheManager } from '../../components/sites/CacheManager';
 
 export function SiteDetailPage() {
-  const location = useLocation();
-  const siteId = location.pathname.split('/sites/')[1] || '';
+  const params = useParams({ strict: false }) as { siteId?: string };
+  const siteId = params.siteId || '';
   const search = useRouterState({ select: (s) => s.location.search }) as any;
   const activeTab = search?.tab || 'overview';
   const queryClient = useQueryClient();
@@ -90,10 +91,7 @@ export function SiteDetailPage() {
   ];
 
   const handleTabChange = (tabId: string) => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('tab', tabId);
-    window.history.pushState({}, '', url.toString());
-    window.dispatchEvent(new Event('locationchange'));
+    navigate({ search: { tab: tabId } } as any);
   };
 
   return (
@@ -139,10 +137,7 @@ export function SiteDetailPage() {
               variant="ghost"
               size="small"
               onClick={() => {
-                const url = new URL(window.location.href);
-                url.searchParams.set('tab', 'settings');
-                window.history.pushState({}, '', url.toString());
-                window.dispatchEvent(new Event('locationchange'));
+                navigate({ search: { tab: 'settings' } } as any);
               }}
               icon={<Icon name="icon-shield-check" size={15} />}
             >
@@ -153,10 +148,7 @@ export function SiteDetailPage() {
               variant="ghost"
               size="small"
               onClick={() => {
-                const url = new URL(window.location.href);
-                url.searchParams.set('tab', 'scheduler');
-                window.history.pushState({}, '', url.toString());
-                window.dispatchEvent(new Event('locationchange'));
+                navigate({ search: { tab: 'scheduler' } } as any);
               }}
               icon={<Icon name="icon-document" size={15} />}
             >
@@ -272,25 +264,23 @@ export function SiteDetailPage() {
             <button
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}
-              className="px-4 py-2.5 text-small transition-colors relative"
-              style={{
-                color: activeTab === tab.id ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                fontWeight: activeTab === tab.id ? 500 : 400,
-              }}
+              className={cn(
+                'px-4 py-2.5 text-small transition-colors relative',
+                activeTab === tab.id
+                  ? 'text-foreground-primary font-medium'
+                  : 'text-foreground-secondary hover:text-foreground-primary'
+              )}
             >
               {tab.label}
               {activeTab === tab.id && (
-                <span
-                  className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-foreground-primary"
-                  style={{ backgroundColor: 'var(--color-text-primary)' }}
-                />
+                <span className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-foreground-primary" />
               )}
             </button>
           ))}
         </nav>
       </div>
 
-      <TabContent tab={activeTab} siteId={siteId} siteName={site.name} queryClient={queryClient} onAddCron={() => setShowAddCron(true)} onIssueCert={() => setShowIssueCert(true)} onCreateDb={() => setShowCreateDb(true)} navigate={navigate} domainId={(site as any)?.domains?.[0]?.id} domainName={(site as any)?.domains?.[0]?.name || site.name} />
+      <TabContent tab={activeTab} siteId={siteId} siteName={site.name} queryClient={queryClient} onAddCron={() => setShowAddCron(true)} onIssueCert={() => setShowIssueCert(true)} onCreateDb={() => setShowCreateDb(true)} navigate={navigate} domainId={site.domains?.[0]?.id} domainName={site.domains?.[0]?.name || site.name} />
     </div>
   );
 }
@@ -506,7 +496,7 @@ function OverviewTab({ siteId }: { siteId: string }) {
                       {formatResponseTime(health?.avgResponseTime ?? 0)}
                     </span>
                   </div>
-                  {stats?.avgResponseTime && (
+                  {stats && (
                     <div className="flex justify-between items-center">
                       <span className="text-foreground-secondary">Requests/min</span>
                       <span className="font-medium">{stats.requestsPerMinute ?? '—'}</span>
@@ -629,7 +619,7 @@ function OverviewTab({ siteId }: { siteId: string }) {
             </div>
             <div className="flex justify-between">
               <span className="text-foreground-secondary">PHP Version</span>
-              <span>{site?.runtime?.includes('php') ? (site.runtime.match(/php[\s-]*([\d.]+)/i)?.[1] || '8.2') : '—'}</span>
+              <span>{site?.runtime?.includes('php') ? (site.runtimeVersion || '8.2') : '—'}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-foreground-secondary">Source Type</span>
@@ -641,7 +631,7 @@ function OverviewTab({ siteId }: { siteId: string }) {
           <div className="space-y-2 text-small">
             <div className="flex justify-between">
               <span className="text-foreground-secondary">Primary Domain</span>
-              <span className="font-mono">{(site as any)?.domains?.[0]?.name || '—'}</span>
+              <span className="font-mono">{site?.domains?.[0]?.name || '—'}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-foreground-secondary">SSL Status</span>
@@ -673,7 +663,7 @@ function DatabaseTab({ siteId, siteName, onCreateDb, queryClient, navigate }: { 
   const handleCreateDb = async () => {
     if (!dbName) return;
     try {
-      await createDb.mutateAsync({ name: dbName, type: dbEngine });
+      await createDb.mutateAsync({ name: dbName, type: dbEngine, siteId });
       toast.success(`Database "${dbName}" created`);
       setShowCreate(false);
       setDbName('');
@@ -762,144 +752,6 @@ function DatabaseTab({ siteId, siteName, onCreateDb, queryClient, navigate }: { 
   );
 }
 
-function SslTab({ siteId, siteName, onIssueCert, queryClient }: { siteId: string; siteName: string; onIssueCert: () => void; queryClient: any }) {
-  const [showIssue, setShowIssue] = useState(false);
-  const [certEmail, setCertEmail] = useState('');
-  const issueCert = useIssueLetsEncrypt();
-  const { data: siteDomains } = useSiteDomains(siteId);
-  const primaryDomain = siteDomains?.[0];
-
-  const handleIssueCert = async () => {
-    if (!primaryDomain?.id) return;
-    try {
-      await issueCert.mutateAsync({
-        domainId: primaryDomain.id,
-        email: certEmail,
-        challengeType: 'http-01',
-      });
-      toast.success('SSL certificate issuance started');
-      setShowIssue(false);
-      setCertEmail('');
-      queryClient.invalidateQueries({ queryKey: ['sites', siteId, 'ssl'] });
-    } catch (err: any) {
-      toast.error(`Failed to issue certificate: ${err.message}`);
-    }
-  };
-
-  const { data: ssl } = useQuery({
-    queryKey: ['sites', siteId, 'ssl'],
-    queryFn: () => api.get(`/sites/${siteId}/ssl`),
-  });
-
-  return (
-    <div className="space-y-4">
-      <Card title="SSL Certificate">
-        {ssl ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-3 bg-background-secondary rounded-lg">
-              <div className="flex items-center gap-3">
-                <span className="w-3 h-3 rounded-full bg-foreground-success" />
-                <span className="text-small font-medium">Active Certificate</span>
-              </div>
-              <div className="text-meta text-foreground-tertiary">
-                Expires {new Date((ssl as any).expiresAt).toLocaleDateString()}
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2 text-small">
-                <div className="flex justify-between">
-                  <span className="text-foreground-secondary">Domain</span>
-                  <span className="font-mono">{(ssl as any).domain}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-foreground-secondary">Provider</span>
-                  <span>Let's Encrypt</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-foreground-secondary">Auto-renew</span>
-                  <span className={(ssl as any).autoRenew ? 'text-foreground-success' : 'text-foreground-tertiary'}>
-                    {(ssl as any).autoRenew ? 'Enabled' : 'Disabled'}
-                  </span>
-                </div>
-              </div>
-              <div className="space-y-2 text-small">
-                <div className="flex justify-between">
-                  <span className="text-foreground-secondary">Valid From</span>
-                  <span>{(ssl as any).validFrom ? new Date((ssl as any).validFrom).toLocaleDateString() : '—'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-foreground-secondary">Valid Until</span>
-                  <span>{(ssl as any).expiresAt ? new Date((ssl as any).expiresAt).toLocaleDateString() : '—'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-foreground-secondary">Days Left</span>
-                  <span>{(ssl as any).expiresAt ? Math.max(0, Math.ceil((new Date((ssl as any).expiresAt).getTime() - Date.now()) / 86400000)) : '—'}</span>
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button variant="default" size="small" icon={<Icon name="icon-refresh" size={15} />}>
-                Renew
-              </Button>
-              <Button variant="ghost" size="small" icon={<Icon name="icon-download" size={15} />}>
-                Download Cert
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="text-center py-6">
-            <p className="text-small text-foreground-secondary mb-4">No SSL certificate configured</p>
-            <Button onClick={() => setShowIssue(true)}>Issue Certificate</Button>
-          </div>
-        )}
-      </Card>
-
-      <Card title="Certificate Settings">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-small font-medium">Auto-renewal</div>
-              <div className="text-meta text-foreground-tertiary">Automatically renew before expiration</div>
-            </div>
-            <button className="w-10 h-6 rounded-full bg-foreground-success relative transition-colors">
-              <span className="absolute right-1 top-1 w-4 h-4 rounded-full bg-white shadow" />
-            </button>
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-small font-medium">HTTP to HTTPS Redirect</div>
-              <div className="text-meta text-foreground-tertiary">Force all traffic to use HTTPS</div>
-            </div>
-            <button className="w-10 h-6 rounded-full bg-foreground-success relative transition-colors">
-              <span className="absolute right-1 top-1 w-4 h-4 rounded-full bg-white shadow" />
-            </button>
-          </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-small font-medium">HSTS Enabled</div>
-              <div className="text-meta text-foreground-tertiary">Strict transport security header</div>
-            </div>
-            <button className="w-10 h-6 rounded-full bg-foreground-tertiary relative transition-colors">
-              <span className="absolute left-1 top-1 w-4 h-4 rounded-full bg-white shadow" />
-            </button>
-          </div>
-        </div>
-      </Card>
-
-      <Modal isOpen={showIssue} onClose={() => setShowIssue(false)} title="Issue SSL Certificate"
-        footer={<><Button variant="ghost" onClick={() => setShowIssue(false)}>Cancel</Button><Button variant="primary" onClick={handleIssueCert} loading={issueCert.isPending}>Issue</Button></>}>
-        <div className="space-y-4">
-          <p className="text-small text-foreground-secondary">Issue a Let's Encrypt certificate for <span className="font-mono">{siteName}</span></p>
-          <Input label="Email" type="email" value={certEmail} onChange={(e) => setCertEmail(e.target.value)} placeholder="admin@example.com" required />
-          <div className="p-3 bg-background-tertiary rounded-md">
-            <div className="text-meta text-foreground-tertiary">Certificate will auto-renew 30 days before expiration</div>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  );
-}
-
 function SettingsTab({ siteId, siteName, onIssueCert, queryClient }: { siteId: string; siteName: string; onIssueCert: () => void; queryClient: any }) {
   const [showIssue, setShowIssue] = useState(false);
   const [certEmail, setCertEmail] = useState('');
@@ -961,7 +813,7 @@ function SettingsTab({ siteId, siteName, onIssueCert, queryClient }: { siteId: s
     try {
       const result = await downloadCert.mutateAsync({ domainId: (ssl as any).domainId, file });
       // Create a download link for the certificate content
-      const blob = new Blob([result as string], { type: 'text/plain' });
+      const blob = new Blob([result.pem], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -1524,9 +1376,10 @@ function DomainsTab({ siteId, siteName, queryClient }: { siteId: string; siteNam
 
   // Get parent domain name for subdomain preview
   const parentDomainName = siteDomains?.[0]?.name || 'example.com';
+  const parentDomainId = siteDomains?.[0]?.id;
 
   const handleCreateSubdomain = async () => {
-    if (!subdomainPrefix || !siteDomains?.[0]?.id) return;
+    if (!subdomainPrefix || !parentDomainId) return;
     try {
       const fullSubdomainName = `${subdomainPrefix}.${parentDomainName}`;
       const subdomain = await createSubdomain.mutateAsync({
@@ -1539,7 +1392,7 @@ function DomainsTab({ siteId, siteName, queryClient }: { siteId: string; siteNam
       setSubdomainPrefix('');
       // Subdomains created via the API are already linked, just refresh
       queryClient.invalidateQueries({ queryKey: ['sites', siteId, 'domains'] });
-      queryClient.invalidateQueries({ queryKey: ['domains', siteDomains[0].id, 'subdomains'] });
+      queryClient.invalidateQueries({ queryKey: ['domains', parentDomainId, 'subdomains'] });
     } catch (err: any) {
       toast.error(`Failed to create subdomain: ${err.message}`);
     }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { DataTable } from '../../components/ui/DataTable';
@@ -164,11 +165,12 @@ export function SecurityPage() {
             <button
               key={section.id}
               onClick={() => setActiveSection(section.id as typeof activeSection)}
-              className="px-4 py-2.5 text-small transition-colors relative"
-              style={{
-                color: activeSection === section.id ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                fontWeight: activeSection === section.id ? 500 : 400,
-              }}
+              className={cn(
+                'px-4 py-2.5 text-small transition-colors relative',
+                activeSection === section.id
+                  ? 'text-foreground-primary font-medium'
+                  : 'text-foreground-secondary hover:text-foreground-primary'
+              )}
             >
               {section.label}
               {activeSection === section.id && (

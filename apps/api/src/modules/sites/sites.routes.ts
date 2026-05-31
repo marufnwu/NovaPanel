@@ -10,7 +10,8 @@ export default async function siteRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', requireAuth);
 
   fastify.get('/', async (req) => {
-    const items = await sitesService.list();
+    const { search } = req.query as { search?: string };
+    const items = await sitesService.list({ search });
     return { success: true, data: items };
   });
 
@@ -135,6 +136,84 @@ export default async function siteRoutes(fastify: FastifyInstance) {
     const { id } = req.params as { id: string };
     const result = await sitesService.stop(id);
     return { success: true, data: result };
+  });
+
+  fastify.post('/:id/restart', async (req) => {
+    const { id } = req.params as { id: string };
+    const result = await sitesService.restart(id, req.user.id, req.ip);
+    return { success: true, data: result };
+  });
+
+  fastify.post('/:id/clear-cache', async (req) => {
+    const { id } = req.params as { id: string };
+    const result = await sitesService.clearCache(id, req.user.id, req.ip);
+    return { success: true, data: result };
+  });
+
+  fastify.get('/:id/deployment-settings', async (req) => {
+    const { id } = req.params as { id: string };
+    const site = await sitesService.get(id);
+    if (!site) throw new AppError(404, 'NOT_FOUND', 'Site not found');
+    return {
+      success: true,
+      data: {
+        id: site.id,
+        siteId: site.id,
+        gitRepo: site.gitRepo,
+        gitBranch: site.gitBranch,
+        gitCredentials: site.gitCredentials ? JSON.parse(site.gitCredentials as string) : null,
+        autoDeploy: site.autoDeploy,
+        deployOnPush: site.deployOnPush,
+        deployOnPr: site.deployOnPr,
+        buildCommand: site.buildCommand,
+        installCommand: site.installCommand,
+        outputDirectory: site.outputDirectory,
+        deployPath: site.deployPath,
+        preDeployHook: site.preDeployHook,
+        postDeployHook: site.postDeployHook,
+        healthCheckPath: site.healthCheckPath,
+        autoRollback: site.autoRollback,
+        createdAt: site.createdAt?.toISOString(),
+        updatedAt: site.updatedAt?.toISOString(),
+      },
+    };
+  });
+
+  fastify.put('/:id/deployment-settings', async (req) => {
+    const { id } = req.params as { id: string };
+    const data = req.body as {
+      gitRepo?: string;
+      gitBranch?: string;
+      gitCredentials?: { username?: string; password?: string; sshKey?: string } | null;
+      autoDeploy?: boolean;
+      deployOnPush?: boolean;
+      deployOnPr?: boolean;
+      buildCommand?: string;
+      installCommand?: string;
+      outputDirectory?: string;
+      deployPath?: string;
+      preDeployHook?: string;
+      postDeployHook?: string;
+      healthCheckPath?: string;
+      autoRollback?: boolean;
+    };
+    const updated = await sitesService.update(id, {
+      gitRepo: data.gitRepo ?? null,
+      gitBranch: data.gitBranch ?? 'main',
+      gitCredentials: data.gitCredentials ? JSON.stringify(data.gitCredentials) : null,
+      autoDeploy: data.autoDeploy ?? false,
+      deployOnPush: data.deployOnPush ?? false,
+      deployOnPr: data.deployOnPr ?? false,
+      buildCommand: data.buildCommand ?? null,
+      installCommand: data.installCommand ?? null,
+      outputDirectory: data.outputDirectory ?? 'dist',
+      deployPath: data.deployPath ?? '/var/www/html',
+      preDeployHook: data.preDeployHook ?? null,
+      postDeployHook: data.postDeployHook ?? null,
+      healthCheckPath: data.healthCheckPath ?? '/health',
+      autoRollback: data.autoRollback ?? true,
+    }, req.user.id, req.ip);
+    return { success: true, data: updated };
   });
 
   // Configuration endpoints

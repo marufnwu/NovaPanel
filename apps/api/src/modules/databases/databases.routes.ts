@@ -24,6 +24,7 @@ const createDatabaseSchema = z.object({
   backupsEnabled: z.boolean().optional(),
   backupSchedule: z.string().optional(),
   publicAccess: z.boolean().optional(),
+  siteId: z.string().optional(),
 });
 
 const updateDatabaseSchema = z.object({

@@ -1,5 +1,6 @@
 import { db } from '../../db/index.js';
 import { databases, databaseUsers } from '../../db/schema/index.js';
+import { sites } from '../../db/schema/index.js';
 import { eq, count } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { AppError } from '../../errors.js';
@@ -32,6 +33,7 @@ export class DatabasesService {
     backupsEnabled?: boolean;
     backupSchedule?: string;
     publicAccess?: boolean;
+    siteId?: string;
   }) {
     const [database] = await db.insert(databases).values({
       id: nanoid(),
@@ -49,6 +51,11 @@ export class DatabasesService {
       publicAccess: data.publicAccess ?? false,
       status: 'creating',
     }).returning();
+
+    if (data.siteId) {
+      await db.update(sites).set({ databaseId: database.id, updatedAt: new Date() }).where(eq(sites.id, data.siteId));
+    }
+
     return database;
   }
 

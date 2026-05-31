@@ -35,32 +35,6 @@ export interface DomainAliasInput {
   targetDomain: string;
 }
 
-export interface Subdomain {
-  id: string;
-  name: string;
-  domainId: string;
-  documentRoot: string;
-  phpVersion: string;
-  siteId?: string | null;
-  createdAt: string;
-}
-
-export interface DomainAlias {
-  id: string;
-  alias: string;
-  domainId: string;
-  createdAt: string;
-}
-
-export interface DomainRedirect {
-  id: string;
-  sourcePath: string;
-  targetUrl: string;
-  type: '301' | '302';
-  domainId: string;
-  createdAt: string;
-}
-
 export function useDomains(search?: string) {
   return useQuery({
     queryKey: ['domains', search],
@@ -103,7 +77,10 @@ export function useDeleteDomain() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.delete(`/domains/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['domains'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['domains'] });
+      qc.invalidateQueries({ queryKey: ['sites'] });
+    },
   });
 }
 
@@ -144,8 +121,10 @@ export function useSubdomains(domainId: string) {
 export function useCreateSubdomain(domainId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { name: string; documentRoot?: string; phpVersion?: string; websiteId?: string }) =>
-      api.post(`/domains/${domainId}/subdomains`, data),
+    mutationFn: (data: { name: string; documentRoot?: string; phpVersion?: string; websiteId?: string }) => {
+      if (!domainId) throw new Error('No parent domain selected');
+      return api.post(`/domains/${domainId}/subdomains`, data);
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['domains', domainId, 'subdomains'] }),
   });
 }
@@ -510,7 +489,7 @@ export function useVerifyDomainNameservers(domainId: string) {
 export function useMakeDomainPublic(domainId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (tunnelId?: string) => api.post(`/domains/${domainId}/make-public`, { tunnelId }),
+    mutationFn: (tunnelId?: string) => api.put(`/domains/${domainId}/make-public`, { tunnelId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['domains', domainId, 'cloudflare-status'] });
       qc.invalidateQueries({ queryKey: ['tunnel', 'routes'] });

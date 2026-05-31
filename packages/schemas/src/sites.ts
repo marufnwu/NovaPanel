@@ -13,7 +13,7 @@ export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>;
 
 export const SiteSchema = z.object({
   id: z.string(),
-  projectId: z.string(),
+  orgId: z.string().nullable(),
   name: z.string(),
   slug: z.string(),
   description: z.string().nullable(),
@@ -22,6 +22,7 @@ export const SiteSchema = z.object({
   sourceType: z.enum(['git', 'docker_registry', 'upload', 'empty']),
   gitRepo: z.string().nullable(),
   gitBranch: z.string().default('main'),
+  gitWebhookSecret: z.string().nullable(),
   buildCommand: z.string().nullable(),
   outputDirectory: z.string().default('dist'),
   installCommand: z.string().nullable(),
@@ -31,8 +32,18 @@ export const SiteSchema = z.object({
   autoRestart: z.boolean().default(true),
   memoryLimit: z.number().int().nullable(),
   cpuLimit: z.number().int().nullable(),
-  status: z.enum(['active', 'building', 'deploying', 'error', 'suspended']),
+  status: z.enum(['active', 'building', 'deploying', 'error', 'suspended', 'stopped']),
+  lastDeploymentId: z.string().nullable(),
   healthCheckPath: z.string().default('/health'),
+  databaseId: z.string().nullable(),
+  autoDeploy: z.boolean().default(false),
+  deployOnPush: z.boolean().default(false),
+  deployOnPr: z.boolean().default(false),
+  autoRollback: z.boolean().default(true),
+  preDeployHook: z.string().nullable(),
+  postDeployHook: z.string().nullable(),
+  deployPath: z.string().default('/var/www/html'),
+  gitCredentials: z.any().nullable(),
   createdAt: z.string().or(z.date()),
   updatedAt: z.string().or(z.date()).nullable(),
 });
@@ -41,7 +52,7 @@ export type Site = z.infer<typeof SiteSchema>;
 
 export const CreateSiteInputSchema = z.object({
   name: z.string().min(1, 'Site name is required'),
-  projectId: z.string().optional(),
+  orgId: z.string().optional(),
   runtime: RuntimeConfigSchema,
   primaryDomain: z.string().optional(),
   sourceType: z.enum(['git', 'docker_registry', 'upload', 'empty']).default('empty'),

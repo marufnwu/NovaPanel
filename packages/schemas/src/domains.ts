@@ -5,7 +5,7 @@ export type DomainType = z.infer<typeof DomainTypeEnum>;
 
 export const DomainSchema = z.object({
   id: z.string(),
-  projectId: z.string(),
+  orgId: z.string().nullable(),
   siteId: z.string().nullable(),
   name: z.string(),
   type: DomainTypeEnum.default('apex'),
@@ -30,7 +30,7 @@ export const CreateDomainInputSchema = z.object({
   name: z.string().min(1, 'Domain name is required'),
   type: DomainTypeEnum.default('apex'),
   siteId: z.string().optional(),
-  projectId: z.string().optional(),
+  orgId: z.string().optional(),
   dnsZoneId: z.string().optional(),
 });
 

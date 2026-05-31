@@ -87,7 +87,10 @@ export function useIssueLetsEncrypt() {
         dnsProvider,
         challengeType,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['ssl'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ssl'] });
+      qc.invalidateQueries({ queryKey: ['sites'] });
+    },
   });
 }
 
@@ -137,7 +140,7 @@ export function useToggleAutoRenew() {
 export function useDownloadCert() {
   return useMutation({
     mutationFn: ({ domainId, file }: { domainId: string; file: 'cert' | 'key' | 'chain' }) =>
-      api.get<string>(`/ssl/domains/${domainId}/download/${file}`),
+      api.get<{ pem: string }>(`/ssl/domains/${domainId}/download/${file}`),
   });
 }
 

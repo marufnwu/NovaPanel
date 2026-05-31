@@ -108,7 +108,6 @@ describe('Sites Service', () => {
     it('should create site and return it', async () => {
       const { db } = await import('../../db/index');
       const result = await service.create({
-        projectId: 'proj-1',
         name: 'New Site',
         runtime: { schemaVersion: 1, runtime: 'node' },
         sourceType: 'empty',

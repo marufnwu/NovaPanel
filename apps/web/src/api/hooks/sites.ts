@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../client';
 import type { Site, CreateSiteInput, Deployment } from '@serverforge/schemas/sites';
 import type { CronJob } from './cron';
+import type { Domain } from './domains';
 
 export type { Site, CreateSiteInput, Deployment } from '@serverforge/schemas/sites';
 
@@ -11,17 +12,24 @@ export interface UpdateSiteInput {
   status?: string;
 }
 
-export function useSites() {
+export interface SiteWithDomains extends Site {
+  domains: Domain[];
+}
+
+export function useSites(search?: string) {
   return useQuery({
-    queryKey: ['sites'],
-    queryFn: () => api.get<Site[]>('/sites'),
+    queryKey: ['sites', search],
+    queryFn: () => {
+      const params = search ? `?search=${encodeURIComponent(search)}` : '';
+      return api.get<Site[]>(`/sites${params}`);
+    },
   });
 }
 
 export function useSite(id: string) {
   return useQuery({
     queryKey: ['sites', id],
-    queryFn: () => api.get<Site>(`/sites/${id}`),
+    queryFn: () => api.get<SiteWithDomains>(`/sites/${id}`),
     enabled: !!id,
   });
 }
@@ -211,6 +219,19 @@ export interface SiteStats {
   requestsPerMinute: number;
   avgResponseTime: string;
   uptime: string;
+}
+
+export interface SiteSslInfo {
+  domainId: string;
+  domain: string;
+  issuer: string;
+  type: string;
+  issuedAt: string | null;
+  expiresAt: string | null;
+  daysUntilExpiry: number | null;
+  autoRenew: boolean;
+  status: string;
+  sanDomains: string[];
 }
 
 export function useSiteStats(siteId: string) {
