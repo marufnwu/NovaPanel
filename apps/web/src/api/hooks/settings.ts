@@ -216,6 +216,8 @@ export interface NameserverVerificationResult {
   resolvesTo: string[];
   isResolvable: boolean;
   error?: string;
+  isListedInParentNs?: boolean;
+  parentDomainNs?: string[];
 }
 
 export function useVerifyNameserver() {

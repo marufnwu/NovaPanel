@@ -440,9 +440,23 @@ function NameserverSettings() {
         {ns1Result && (
           <div className={`mt-2 p-2 rounded text-small ${ns1Result.isResolvable ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
             {ns1Result.isResolvable ? (
-              <span>{ns1Result.hostname} → {ns1Result.resolvesTo.join(', ')}</span>
+              <div>
+                <span>{ns1Result.hostname} → {ns1Result.resolvesTo.join(', ')}</span>
+              </div>
             ) : (
-              <span>{ns1Result.error}</span>
+              <div className="space-y-1">
+                <span>{ns1Result.error}</span>
+                {ns1Result.parentDomainNs && ns1Result.parentDomainNs.length > 0 && (
+                  <div className="text-xs mt-1 opacity-80">
+                    Current NS records for this domain: {ns1Result.parentDomainNs.join(', ')}
+                  </div>
+                )}
+                {ns1Result.isListedInParentNs === false && ns1Result.parentDomainNs && ns1Result.parentDomainNs.length > 0 && (
+                  <div className="text-xs mt-1 font-medium">
+                    Note: This nameserver is NOT listed in your domain's NS records. You must add it at your registrar first.
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -459,9 +473,23 @@ function NameserverSettings() {
         {ns2Result && (
           <div className={`mt-2 p-2 rounded text-small ${ns2Result.isResolvable ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
             {ns2Result.isResolvable ? (
-              <span>{ns2Result.hostname} → {ns2Result.resolvesTo.join(', ')}</span>
+              <div>
+                <span>{ns2Result.hostname} → {ns2Result.resolvesTo.join(', ')}</span>
+              </div>
             ) : (
-              <span>{ns2Result.error}</span>
+              <div className="space-y-1">
+                <span>{ns2Result.error}</span>
+                {ns2Result.parentDomainNs && ns2Result.parentDomainNs.length > 0 && (
+                  <div className="text-xs mt-1 opacity-80">
+                    Current NS records for this domain: {ns2Result.parentDomainNs.join(', ')}
+                  </div>
+                )}
+                {ns2Result.isListedInParentNs === false && ns2Result.parentDomainNs && ns2Result.parentDomainNs.length > 0 && (
+                  <div className="text-xs mt-1 font-medium">
+                    Note: This nameserver is NOT listed in your domain's NS records. You must add it at your registrar first.
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
