@@ -68,12 +68,39 @@ export async function verifyNameserverResolvable(hostname: string): Promise<Name
     return result;
   }
 
-  // Try method 1: node:dns.resolve4()
+  // Try method 1: dig +short hostname A (try dig first since it's more reliable from this server)
+  try {
+    const digResult = await run('dig', ['+short', hostname, 'A', '@8.8.8.8'], { timeout: 15000 });
+    const stdout = digResult.stdout.trim();
+    if (stdout) {
+      // Parse IP addresses from dig output (can be multi-line)
+      const addresses = stdout.split('\n').map(s => s.trim()).filter(s => s.match(/^\d+\.\d+\.\d+\.\d+$/));
+      if (addresses.length > 0) {
+        const publicAddresses = addresses.filter(a => !isPrivateIp(a));
+        if (publicAddresses.length > 0) {
+          result.resolvesTo = publicAddresses;
+          result.isResolvable = true;
+          return result;
+        }
+        if (addresses.length > 0 && addresses.every(a => isPrivateIp(a))) {
+          addError(`Nameserver ${hostname} resolves to private IP(s) ${addresses.join(', ')}. Glue records must point to a public IP address.`);
+          result.resolvesTo = addresses;
+          return result;
+        }
+      }
+      // dig returned empty or no valid IPs - domain exists but has no A record for this hostname
+      // fall through to node:dns as second attempt
+    }
+  } catch {
+    // Continue to next method
+  }
+
+  // Try method 2: node:dns.resolve4() as fallback
   try {
     const { promises: dnsPromises } = await import('node:dns');
     const addresses = await Promise.race([
       dnsPromises.resolve4(hostname),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
     ] as any);
     const publicAddresses = addresses.filter((a: string) => !isPrivateIp(a));
     if (publicAddresses.length > 0) {
@@ -87,28 +114,7 @@ export async function verifyNameserverResolvable(hostname: string): Promise<Name
       return result;
     }
   } catch {
-    // Continue to fallback
-  }
-
-  // Try method 2: dig +short hostname A
-  try {
-    const digResult = await run('dig', ['+short', hostname, 'A'], { timeout: 10000 });
-    if (digResult.stdout.trim()) {
-      const addresses = digResult.stdout.trim().split('\n').filter(a => a.match(/^\d+\.\d+\.\d+\.\d+$/));
-      const publicAddresses = addresses.filter(a => !isPrivateIp(a));
-      if (publicAddresses.length > 0) {
-        result.resolvesTo = publicAddresses;
-        result.isResolvable = true;
-        return result;
-      }
-      if (addresses.length > 0) {
-        addError(`Nameserver ${hostname} resolves to private IP(s) ${addresses.join(', ')}. Glue records must point to a public IP address.`);
-        result.resolvesTo = addresses;
-        return result;
-      }
-    }
-  } catch {
-    // Continue
+    // Continue to next method
   }
 
   // Failed to resolve - get context about parent domain NS and A records
@@ -153,37 +159,41 @@ async function getNameserverContext(hostname: string): Promise<{ parentDomainNs:
   let parentDomainNs: string[] = [];
   let parentDomainA: string[] = [];
 
-  // Get parent domain NS records
+  // Get parent domain NS records - use dig first for better control
   try {
-    const { promises: dnsPromises } = await import('node:dns');
-    parentDomainNs = await Promise.race([
-      dnsPromises.resolveNs(apexDomain),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
-    ]) as string[];
-  } catch {
-    // Fallback to dig
+    const digResult = await run('dig', ['+short', apexDomain, 'NS', '@8.8.8.8'], { timeout: 15000 });
+    if (digResult.stdout.trim()) {
+      parentDomainNs = digResult.stdout.trim().split('\n').filter(Boolean);
+    }
+  } catch { /* ignore */ }
+
+  // Try system resolver as backup for NS
+  if (parentDomainNs.length === 0) {
     try {
-      const digResult = await run('dig', ['+short', apexDomain, 'NS'], { timeout: 10000 });
-      if (digResult.stdout.trim()) {
-        parentDomainNs = digResult.stdout.trim().split('\n').filter(Boolean);
-      }
+      const { promises: dnsPromises } = await import('node:dns');
+      parentDomainNs = await Promise.race([
+        dnsPromises.resolveNs(apexDomain),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
+      ]) as string[];
     } catch { /* ignore */ }
   }
 
-  // Get parent domain A record
+  // Get parent domain A record - use dig first for better control
   try {
-    const { promises: dnsPromises } = await import('node:dns');
-    parentDomainA = await Promise.race([
-      dnsPromises.resolve4(apexDomain),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
-    ]) as string[];
-  } catch {
-    // Fallback to dig
+    const digResult = await run('dig', ['+short', apexDomain, 'A', '@8.8.8.8'], { timeout: 15000 });
+    if (digResult.stdout.trim()) {
+      parentDomainA = digResult.stdout.trim().split('\n').filter(a => a.match(/^\d+\.\d+\.\d+\.\d+$/));
+    }
+  } catch { /* ignore */ }
+
+  // Try system resolver as backup for A
+  if (parentDomainA.length === 0) {
     try {
-      const digResult = await run('dig', ['+short', apexDomain, 'A'], { timeout: 10000 });
-      if (digResult.stdout.trim()) {
-        parentDomainA = digResult.stdout.trim().split('\n').filter(a => a.match(/^\d+\.\d+\.\d+\.\d+$/));
-      }
+      const { promises: dnsPromises } = await import('node:dns');
+      parentDomainA = await Promise.race([
+        dnsPromises.resolve4(apexDomain),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
+      ]) as string[];
     } catch { /* ignore */ }
   }
 
@@ -196,12 +206,12 @@ async function getNameserverContext(hostname: string): Promise<{ parentDomainNs:
   } else if (parentDomainNs.length > 0) {
     suggestion = `This nameserver is NOT in ${apexDomain}'s NS records (current NS: ${parentDomainNs.join(', ')}). To use this as a nameserver: (1) Add ${hostname} to your domain's NS records at your registrar, (2) Add an A record for ${hostname} pointing to your server IP.`;
   } else if (parentDomainHasA) {
-    suggestion = `Your domain ${apexDomain} has an A record (${parentDomainA.join(', ')}) but no NS records found. To use custom nameservers: (1) Set NS records at your registrar to your nameservers (e.g., ${hostname}), (2) Add A records for each nameserver hostname pointing to your server IP.`;
+    suggestion = `Your domain ${apexDomain} has an A record (${parentDomainA.join(', ')}) but no NS records found at this time. To use custom nameservers: (1) Set NS records at your registrar to your nameservers (e.g., ${hostname}), (2) Add A records for each nameserver hostname pointing to your server IP. DNS propagation may take up to 48 hours.`;
   } else {
-    suggestion = `Could not find NS or A records for ${apexDomain}. Ensure your domain has nameservers and A records configured at your registrar. Note: DNS changes may take up to 48 hours to propagate.`;
+    suggestion = `Could not find NS or A records for ${apexDomain} via our DNS queries. This could mean the domain is newly registered or DNS hasn't propagated yet. Ensure your domain has nameservers and A records configured at your registrar. DNS changes may take up to 48 hours to propagate.`;
   }
 
-return { parentDomainNs, isListedInParentNs, parentDomainHasA, parentDomainA, suggestion };
+  return { parentDomainNs, isListedInParentNs, parentDomainHasA, parentDomainA, suggestion };
 }
 
 /**
