@@ -251,9 +251,32 @@ export function DomainsPage() {
                 : 'bg-red-500/10 border-red-500/30'
             }`}>
               {dnsCheckResult.pointsToServer ? (
-                <div className="flex items-center gap-2 text-green-600">
-                  <Icon name="icon-check-circle" size={16} />
-                  <span className="text-sm font-medium">Domain points to server</span>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-green-600">
+                    <Icon name="icon-check-circle" size={16} />
+                    <span className="text-sm font-medium">Domain points to server</span>
+                  </div>
+                  {dnsCheckResult.nameservers && dnsCheckResult.nameservers.length > 0 && (
+                    <div className="ml-6 mt-2 p-2 bg-green-500/5 rounded text-xs space-y-1">
+                      <p className="font-medium text-green-600">Nameservers and their A records for this domain:</p>
+                      {dnsCheckResult.nameservers.map((ns: string) => {
+                        const addresses = dnsCheckResult.nameserverAddresses?.[ns] || [];
+                        const hasAddress = addresses.length > 0;
+                        return (
+                          <div key={ns} className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${hasAddress ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                            <span className="font-mono">{ns}</span>
+                            {hasAddress ? (
+                              <span className="text-green-600">→ {addresses.join(', ')}</span>
+                            ) : (
+                              <span className="text-yellow-500">→ no A record</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <p className="text-foreground-secondary mt-1">Domain resolves to {dnsCheckResult.resolvesTo.join(', ')} — ready to add.</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2">
